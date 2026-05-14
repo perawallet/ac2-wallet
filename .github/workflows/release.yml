@@ -23,5 +23,10 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
       - name: Install dependencies
         run: npm ci
-      - name: Build on EAS
-        run: eas build --profile testing --platform android --non-interactive --no-wait
+      - name: Build APK locally
+        run: npx eas build --profile testing --platform android --local --non-interactive --output=app-testing.apk
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocca-testing-apk
+          path: app-testing.apk
