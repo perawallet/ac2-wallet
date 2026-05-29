@@ -1,16 +1,16 @@
 {
   "folders": [
     {
-      "name": "root",
+      "name": "ROOT",
       "path": ".",
     },
     {
-      "name": "app",
+      "name": "controller-app",
       "path": "packages/controller-app",
     },
   ],
   "settings": {
     "npm.packageManager": "pnpm",
-    "js/ts.tsdk.path": "packages/app/node_modules/typescript/lib",
+    "js/ts.tsdk.path": "node_modules/typescript/lib",
   },
 }
