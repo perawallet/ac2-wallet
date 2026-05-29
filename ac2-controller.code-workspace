@@ -11,6 +11,6 @@
   ],
   "settings": {
     "npm.packageManager": "pnpm",
-    "typescript.tsdk": "packages/app/node_modules/typescript/lib",
+    "js/ts.tsdk.path": "packages/app/node_modules/typescript/lib",
   },
 }
