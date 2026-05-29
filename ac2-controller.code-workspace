@@ -5,8 +5,8 @@
       "path": ".",
     },
     {
-      "name": "controller-app",
-      "path": "packages/controller-app",
+      "name": "ac2-sdk",
+      "path": "packages/ac2-sdk",
     },
   ],
   "settings": {
