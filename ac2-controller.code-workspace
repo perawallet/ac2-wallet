@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "name": "root",
+      "path": ".",
+    },
+    {
+      "name": "app",
+      "path": "packages/app",
+    },
+  ],
+  "settings": {
+    "npm.packageManager": "pnpm",
+    "typescript.tsdk": "packages/app/node_modules/typescript/lib",
+  },
+}

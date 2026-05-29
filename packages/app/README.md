@@ -4,7 +4,7 @@ This project demonstrates an onboarding flow for a white-label identity solution
 
 ## White-Label Configuration
 
-The application is designed as a white-label solution. You can customize the branding and features by modifying the `extra.provider` section in `app.json`:
+The application is designed as a white-label solution. You can customize the branding and features by modifying the `extra.provider` section in `app.config.js`:
 
 ```json
 {
@@ -43,7 +43,7 @@ The application uses `expo-router` for navigation. The flow is automatically det
 The application is built on the `@algorandfoundation/wallet-provider` architecture, which uses a modular `Extension` system to augment a `Provider` with specific capabilities.
 
 ```typescript
-import { Provider } from '@algorandfoundation/wallet-provider';
+import { Provider } from "@algorandfoundation/wallet-provider";
 
 export class MyProvider extends Provider<typeof MyProvider.EXTENSIONS> {
   static EXTENSIONS = [
@@ -118,7 +118,7 @@ To further integrate with identity primitives, the following extensions are sugg
 1. Install dependencies
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. Start the app on Android
@@ -129,5 +129,5 @@ To further integrate with identity primitives, the following extensions are sugg
 > Ensure you have your Android device connected and authorized via ADB, then run:
 >
 > ```bash
-> npm run android
+> pnpm android
 > ```

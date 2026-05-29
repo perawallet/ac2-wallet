@@ -15,19 +15,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "pnpm"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: pnpm install --no-frozen-lockfile
 
       - name: Format Check
-        run: npm run fmt:check
+        run: pnpm --filter @ac2/app fmt:check
 
       - name: Lint
-        run: npm run lint
+        run: pnpm --filter @ac2/app lint
 
       - name: Test
-        run: npm test
+        run: pnpm --filter @ac2/app test --watch=false
 
   eas-build-pre-check:
     runs-on: ubuntu-latest
@@ -39,10 +44,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "pnpm"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: pnpm install --no-frozen-lockfile
 
       - name: Setup EAS
         uses: expo/expo-github-action@v8
@@ -51,4 +61,4 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Validate EAS Config
-        run: npx eas-cli build:list --limit=1 || true # Basic check if EAS is accessible
+        run: pnpm --filter @ac2/app exec eas build:list --limit=1 || true # Basic check if EAS is accessible
