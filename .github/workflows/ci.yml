@@ -18,19 +18,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
       - name: Format Check
-        run: pnpm --filter @ac2/controller-app fmt:check
+        run: pnpm fmt:check
 
       - name: Lint
-        run: pnpm --filter @ac2/controller-app lint
+        run: pnpm lint
 
       - name: Test
-        run: pnpm --filter @ac2/controller-app test --watch=false
+        run: pnpm test --watch=false
+
+      - name: Test (ac2-sdk)
+        run: pnpm --filter @ac2/ac2-sdk test
 
   eas-build-pre-check:
     runs-on: ubuntu-latest
@@ -45,7 +48,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -57,4 +60,4 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Validate EAS Config
-        run: pnpm --filter @ac2/controller-app exec eas build:list --limit=1 || true # Basic check if EAS is accessible
+        run: pnpm exec eas build:list --limit=1 || true # Basic check if EAS is accessible
