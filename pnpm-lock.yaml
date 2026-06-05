@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@algorandfoundation/accounts-keystore-extension':
-        specifier: ^1.0.0-canary.4
+        specifier: ^1.0.0-canary.5
         version: 1.0.0-canary.5(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
       '@algorandfoundation/accounts-store':
         specifier: ^1.0.0-canary.2
@@ -24,20 +24,23 @@ importers:
         specifier: ^1.0.0-canary.1
         version: 1.0.0-canary.1(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
       '@algorandfoundation/keystore':
-        specifier: ^1.0.0-canary.15
+        specifier: ^1.0.0-canary.16
         version: 1.0.0-canary.16(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
       '@algorandfoundation/liquid-client':
-        specifier: 1.0.0-canary.3
-        version: 1.0.0-canary.3
+        specifier: 1.0.0-canary.6
+        version: 1.0.0-canary.6
       '@algorandfoundation/log-store':
         specifier: ^1.0.0-canary.3
         version: 1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
       '@algorandfoundation/react-native-keystore':
-        specifier: ^1.0.0-canary.11
-        version: 1.0.0-canary.12(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+        specifier: ^1.0.0-canary.12
+        version: 1.0.0-canary.12(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       '@algorandfoundation/react-native-passkey-autofill':
-        specifier: ^1.0.0-canary.15
-        version: 1.0.0-canary.17(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+        specifier: ^1.0.0-canary.17
+        version: 1.0.0-canary.17(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@algorandfoundation/wallet-provider':
+        specifier: 1.0.0-canary.5
+        version: 1.0.0-canary.5
       '@config-plugins/react-native-webrtc':
         specifier: ^13.0.0
         version: 13.0.0(expo@54.0.35)
@@ -65,6 +68,9 @@ importers:
       '@tanstack/react-store':
         specifier: 0.9.1
         version: 0.9.1(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@tanstack/store':
+        specifier: 0.9.1
+        version: 0.9.1
       before-after-hook:
         specifier: ^4.0.0
         version: 4.0.0
@@ -147,7 +153,7 @@ importers:
         specifier: ^1.5.0
         version: 1.5.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-keychain:
-        specifier: ^10.0.0
+        specifier: 10.0.0
         version: 10.0.0
       react-native-mmkv:
         specifier: ^4.3.1
@@ -159,11 +165,11 @@ importers:
         specifier: ^3.3.2
         version: 3.4.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-quick-base64:
-        specifier: ^2.2.2
-        version: 2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+        specifier: 3.0.0
+        version: 3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-quick-crypto:
-        specifier: ^1.0.15
-        version: 1.1.5(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+        specifier: 1.1.5
+        version: 1.1.5(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-reanimated:
         specifier: ~3.19.5
         version: 3.19.5(@babel/core@7.29.7)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -177,6 +183,9 @@ importers:
         specifier: ^124.0.7
         version: 124.0.7(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))
     devDependencies:
+      '@babel/runtime':
+        specifier: ^7.29.7
+        version: 7.29.7
       '@testing-library/jest-native':
         specifier: ^5.4.3
         version: 5.4.3(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react-test-renderer@19.1.0(react@19.1.0))(react@19.1.0)
@@ -269,6 +278,10 @@ packages:
       '@algorandfoundation/log-store':
         optional: true
 
+  '@algorandfoundation/algokit-utils@10.0.0-beta.4':
+    resolution: {integrity: sha512-+X06PW7w2zWJWPp91pHoLMQizrq7E33Y1Mj/Hz/hkLiASXWwMKVX5QsQCbvsMYk+guqayCwB6782VngLR8d1RA==}
+    engines: {node: '>=22.0'}
+
   '@algorandfoundation/dp256@1.1.0':
     resolution: {integrity: sha512-s+ZQG3WK6eWskfmjh0bbMImyO+SIR297s+7vQoercbM0hYvilzTBT/rEcvs4ZQxU6TxkTXLq4BRj1USjGFpsCA==}
 
@@ -310,18 +323,14 @@ packages:
       '@algorandfoundation/log-store':
         optional: true
 
-  '@algorandfoundation/liquid-client@1.0.0-canary.3':
-    resolution: {integrity: sha512-QbHKeGPjx2RMNh29PSoVr9i98KVn593dppoS7jjqgum5kFobxGZ8kfpEEbOSGbt6qzw1vfL4iM2yhl4g5kAasg==}
+  '@algorandfoundation/liquid-client@1.0.0-canary.6':
+    resolution: {integrity: sha512-MZ+NjWRHl+ZkJMqcrzRJ6O1LUrQXUSyxTfJh/gy6jmeXMRjgtVFLS4Cm5b7s9xduRUpmzmBCjENBFPkmi8r5LQ==}
 
   '@algorandfoundation/log-store@1.0.0-canary.3':
     resolution: {integrity: sha512-5v6NqxtQJKljITNflLS4O6b5i3fhkiZjr+dLuEmeo8eDUSN6Mcwp2LbT3D1P7RpFGBu1T9FmUD0qxTJNXpn0Ew==}
     peerDependencies:
       '@tanstack/store': 0.9.3
       before-after-hook: 4.0.0
-
-  '@algorandfoundation/qr-code-styling@https://codeload.github.com/algorandfoundation/qr-code-styling/tar.gz/ce8541ee1cb3b0ab2acd9926f3092d4ab217e276':
-    resolution: {tarball: https://codeload.github.com/algorandfoundation/qr-code-styling/tar.gz/ce8541ee1cb3b0ab2acd9926f3092d4ab217e276}
-    version: 0.0.1
 
   '@algorandfoundation/react-native-keystore@1.0.0-canary.11':
     resolution: {integrity: sha512-3LpZ1EaKOm0HimnEMNclmrRIrgGEAYChPZ+eM2bAaf3nsTcKj/67Rbwe0K+eaLwYXbuN2+guozrAGRM94Lq9aw==}
@@ -1048,7 +1057,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {'0': node >=0.10.0}
+    engines: {node: '>=0.10.0'}
 
   '@expo/cli@54.0.25':
     resolution: {integrity: sha512-WnUqIb8oMBhtwSfIqdCHCzcaDIpLNXItRVd5miuvWi4GO0SGo89PSsAkbVJ+LJgcaY+v5rbgMELJS9I/CqOulA==}
@@ -1444,6 +1453,9 @@ packages:
   '@noble/curves@2.2.0':
     resolution: {integrity: sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ==}
     engines: {node: '>= 20.19.0'}
+
+  '@noble/ed25519@3.1.0':
+    resolution: {integrity: sha512-pfcObRY3CtvwfaG9Mt5XqZdKmAQppl37tHUeuBhDUbiwJBCVY4/A4lbMvb1xKhMDx96AqAqZpMWuBX1HulhX4g==}
 
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
@@ -2485,6 +2497,10 @@ packages:
     resolution: {integrity: sha512-F1tGh056XczEaEAqu7s+hlZUDWwOBT70Eq0lfMpBP2YguSQVyxRbprLq5rELXKQOyOaixTWYhMeMQMzP0U5FoQ==}
     engines: {node: '>= 10'}
 
+  algorand-msgpack@1.1.0:
+    resolution: {integrity: sha512-08k7pBQnkaUB5p+jL7f1TRaUIlTSDE0cesFu1mD7llLao+1cAhtvvZmGE3OnisTd0xOn118QMw74SRqddqaYvw==}
+    engines: {node: '>= 14'}
+
   anser@1.4.10:
     resolution: {integrity: sha512-hCv9AqTQ8ycjpSd3upOJd7vFwW1JaoYQ7tpham03GJ1ca8/65rqn0RpaWpItOAd6ylW9wAw6luXYPJIyPFVOww==}
 
@@ -2708,6 +2724,9 @@ packages:
   big-integer@1.6.52:
     resolution: {integrity: sha512-QxD8cf2eVqJOOz63z6JIN9BzvVs/dlySa5HGSBH5xtR8dPteIRQnBxxKqkNTiT6jbDTF6jAfrd4oMcND9RGbQg==}
     engines: {node: '>=0.6'}
+
+  bignumber.js@9.3.1:
+    resolution: {integrity: sha512-Ko0uX15oIUS7wJ3Rb30Fs6SkVbLmPBAKdlm7q9+ak9bbIeFf0MwuBsQV6z7+X768/cHsfg+WlysDWJcmthjsjQ==}
 
   bn.js@5.2.3:
     resolution: {integrity: sha512-EAcmnPkxpntVL+DS7bO1zhcZNvCkxqtkd0ZY53h06GNQ3DEkkGZ/gKgmDv6DdZQGj9BgfSPKtJJ7Dp1GPP8f7w==}
@@ -3834,6 +3853,9 @@ packages:
   hermes-parser@0.35.0:
     resolution: {integrity: sha512-9JLjeHxBx8T4CAsydZR49PNZUaix+WpQJwu9p2010lu+7Kwl6D/7wYFFJxoz+aXkaaClp9Zfg6W6/zVlSJORaA==}
 
+  hi-base32@0.5.1:
+    resolution: {integrity: sha512-EmBBpvdYh/4XxsnUybsPag6VikPYnN30td+vQk+GI3qpahVEG9+gTkG0aXVxTjBqQ5T6ijbWIu77O+C5WFWsnA==}
+
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
@@ -4272,6 +4294,9 @@ packages:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
     engines: {node: '>=6'}
     hasBin: true
+
+  json-bigint@1.0.0:
+    resolution: {integrity: sha512-SiPv/8VpZuWbvLSMtTDU8hEfrZWg/mH/nV/b4o0CYbSxu1UIQPLdwKOCIyLQX+VIPO5vrLX3i8qtqFyhdPSUSQ==}
 
   json-parse-better-errors@1.0.2:
     resolution: {integrity: sha512-mrqyZKfX5EhL7hvqcV6WG1yYjnjeuYDzDhhcAAUrq8Po85NBQBJP+ZDUT75qZQ98IkUoBqdkExkukOU7Ts2wrw==}
@@ -5140,6 +5165,10 @@ packages:
 
   pure-rand@6.1.0:
     resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
+
+  qr-code-styling@1.9.2:
+    resolution: {integrity: sha512-RgJaZJ1/RrXJ6N0j7a+pdw3zMBmzZU4VN2dtAZf8ZggCfRB5stEQ3IoDNGaNhYY3nnZKYlYSLl5YkfWN5dPutg==}
+    engines: {node: '>=18.18.0'}
 
   qrcode-generator@1.5.2:
     resolution: {integrity: sha512-pItrW0Z9HnDBnFmgiNrY1uxRdri32Uh9EjNYLPVC2zZ3ZRIIEqBoDgm4DkvDwNNDHTK7FNkmr8zAa77BYc9xNw==}
@@ -6190,6 +6219,9 @@ packages:
   vlq@1.0.1:
     resolution: {integrity: sha512-gQpnTgkubC6hQgdIcRdYGDSDc+SaujOdyesZQMv6JlfQee/9Mp0Qhnys6WxDWvQnL5WZdT7o2Ul187aSt0Rq+w==}
 
+  vlq@2.0.4:
+    resolution: {integrity: sha512-aodjPa2wPQFkra1G8CzJBTHXhgk3EVSwxSWXNPr1fgdFLUb8kvLV1iEb6rFgasIsjP82HWI6dsb5Io26DDnasA==}
+
   w3c-xmlserializer@4.0.0:
     resolution: {integrity: sha512-d+BFHzbiCx6zGfz0HyQ6Rg69w9k19nviJspaj4yNscGjrHu94sVP+aRm75yEbCh+r2/yR+7q6hux9LVtbuTGBw==}
     engines: {node: '>=14'}
@@ -6430,6 +6462,21 @@ snapshots:
     optionalDependencies:
       '@algorandfoundation/log-store': 1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
 
+  '@algorandfoundation/algokit-utils@10.0.0-beta.4':
+    dependencies:
+      '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
+      '@noble/curves': 2.2.0
+      '@noble/ed25519': 3.1.0
+      '@noble/hashes': 2.2.0
+      '@scure/bip39': 2.2.0
+      algorand-msgpack: 1.1.0
+      buffer: 6.0.3
+      dotenv: 16.4.7
+      hi-base32: 0.5.1
+      json-bigint: 1.0.0
+      tweetnacl: 1.0.3
+      vlq: 2.0.4
+
   '@algorandfoundation/dp256@1.1.0':
     dependencies:
       '@noble/curves': 1.9.6
@@ -6491,17 +6538,15 @@ snapshots:
     optionalDependencies:
       '@algorandfoundation/log-store': 1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
 
-  '@algorandfoundation/liquid-client@1.0.0-canary.3':
+  '@algorandfoundation/liquid-client@1.0.0-canary.6':
     dependencies:
-      '@algorandfoundation/qr-code-styling': https://codeload.github.com/algorandfoundation/qr-code-styling/tar.gz/ce8541ee1cb3b0ab2acd9926f3092d4ab217e276
-      canvas: 2.11.2
+      '@algorandfoundation/algokit-utils': 10.0.0-beta.4
       eventemitter3: 5.0.4
+      qr-code-styling: 1.9.2
       socket.io-client: 4.8.3
-      tweetnacl: 1.0.3
       uuid: 10.0.0
     transitivePeerDependencies:
       - bufferutil
-      - encoding
       - supports-color
       - utf-8-validate
 
@@ -6511,11 +6556,7 @@ snapshots:
       '@tanstack/store': 0.9.1
       before-after-hook: 4.0.0
 
-  '@algorandfoundation/qr-code-styling@https://codeload.github.com/algorandfoundation/qr-code-styling/tar.gz/ce8541ee1cb3b0ab2acd9926f3092d4ab217e276':
-    dependencies:
-      qrcode-generator: 1.5.2
-
-  '@algorandfoundation/react-native-keystore@1.0.0-canary.11(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+  '@algorandfoundation/react-native-keystore@1.0.0-canary.11(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
     dependencies:
       '@algorandfoundation/dp256': 1.1.0
       '@algorandfoundation/keystore': 1.0.0-canary.15(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
@@ -6527,7 +6568,7 @@ snapshots:
       before-after-hook: 4.0.0
       react-native-keychain: 10.0.0
       react-native-mmkv: 4.1.2(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-quick-crypto: 1.0.18(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react-native-quick-crypto: 1.0.18(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
     optionalDependencies:
       '@algorandfoundation/log-store': 1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
     transitivePeerDependencies:
@@ -6538,7 +6579,7 @@ snapshots:
       - react-native-nitro-modules
       - react-native-quick-base64
 
-  '@algorandfoundation/react-native-keystore@1.0.0-canary.12(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+  '@algorandfoundation/react-native-keystore@1.0.0-canary.12(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
     dependencies:
       '@algorandfoundation/dp256': 1.1.0
       '@algorandfoundation/keystore': 1.0.0-canary.16(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
@@ -6550,7 +6591,7 @@ snapshots:
       before-after-hook: 4.0.0
       react-native-keychain: 10.0.0
       react-native-mmkv: 4.1.2(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-quick-crypto: 1.0.18(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react-native-quick-crypto: 1.0.18(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
     optionalDependencies:
       '@algorandfoundation/log-store': 1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0)
     transitivePeerDependencies:
@@ -6561,9 +6602,9 @@ snapshots:
       - react-native-nitro-modules
       - react-native-quick-base64
 
-  '@algorandfoundation/react-native-passkey-autofill@1.0.0-canary.17(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+  '@algorandfoundation/react-native-passkey-autofill@1.0.0-canary.17(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
     dependencies:
-      '@algorandfoundation/react-native-keystore': 1.0.0-canary.11(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@algorandfoundation/react-native-keystore': 1.0.0-canary.11(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.1)(before-after-hook@4.0.0))(@tanstack/store@0.9.1)(before-after-hook@4.0.0)(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       expo: 54.0.35(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(graphql@16.8.1)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.8.3)
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
@@ -8203,6 +8244,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
+    optional: true
 
   '@noble/ciphers@2.2.0': {}
 
@@ -8213,6 +8255,8 @@ snapshots:
   '@noble/curves@2.2.0':
     dependencies:
       '@noble/hashes': 2.2.0
+
+  '@noble/ed25519@3.1.0': {}
 
   '@noble/hashes@1.8.0': {}
 
@@ -9151,7 +9195,8 @@ snapshots:
 
   abab@2.0.6: {}
 
-  abbrev@1.1.1: {}
+  abbrev@1.1.1:
+    optional: true
 
   abort-controller@3.0.0:
     dependencies:
@@ -9206,6 +9251,8 @@ snapshots:
 
   algo-msgpack-with-bigint@2.1.1: {}
 
+  algorand-msgpack@1.1.0: {}
+
   anser@1.4.10: {}
 
   ansi-escapes@4.3.2:
@@ -9243,12 +9290,14 @@ snapshots:
       normalize-path: 3.0.0
       picomatch: 2.3.2
 
-  aproba@2.1.0: {}
+  aproba@2.1.0:
+    optional: true
 
   are-we-there-yet@2.0.0:
     dependencies:
       delegates: 1.0.0
       readable-stream: 3.6.2
+    optional: true
 
   arg@4.1.0: {}
 
@@ -9439,6 +9488,8 @@ snapshots:
 
   big-integer@1.6.52: {}
 
+  bignumber.js@9.3.1: {}
+
   bn.js@5.2.3: {}
 
   bplist-creator@0.1.0:
@@ -9538,6 +9589,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
+    optional: true
 
   cardinal@2.1.1:
     dependencies:
@@ -9576,7 +9628,8 @@ snapshots:
 
   check-error@2.1.3: {}
 
-  chownr@2.0.0: {}
+  chownr@2.0.0:
+    optional: true
 
   chownr@3.0.0: {}
 
@@ -9657,7 +9710,8 @@ snapshots:
       color-name: 1.1.4
       simple-swizzle: 0.2.4
 
-  color-support@1.1.3: {}
+  color-support@1.1.3:
+    optional: true
 
   color@3.2.1:
     dependencies:
@@ -9710,7 +9764,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  console-control-strings@1.1.0: {}
+  console-control-strings@1.1.0:
+    optional: true
 
   content-type@1.0.5: {}
 
@@ -9790,6 +9845,7 @@ snapshots:
   decompress-response@4.2.1:
     dependencies:
       mimic-response: 2.1.0
+    optional: true
 
   dedent@1.7.2: {}
 
@@ -9813,7 +9869,8 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  delegates@1.0.0: {}
+  delegates@1.0.0:
+    optional: true
 
   depd@2.0.0: {}
 
@@ -10541,6 +10598,7 @@ snapshots:
   fs-minipass@2.1.0:
     dependencies:
       minipass: 3.3.6
+    optional: true
 
   fs.realpath@1.0.0: {}
 
@@ -10560,6 +10618,7 @@ snapshots:
       string-width: 4.2.3
       strip-ansi: 6.0.1
       wide-align: 1.1.5
+    optional: true
 
   generator-function@2.0.1: {}
 
@@ -10672,7 +10731,8 @@ snapshots:
     dependencies:
       has-symbols: 1.1.0
 
-  has-unicode@2.0.1: {}
+  has-unicode@2.0.1:
+    optional: true
 
   hasown@2.0.4:
     dependencies:
@@ -10695,6 +10755,8 @@ snapshots:
   hermes-parser@0.35.0:
     dependencies:
       hermes-estree: 0.35.0
+
+  hi-base32@0.5.1: {}
 
   hoist-non-react-statics@3.3.2:
     dependencies:
@@ -11407,6 +11469,10 @@ snapshots:
 
   jsesc@3.1.0: {}
 
+  json-bigint@1.0.0:
+    dependencies:
+      bignumber.js: 9.3.1
+
   json-parse-better-errors@1.0.2: {}
 
   json-parse-even-better-errors@2.3.1: {}
@@ -11600,6 +11666,7 @@ snapshots:
   make-dir@3.1.0:
     dependencies:
       semver: 6.3.1
+    optional: true
 
   make-dir@4.0.0:
     dependencies:
@@ -12001,7 +12068,8 @@ snapshots:
 
   mimic-fn@2.1.0: {}
 
-  mimic-response@2.1.0: {}
+  mimic-response@2.1.0:
+    optional: true
 
   min-indent@1.0.1: {}
 
@@ -12026,8 +12094,10 @@ snapshots:
   minipass@3.3.6:
     dependencies:
       yallist: 4.0.0
+    optional: true
 
-  minipass@5.0.0: {}
+  minipass@5.0.0:
+    optional: true
 
   minipass@7.1.3: {}
 
@@ -12035,6 +12105,7 @@ snapshots:
     dependencies:
       minipass: 3.3.6
       yallist: 4.0.0
+    optional: true
 
   minizlib@3.0.1:
     dependencies:
@@ -12078,7 +12149,8 @@ snapshots:
       object-assign: 4.1.1
       thenify-all: 1.6.0
 
-  nan@2.27.0: {}
+  nan@2.27.0:
+    optional: true
 
   nanoid@3.3.12: {}
 
@@ -12124,6 +12196,7 @@ snapshots:
   nopt@5.0.0:
     dependencies:
       abbrev: 1.1.1
+    optional: true
 
   normalize-path@3.0.0: {}
 
@@ -12144,6 +12217,7 @@ snapshots:
       console-control-strings: 1.1.0
       gauge: 3.0.2
       set-blocking: 2.0.0
+    optional: true
 
   nullthrows@1.1.1: {}
 
@@ -12435,6 +12509,10 @@ snapshots:
 
   pure-rand@6.1.0: {}
 
+  qr-code-styling@1.9.2:
+    dependencies:
+      qrcode-generator: 1.5.2
+
   qrcode-generator@1.5.2: {}
 
   qrcode-terminal@0.11.0: {}
@@ -12565,14 +12643,14 @@ snapshots:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
 
-  react-native-quick-crypto@1.0.18(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
+  react-native-quick-crypto@1.0.18(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
       '@craftzdog/react-native-buffer': 6.1.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       events: 3.3.0
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       react-native-nitro-modules: 0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-quick-base64: 2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react-native-quick-base64: 3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       readable-stream: 4.5.2
       safe-buffer: 5.2.1
       string_decoder: 1.3.0
@@ -12581,14 +12659,14 @@ snapshots:
       expo: 54.0.35(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(graphql@16.8.1)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.8.3)
       expo-build-properties: 55.0.14(expo@54.0.35)
 
-  react-native-quick-crypto@1.1.5(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
+  react-native-quick-crypto@1.1.5(expo-build-properties@55.0.14(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
       '@craftzdog/react-native-buffer': 6.1.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       events: 3.3.0
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       react-native-nitro-modules: 0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-quick-base64: 2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react-native-quick-base64: 3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       readable-stream: 4.7.0
       safe-buffer: 5.2.1
       string_decoder: 1.3.0
@@ -12734,6 +12812,7 @@ snapshots:
       inherits: 2.0.4
       string_decoder: 1.3.0
       util-deprecate: 1.0.2
+    optional: true
 
   readable-stream@4.5.2:
     dependencies:
@@ -12948,7 +13027,8 @@ snapshots:
 
   server-only@0.0.1: {}
 
-  set-blocking@2.0.0: {}
+  set-blocking@2.0.0:
+    optional: true
 
   set-function-length@1.2.2:
     dependencies:
@@ -12981,13 +13061,15 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  simple-concat@1.0.1: {}
+  simple-concat@1.0.1:
+    optional: true
 
   simple-get@3.1.1:
     dependencies:
       decompress-response: 4.2.1
       once: 1.4.0
       simple-concat: 1.0.1
+    optional: true
 
   simple-plist@1.3.1:
     dependencies:
@@ -13215,6 +13297,7 @@ snapshots:
       minizlib: 2.1.2
       mkdirp: 1.0.4
       yallist: 4.0.0
+    optional: true
 
   tar@7.5.15:
     dependencies:
@@ -13421,7 +13504,8 @@ snapshots:
     dependencies:
       react: 19.1.0
 
-  util-deprecate@1.0.2: {}
+  util-deprecate@1.0.2:
+    optional: true
 
   util@0.12.5:
     dependencies:
@@ -13542,6 +13626,8 @@ snapshots:
 
   vlq@1.0.1: {}
 
+  vlq@2.0.4: {}
+
   w3c-xmlserializer@4.0.0:
     dependencies:
       xml-name-validator: 4.0.0
@@ -13608,6 +13694,7 @@ snapshots:
   wide-align@1.1.5:
     dependencies:
       string-width: 4.2.3
+    optional: true
 
   widest-line@3.1.0:
     dependencies:
