@@ -1,6 +1,8 @@
+// MUST be first: installs `global.crypto` before any `@noble/hashes` import
+// is evaluated. See `lib/runtime/install-crypto.ts`.
+import '@/lib/runtime/install-crypto';
 import { useEventListener } from 'expo';
 import { Stack } from 'expo-router';
-import { install } from 'react-native-quick-crypto';
 import { keyStore } from '@/stores/keystore';
 import { keyStoreHooks } from '@/stores/before-after';
 import { accountsStore } from '@/stores/accounts';
@@ -8,16 +10,15 @@ import { identitiesStore } from '@/stores/identities';
 import { ReactNativeProvider, WalletProvider } from '@/providers/ReactNativeProvider';
 import { passkeysStore } from '@/stores/passkeys';
 import { registerGlobals } from 'react-native-webrtc';
-import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/polyfill';
+import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
 import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
-import { bootstrap } from '@/lib/bootstrap';
+import { bootstrap } from '@/lib/keystore/bootstrap';
 import { PreventScreenshotProvider } from '@/providers/PreventScreenshotProvider';
 import React from 'react';
 import { ReactKeystoreOptions } from '@algorandfoundation/react-native-keystore';
 
 globalPolyfill();
 registerGlobals();
-install();
 
 const biometricOptions: ReactKeystoreOptions['keystore']['authentication'] = {
   biometrics: true,
