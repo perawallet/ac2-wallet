@@ -1,0 +1,103 @@
+# `@ac2/ac2-open-claw-reference`
+
+Reference [OpenClaw](https://docs.openclaw.ai/) plugin for the **AC2**
+protocol. Read it to see how AC2 plugs into OpenClaw — it is not meant
+to be installed or reused as-is.
+
+## What AC2 contributes to OpenClaw
+
+| OpenClaw surface        | AC2 contribution                                                           |
+| ----------------------- | -------------------------------------------------------------------------- |
+| Channel `ac2`           | Owns Liquid Auth + WebRTC pairing and the active session.                  |
+| Tool `ac2_capabilities` | Agent DID + `sig_hint` catalog.                                            |
+| Tool `ac2_sign`         | Routes a `SigningRequest` to the wallet over the active channel.           |
+| Setup entry             | `openclaw ac2 setup` writes the channel/tools wiring into `openclaw.json`. |
+
+**Channels own the lifecycle; tools are pure consumers.** The `ac2`
+channel pairs once (one QR per session) and registers the transport on a
+`SessionManager`. `ac2_sign` reads from that manager and rejects with
+`no_active_session` when no channel is connected. The agent's own
+identity key is **issued by the wallet** during pairing (bootstrap
+`KeyRequest`) and persisted in an OS-keychain-protected keystore — the
+agent never touches the user's account keys or passkeys.
+
+## Getting started in OpenClaw
+
+This package isn't published. Build a **self-contained distribution
+bundle** and install that single export into OpenClaw.
+
+### Build the distribution bundle
+
+`scripts/bundle.mjs` (run via `pnpm run build`) uses esbuild to inline
+every pure-JS dependency into `dist/`, so the export needs **no**
+`node_modules` of its own at runtime. Only the host SDK (`openclaw`),
+Node built-ins, and the native add-ons that ship `.node` binaries
+(`node-datachannel`, `@napi-rs/keyring`) are kept external and resolved
+on the host.
+
+```bash
+git clone https://github.com/algorandfoundation/ac2-controller.git
+cd ac2-controller/packages/ac2-open-claw-reference
+pnpm install --ignore-workspace   # install the plugin's own build deps, decoupled from the monorepo
+pnpm run build                    # esbuild bundle (dist/*.js) + tsc declarations (dist/*.d.ts)
+
+# Or build AND pack a single distributable archive in one step:
+pnpm run dist:pack                # -> ac2-ac2-open-claw-reference-0.1.0.tgz
+```
+
+### Install it into OpenClaw
+
+```bash
+# from anywhere OpenClaw is installed — install the packed archive...
+openclaw plugins install file:/absolute/path/to/ac2-ac2-open-claw-reference-0.1.0.tgz
+# ...or install straight from the built package directory:
+openclaw plugins install file:/absolute/path/to/ac2-controller/packages/ac2-open-claw-reference
+
+openclaw plugins enable ac2-open-claw-reference
+openclaw ac2 setup            # wires channel + tools into openclaw.json
+openclaw gateway restart
+```
+
+Notes:
+
+- **Dangerous-code scanner.** `socket.io-client`'s bundled Node
+  long-polling fallback (`xmlhttprequest-ssl`) contains a
+  `child_process.spawn` call, which trips OpenClaw's install-time
+  scanner. It is not reached on the WebSocket path; for local testing
+  pass `--dangerously-force-unsafe-install`.
+- **Native binaries.** The host installs `node-datachannel` /
+  `@napi-rs/keyring` from `package.json`. If a package manager skips
+  build scripts and the prebuilt `node_datachannel.node` is missing, run
+  `npx prebuild-install -r napi` inside the installed copy's
+  `node_modules/node-datachannel`.
+
+Alternatively, register the built package directly in `openclaw.json`
+under `plugins.entries`:
+
+```json5
+{
+  'ac2-open-claw-reference': {
+    source: 'file:/absolute/path/to/ac2-controller/packages/ac2-open-claw-reference',
+    enabled: true,
+    config: {
+      liquidAuthServer: 'https://debug.liquidauth.com',
+      defaultTimeoutMs: 120000,
+    },
+  },
+}
+```
+
+then `openclaw ac2 setup && openclaw gateway restart`.
+`AC2_LIQUID_AUTH_SERVER` overrides the server at runtime.
+
+Then, in a conversation: enable the `ac2` channel, scan the QR, and the
+model can call `ac2_capabilities` followed by `ac2_sign`. See
+[DISCOVERY §3.2](https://github.com/algorandfoundation/ac2-sdk) for the
+request/response shapes.
+
+## Scope
+
+- ✅ Liquid Auth pairing, AC2 signing trio, `thid`-bound responses,
+  channel-owned sessions, wallet-issued agent identity.
+- ❌ Chain-specific verifiers, wallet introspection, holding user keys,
+  a bundled Node WebRTC stack — these belong in downstream plugins.
