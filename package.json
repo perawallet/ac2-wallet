@@ -120,7 +120,13 @@
   "packageManager": "pnpm@10.12.1",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "@algorandfoundation/liquid-client"
+      "@algorandfoundation/liquid-client",
+      "@napi-rs/keyring",
+      "@roamhq/wrtc",
+      "node-datachannel"
+    ],
+    "ignoredBuiltDependencies": [
+      "esbuild"
     ]
   }
 }
