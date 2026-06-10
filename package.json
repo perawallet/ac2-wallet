@@ -111,7 +111,6 @@
     "typescript": "~5.8.3"
   },
   "overrides": {
-    "@algorandfoundation/keystore": "^1.0.0-canary.15",
     "@algorandfoundation/react-native-keystore": {
       "react-native-mmkv": "$react-native-mmkv",
       "react-native-quick-crypto": "$react-native-quick-crypto"
