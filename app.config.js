@@ -117,7 +117,7 @@ module.exports = {
       },
       router: {},
       eas: {
-        projectId: 'f1e6cb1b-642d-49fa-b276-53b4403f62d6',
+        projectId: '1e66ec3b-f687-4617-a003-8491937c55c2',
       },
     },
     runtimeVersion: {
