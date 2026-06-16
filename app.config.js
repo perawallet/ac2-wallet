@@ -97,6 +97,11 @@ module.exports = {
           label: 'AC2-Controller',
         },
       ],
+      // Bundled local workarounds for the autofill plugin's WIP iOS/Android
+      // output (Android DP256 Maven repo, iOS unquoted DEVELOPMENT_TEAM, iOS
+      // missing extension target dependency + duplicate Sources). MUST run
+      // after the autofill plugin. Remove once the fixes land upstream.
+      './plugins/withPasskeyAutofillFixes',
     ],
     experiments: {
       typedRoutes: true,

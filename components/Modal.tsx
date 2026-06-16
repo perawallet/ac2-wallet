@@ -1,14 +1,15 @@
 import React from 'react';
 import {
   View,
-  Text,
-  StyleSheet,
   Modal as RNModal,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ModalProps as RNModalProps,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useColorScheme } from 'nativewind';
+import { Text } from '@/components/ui/text';
+import { THEME } from '@/lib/theme';
 
 interface ModalProps extends RNModalProps {
   visible: boolean;
@@ -18,68 +19,35 @@ interface ModalProps extends RNModalProps {
 }
 
 export const Modal = ({ visible, onClose, title, children, ...props }: ModalProps) => {
+  const { colorScheme } = useColorScheme();
+  const iconColor =
+    colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+
   return (
     <RNModal
       animationType="slide"
-      transparent={true}
+      transparent
       visible={visible}
       onRequestClose={onClose}
       {...props}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            {title ? <Text style={styles.modalTitle}>{title}</Text> : <View />}
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <MaterialIcons name="close" size={24} color="#64748B" />
-            </TouchableOpacity>
+      <View className="flex-1 items-center justify-center bg-black/50 p-5">
+        <View className="max-h-[80%] w-full rounded-3xl bg-card shadow-lg">
+          <View className="flex-row items-center justify-between border-b border-border p-5">
+            {title ? (
+              <Text className="text-lg font-bold text-card-foreground">{title}</Text>
+            ) : (
+              <View />
+            )}
+            <Pressable onPress={onClose} accessibilityRole="button" className="p-1">
+              <MaterialIcons name="close" size={24} color={iconColor} />
+            </Pressable>
           </View>
-          <ScrollView style={styles.modalBody}>{children}</ScrollView>
+          <ScrollView className="max-h-[400px] p-5">{children}</ScrollView>
         </View>
       </View>
     </RNModal>
   );
 };
-
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    width: '100%',
-    maxHeight: '80%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  modalBody: {
-    padding: 20,
-    maxHeight: 400,
-  },
-});
 
 export default Modal;

@@ -255,7 +255,7 @@ export default function ConnectionsScreen() {
                           style={styles.openButton}
                           onPress={() =>
                             router.push({
-                              pathname: '/chat',
+                              pathname: '/session',
                               params: { origin: session.origin, requestId: session.id },
                             })
                           }

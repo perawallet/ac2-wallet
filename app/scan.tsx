@@ -113,7 +113,7 @@ export default function ScanScreen() {
       }
 
       router.replace({
-        pathname: '/chat',
+        pathname: '/session',
         params: { origin, requestId },
       });
       return;

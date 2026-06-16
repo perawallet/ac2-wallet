@@ -1,6 +1,7 @@
 // MUST be first: installs `global.crypto` before any `@noble/hashes` import
 // is evaluated. See `lib/runtime/install-crypto.ts`.
 import '@/lib/runtime/install-crypto';
+import '@/global.css';
 import { useEventListener } from 'expo';
 import { Stack } from 'expo-router';
 import { keyStore } from '@/stores/keystore';
@@ -16,6 +17,10 @@ import { bootstrap } from '@/lib/keystore/bootstrap';
 import { PreventScreenshotProvider } from '@/providers/PreventScreenshotProvider';
 import React from 'react';
 import { ReactKeystoreOptions } from '@algorandfoundation/react-native-keystore';
+import { ThemeProvider } from '@react-navigation/native';
+import { useColorScheme } from 'nativewind';
+import { NAV_THEME } from '@/lib/theme';
+import { Drawer } from '@/components/navigation/Drawer';
 
 globalPolyfill();
 registerGlobals();
@@ -61,6 +66,8 @@ const provider = new ReactNativeProvider(
 setupNavigatorPolyfill();
 
 export default function RootLayout() {
+  const { colorScheme } = useColorScheme();
+
   React.useEffect(() => {
     bootstrap(biometricOptions).catch((e) => console.error('Bootstrap promise error:', e));
   }, []);
@@ -86,7 +93,14 @@ export default function RootLayout() {
   return (
     <PreventScreenshotProvider>
       <WalletProvider provider={provider}>
-        <Stack />
+        <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="scan" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="history" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="profile" options={{ presentation: 'modal' }} />
+          </Stack>
+          <Drawer />
+        </ThemeProvider>
       </WalletProvider>
     </PreventScreenshotProvider>
   );

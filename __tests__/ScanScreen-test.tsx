@@ -95,7 +95,7 @@ describe('<ScanScreen />', () => {
     });
 
     expect(mockReplace).toHaveBeenCalledWith({
-      pathname: '/chat',
+      pathname: '/session',
       params: { origin: 'https://test.com', requestId: '123' },
     });
   });
@@ -111,7 +111,7 @@ describe('<ScanScreen />', () => {
     });
 
     expect(mockReplace).toHaveBeenCalledWith({
-      pathname: '/chat',
+      pathname: '/session',
       params: { origin: 'https://test.com', requestId: '123' },
     });
   });
@@ -127,7 +127,7 @@ describe('<ScanScreen />', () => {
     });
 
     expect(mockReplace).toHaveBeenCalledWith({
-      pathname: '/chat',
+      pathname: '/session',
       params: { origin: 'https://test.com', requestId: '456' },
     });
   });
