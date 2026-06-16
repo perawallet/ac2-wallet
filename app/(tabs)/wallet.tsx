@@ -1,32 +1,18 @@
-import * as React from 'react';
-import { ScrollView, RefreshControl, View, Pressable } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
-import { useStore } from '@tanstack/react-store';
+import { QRCode } from '@/components/ui/QRCode';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
-import { Button } from '@/components/ui/button';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useColorScheme } from 'nativewind';
-import { THEME } from '@/lib/theme';
-import { Modal } from '@/components/Modal';
-import { QRCode } from '@/components/ui/QRCode';
-import { networkStore, setNetwork, type Network } from '@/stores/network';
-import { useActiveAccount } from '@/hooks/useActiveAccount';
 import { useAccountBalance } from '@/hooks/useAccountBalance';
+import { useActiveAccount } from '@/hooks/useActiveAccount';
+import { THEME } from '@/lib/theme';
+import { networkStore } from '@/stores/network';
 import { formatMicroAmount, truncateAddress } from '@/utils/format';
-import { cn } from '@/lib/utils';
-
-const NETWORKS: Network[] = ['testnet', 'mainnet'];
-
-function BalanceCard({ label, amount }: { label: string; amount: bigint }) {
-  return (
-    <View className="mb-4 rounded-2xl bg-card p-5">
-      <Text className="mb-1 text-sm text-muted-foreground">{label}</Text>
-      <Text className="text-2xl font-bold text-card-foreground">{formatMicroAmount(amount, 6)}</Text>
-    </View>
-  );
-}
+import { MaterialIcons } from '@expo/vector-icons';
+import { useStore } from '@tanstack/react-store';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import { useColorScheme } from 'nativewind';
+import * as React from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 export default function WalletTab() {
   const network = useStore(networkStore, (s) => s.network);
@@ -34,10 +20,7 @@ export default function WalletTab() {
   const iconColor = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
   const { address } = useActiveAccount();
   const { algoMicro, usdcMicro, isRefreshing, error, refetch } = useAccountBalance(address, network);
-  // `copied` is shared intentionally: the address-card icon and the modal copy
-  // button both reflect the same "address copied" feedback.
   const [copied, setCopied] = React.useState(false);
-  const [receiveOpen, setReceiveOpen] = React.useState(false);
   const copyResetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(
@@ -62,32 +45,23 @@ export default function WalletTab() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refetch} />}
         showsVerticalScrollIndicator={false}
       >
-        <View className="my-4 flex-row rounded-full bg-muted p-1">
-          {NETWORKS.map((n) => (
-            <Pressable
-              key={n}
-              onPress={() => setNetwork(n)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: network === n }}
-              className={cn('flex-1 items-center rounded-full py-2', network === n && 'bg-background')}
-            >
-              <Text
-                className={cn(
-                  'text-sm capitalize',
-                  network === n ? 'font-semibold text-foreground' : 'text-muted-foreground',
-                )}
-              >
-                {n}
-              </Text>
-            </Pressable>
-          ))}
+        <View className="mb-8 mx-2 items-left">
+          <Text className="mb-2 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Wallet Balance
+          </Text>
+          <Text className="text-5xl font-bold text-foreground">
+            {formatMicroAmount(usdcMicro, 6)} USDC
+          </Text>
+          <Text className="mt-3 text-base text-muted-foreground">
+            {formatMicroAmount(algoMicro, 6)} ALGO
+          </Text>
         </View>
 
         <Pressable
           onPress={copyAddress}
           accessibilityRole="button"
           accessibilityLabel="Copy wallet address"
-          className="mb-4 rounded-2xl bg-card p-5"
+          className="mb-4 rounded-2xl bg-card py-10 px-5 gap-5"
         >
           <Text className="mb-1 text-sm text-muted-foreground">Wallet address</Text>
           <View className="flex-row items-center justify-between">
@@ -96,31 +70,23 @@ export default function WalletTab() {
             </Text>
             <MaterialIcons name={copied ? 'check' : 'content-copy'} size={20} color={iconColor} />
           </View>
-        </Pressable>
 
-        <BalanceCard label="ALGO" amount={algoMicro} />
-        <BalanceCard label="USDC" amount={usdcMicro} />
+          {address ? (
+            <View className="items-center gap-4">
+              <QRCode value={address} />
+              <Text className="px-6 text-center text-sm text-muted-foreground">
+                Scan the QR code to receive funds to this address
+              </Text>
+            </View>
+          ) : null}
+        </Pressable>
 
         {error ? (
           <Text className="mb-4 text-sm text-destructive">
             Couldn&apos;t load balances. Pull to refresh.
           </Text>
         ) : null}
-
-        <Button onPress={() => setReceiveOpen(true)} disabled={!address}>
-          <Text>Receive</Text>
-        </Button>
       </ScrollView>
-
-      <Modal visible={receiveOpen} onClose={() => setReceiveOpen(false)} title="Receive">
-        <View className="items-center gap-4">
-          {address ? <QRCode value={address} /> : null}
-          <Text className="text-center text-sm text-card-foreground">{address}</Text>
-          <Button variant="outline" onPress={copyAddress}>
-            <Text>{copied ? 'Copied' : 'Copy address'}</Text>
-          </Button>
-        </View>
-      </Modal>
     </Screen>
   );
 }

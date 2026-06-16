@@ -14,9 +14,21 @@ export interface AccountBalance {
   refetch: () => Promise<void>;
 }
 
+// A valid address that simply isn't on chain yet isn't an error — algod returns
+// it as a zero balance. But some nodes/configs signal an unknown account with a
+// 404 instead, so treat that as an empty account rather than a failure. We check
+// every place the status can surface (direct, nested under `response`/`body`) and
+// fall back to the message text.
 function isAccountNotFound(err: unknown): boolean {
-  if ((err as { status?: number })?.status === 404) return true;
-  const message = (err as Error)?.message ?? '';
+  if (!err || typeof err !== 'object') return false;
+  const e = err as {
+    status?: number;
+    response?: { status?: number };
+    body?: { message?: string };
+    message?: string;
+  };
+  if (e.status === 404 || e.response?.status === 404) return true;
+  const message = `${e.body?.message ?? ''} ${e.message ?? ''}`;
   return /does not exist|no accounts found|account not found/i.test(message);
 }
 
@@ -49,6 +61,14 @@ export function useAccountBalance(
           setUsdcMicro(0n);
           setError(null);
         } else {
+          // Log the underlying cause: the UI only shows a generic "couldn't
+          // load balances" message, so without this the real error (network
+          // failure, unexpected status, parse error) is invisible.
+          console.error('[useAccountBalance] failed to load balance', {
+            network,
+            address,
+            error: err,
+          });
           setError(err as Error);
         }
       } finally {

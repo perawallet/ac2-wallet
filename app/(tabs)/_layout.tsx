@@ -15,7 +15,9 @@ export default function TabsLayout() {
       tabBar={(props) => <TabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: true,
-        header: () => <AppHeader title={TITLES[route.name] ?? 'AC2'} />,
+        header: () => (
+          <AppHeader title={TITLES[route.name] ?? 'AC2'} showActions={route.name === 'chat'} />
+        ),
       })}
     >
       <Tabs.Screen name="chat" />
