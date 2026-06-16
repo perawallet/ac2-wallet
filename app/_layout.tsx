@@ -1,6 +1,9 @@
 // MUST be first: installs `global.crypto` before any `@noble/hashes` import
 // is evaluated. See `lib/runtime/install-crypto.ts`.
 import '@/lib/runtime/install-crypto';
+// Installs `global.Buffer` before any algokit-utils module (which uses a bare
+// global `Buffer`) is evaluated.
+import '@/lib/runtime/install-buffer';
 import '@/global.css';
 import { useEventListener } from 'expo';
 import { Stack } from 'expo-router';

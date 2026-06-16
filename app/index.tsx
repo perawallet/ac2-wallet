@@ -1,13 +1,13 @@
-import React from 'react';
-import { View, ActivityIndicator } from 'react-native';
-import { Redirect } from 'expo-router';
-import { useColorScheme } from 'nativewind';
-import { useStore } from '@tanstack/react-store';
-import { logsStore } from '@/stores/logs';
 import Logo from '@/components/Logo';
 import { Text } from '@/components/ui/text';
-import { THEME } from '@/lib/theme';
 import { useProvider } from '@/hooks/useProvider';
+import { THEME } from '@/lib/theme';
+import { logsStore } from '@/stores/logs';
+import { useStore } from '@tanstack/react-store';
+import { Redirect } from 'expo-router';
+import { useColorScheme } from 'nativewind';
+import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
 
 export default function Index() {
   const { keys, status } = useProvider();

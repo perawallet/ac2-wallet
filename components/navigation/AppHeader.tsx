@@ -24,16 +24,11 @@ function AppHeader({ title = 'Chat' }: AppHeaderProps) {
       <View className="grow items-center justify-center">
         <Text className="text-base font-semibold text-foreground">{title}</Text>
       </View>
-      <View className="w-[100] flex-row">
+      <View className="w-[100] flex-row justify-end gap-2">
         <IconButton
           name="qr-code-scanner"
           accessibilityLabel="Scan QR code"
           onPress={() => router.push('/scan')}
-        />
-        <IconButton
-          name="history"
-          accessibilityLabel="History"
-          onPress={() => router.push('/history')}
         />
         <IconButton
           name="smart-toy"
