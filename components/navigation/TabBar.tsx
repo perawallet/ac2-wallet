@@ -11,14 +11,14 @@ import type { MaterialIconName } from '@/components/ui/IconButton';
 const ICONS: Record<string, MaterialIconName> = {
   chat: 'chat-bubble-outline',
   wallet: 'account-balance-wallet',
-  audit: 'fact-check',
+  credentials: 'fingerprint',
   menu: 'menu',
 };
 
 const LABELS: Record<string, string> = {
   chat: 'Chat',
   wallet: 'Wallet',
-  audit: 'Audit',
+  credentials: 'Credentials',
   menu: 'Menu',
 };
 

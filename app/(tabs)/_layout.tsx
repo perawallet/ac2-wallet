@@ -5,7 +5,7 @@ import { AppHeader } from '@/components/navigation/AppHeader';
 const TITLES: Record<string, string> = {
   chat: 'Chat',
   wallet: 'Wallet',
-  audit: 'Audit',
+  credentials: 'Credentials',
   menu: 'Menu',
 };
 
@@ -22,7 +22,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="chat" />
       <Tabs.Screen name="wallet" />
-      <Tabs.Screen name="audit" />
+      <Tabs.Screen name="credentials" />
       <Tabs.Screen name="menu" />
     </Tabs>
   );
