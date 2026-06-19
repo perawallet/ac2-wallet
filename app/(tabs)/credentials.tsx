@@ -52,7 +52,7 @@ function PasskeyCard({ passkey, iconColor }: { passkey: Passkey; iconColor: stri
   );
 }
 
-export default function PermissionsTab() {
+export default function CredentialsTab() {
   const passkeys = useStore(passkeysStore, (s) => s.passkeys);
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
