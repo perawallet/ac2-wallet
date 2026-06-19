@@ -17,10 +17,7 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   return (
-    <View
-      className="border-b border-border bg-card px-2"
-      style={{ paddingTop: insets.top }}
-    >
+    <View className="border-b border-border bg-card px-2" style={{ paddingTop: insets.top }}>
       <View className="h-14 flex-row items-center justify-between">
         <View className="w-[100]">
           {showActions ? (

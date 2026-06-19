@@ -32,10 +32,7 @@ function isAccountNotFound(err: unknown): boolean {
   return /does not exist|no accounts found|account not found/i.test(message);
 }
 
-export function useAccountBalance(
-  address: string | undefined,
-  network: Network,
-): AccountBalance {
+export function useAccountBalance(address: string | undefined, network: Network): AccountBalance {
   const [algoMicro, setAlgoMicro] = useState(0n);
   const [usdcMicro, setUsdcMicro] = useState(0n);
   const [isRefreshing, setIsRefreshing] = useState(false);

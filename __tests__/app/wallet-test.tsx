@@ -11,7 +11,9 @@ jest.mock('expo-haptics', () => ({
 }));
 jest.mock('react-native-qrcode-svg', () => () => null);
 jest.mock('@/hooks/useActiveAccount', () => ({
-  useActiveAccount: () => ({ address: 'TESTADDRESS000000000000000000000000000000000000000000000000' }),
+  useActiveAccount: () => ({
+    address: 'TESTADDRESS000000000000000000000000000000000000000000000000',
+  }),
 }));
 jest.mock('@/hooks/useAccountBalance', () => ({
   useAccountBalance: () => ({

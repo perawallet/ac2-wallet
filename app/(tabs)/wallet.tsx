@@ -19,7 +19,10 @@ export default function WalletTab() {
   const { colorScheme } = useColorScheme();
   const iconColor = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
   const { address } = useActiveAccount();
-  const { algoMicro, usdcMicro, isRefreshing, error, refetch } = useAccountBalance(address, network);
+  const { algoMicro, usdcMicro, isRefreshing, error, refetch } = useAccountBalance(
+    address,
+    network,
+  );
   const [copied, setCopied] = React.useState(false);
   const copyResetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
