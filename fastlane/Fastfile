@@ -91,19 +91,10 @@ platform :ios do
       )
     end
 
-    # The Bitrise "Manage iOS code signing" step installs the cert + profiles
-    # and registers the bundle IDs, but it does NOT write signing settings onto
-    # the project. Expo also generates the autofill extension target with an
-    # empty DEVELOPMENT_TEAM, so set the team on EVERY target and let xcodebuild
-    # pick the matching (already-created) profiles via -allowProvisioningUpdates
-    # + the App Store Connect API key from before_all.
-    team_id = ENV["BITRISE_DEVELOPER_TEAM"] || ENV["IOS_TEAM_ID"]
-    update_code_signing_settings(
-      path: get_xcodeproj_path,
-      use_automatic_signing: true,
-      team_id: team_id
-    )
-
+    # The Bitrise "Manage iOS code signing" step has already configured the
+    # project for manual signing with the profiles it created/installed for
+    # every target (main app + autofill extension). gym just archives + exports
+    # with that signing — do NOT override the signing settings here.
     gym(
       scheme: get_scheme,
       configuration: "Release",
@@ -111,8 +102,7 @@ platform :ios do
       workspace: get_xcworkspace_path,
       output_directory: "./build/ios",
       output_name: "#{get_scheme}.ipa",
-      clean: clean,
-      xcargs: "-allowProvisioningUpdates"
+      clean: clean
     )
   end
 end
