@@ -128,7 +128,7 @@ platform :android do
       project_dir: "android/",
       # Skip lint-vital — it OOMs (Metaspace) on CI and isn't needed for
       # distribution. Matches the eas.json release gradleCommand.
-      flags: "-x lintVitalRelease -x lintVitalAnalyzeRelease",
+      flags: "-x lintVitalRelease -x lintVitalAnalyzeRelease --stacktrace",
       properties: {
         "android.injected.version.code" => ENV["BUILD_NUMBER"],
         "android.injected.version.name" => get_package_version

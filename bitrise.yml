@@ -187,6 +187,11 @@ workflows:
                 echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > config/release.keystore
                 echo "$FIREBASE_SERVICE_ACCOUNT_BASE64" | base64 --decode > config/firebase-service-account.json
                 envman add --key ANDROID_KEYSTORE_PATH --value "$BITRISE_SOURCE_DIR/config/release.keystore"
+                # Fail fast (seconds, not a 20-min build) with a clear error if
+                # the keystore decode / store password / alias are wrong.
+                keytool -list -keystore config/release.keystore \
+                  -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null \
+                  && echo "Keystore OK: alias '$ANDROID_KEY_ALIAS' found"
       - script@1:
           title: Install + configure ccache
           inputs:
