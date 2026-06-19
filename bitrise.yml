@@ -211,7 +211,7 @@ workflows:
                 # Limit parallelism so concurrent Kotlin/KSP/CMake workers don't
                 # collectively blow the metaspace cap (OOM). Matches the
                 # eas.json testing profile's proven GRADLE_OPTS.
-                envman add --key GRADLE_OPTS --value "-Xmx4096m -XX:MaxMetaspaceSize=1g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2"
+                envman add --key GRADLE_OPTS --value "-Xmx6144m -XX:MaxMetaspaceSize=1g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2"
       - restore-cache@3:
           title: Restore ccache
           inputs:

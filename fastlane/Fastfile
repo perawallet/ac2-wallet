@@ -91,10 +91,33 @@ platform :ios do
       )
     end
 
-    # The Bitrise "Manage iOS code signing" step has already configured the
-    # project for manual signing with the profiles it created/installed for
-    # every target (main app + autofill extension). gym just archives + exports
-    # with that signing — do NOT override the signing settings here.
+    # Pin each target to its App Store provisioning profile (installed on the
+    # machine by the Bitrise "Manage iOS code signing" step). Per-target because
+    # a single global profile specifier would force the app's profile onto the
+    # autofill extension.
+    app_bundle_id = "app.perawallet.ac2"
+    extension_bundle_id = "#{app_bundle_id}.PasskeyAutofillCredentialProvider"
+    app_profile = "AC2 Wallet"
+    extension_profile = "AC2 Wallet Extensions"
+    team_id = ENV["BITRISE_DEVELOPER_TEAM"] || ENV["IOS_TEAM_ID"]
+
+    update_code_signing_settings(
+      path: get_xcodeproj_path,
+      use_automatic_signing: false,
+      team_id: team_id,
+      code_sign_identity: "Apple Distribution",
+      targets: [get_scheme],
+      profile_name: app_profile
+    )
+    update_code_signing_settings(
+      path: get_xcodeproj_path,
+      use_automatic_signing: false,
+      team_id: team_id,
+      code_sign_identity: "Apple Distribution",
+      targets: ["PasskeyAutofillCredentialProvider"],
+      profile_name: extension_profile
+    )
+
     gym(
       scheme: get_scheme,
       configuration: "Release",
@@ -102,7 +125,13 @@ platform :ios do
       workspace: get_xcworkspace_path,
       output_directory: "./build/ios",
       output_name: "#{get_scheme}.ipa",
-      clean: clean
+      clean: clean,
+      export_options: {
+        provisioningProfiles: {
+          app_bundle_id => app_profile,
+          extension_bundle_id => extension_profile
+        }
+      }
     )
   end
 end
