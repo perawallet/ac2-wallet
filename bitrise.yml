@@ -141,14 +141,47 @@ workflows:
             - key: ios-pods-{{ checksum "pnpm-lock.yaml" }}
             - paths: ios/Pods
       - manage-ios-code-signing@2:
-          title: Install signing cert + profiles (Bitrise code signer)
+          title: Install signing cert (Bitrise code signer)
           inputs:
             # project_path / scheme default to $BITRISE_PROJECT_PATH / $BITRISE_SCHEME.
             - distribution_method: app-store
-            # Auto-creates the distribution cert + profiles for every target
-            # (incl. the autofill extension) via the Bitrise Apple service
-            # connection (API key) and configures the project for the gym build.
+            # Used to install the Apple Distribution certificate + private key
+            # into the keychain. Its auto-managed profile is ignored: this step
+            # only detects the AC2 app target (the autofill extension is embedded
+            # by an Expo config plugin via a copy-files phase it can't parse), so
+            # it never provisions the extension. We install the profiles we
+            # actually want in the next step instead.
             - apple_service_connection: api-key
+      - script@1:
+          title: Install uploaded provisioning profiles
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -eo pipefail
+                # The auto-managed signing step can't see the autofill extension
+                # target, so it doesn't provision it. Install the profiles we
+                # uploaded to Bitrise's Code Signing section (AC2 Wallet + AC2
+                # Wallet Extension) directly onto the VM, keyed by their own UUID,
+                # so the gym build can find both by name. $BITRISE_PROVISION_URL_LIST
+                # is the pipe-separated list of those uploaded profiles.
+                if [ -z "$BITRISE_PROVISION_URL_LIST" ]; then
+                  echo "BITRISE_PROVISION_URL_LIST is empty — no profiles uploaded to the Code Signing section" >&2
+                  exit 1
+                fi
+                DEST="$HOME/Library/MobileDevice/Provisioning Profiles"
+                mkdir -p "$DEST"
+                IFS='|' read -ra URLS <<< "$BITRISE_PROVISION_URL_LIST"
+                for url in "${URLS[@]}"; do
+                  [ -z "$url" ] && continue
+                  tmp="$(mktemp)"
+                  curl -fsSL "$url" -o "$tmp"
+                  plist="$(security cms -D -i "$tmp")"
+                  uuid="$(echo "$plist" | plutil -extract UUID raw -o - -)"
+                  name="$(echo "$plist" | plutil -extract Name raw -o - -)"
+                  cp "$tmp" "$DEST/$uuid.mobileprovision"
+                  rm -f "$tmp"
+                  echo "Installed '$name' ($uuid)"
+                done
       - restore-cache@3:
           title: Restore Xcode DerivedData
           inputs:
