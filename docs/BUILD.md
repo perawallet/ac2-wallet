@@ -104,8 +104,10 @@ connection — no SSH key secret needed.
 
 ### iOS
 1. **Register the App IDs** — Apple Developer portal → Identifiers, and enable
-   the capabilities so they match the prebuilt entitlements:
-   - `app.perawallet.ac2`: **App Groups**, **Associated Domains**.
+   the capabilities so they match the prebuilt entitlements (the Expo autofill
+   plugin puts **AutoFill Credential Provider** on *both* targets):
+   - `app.perawallet.ac2`: **App Groups**, **Associated Domains**,
+     **AutoFill Credential Provider**.
    - `app.perawallet.ac2.PasskeyAutofillCredentialProvider`: **App Groups**,
      **AutoFill Credential Provider**.
    - Create App Group `group.app.perawallet.ac2.passkey-autofill` and assign it

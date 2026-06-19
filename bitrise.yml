@@ -203,7 +203,10 @@ workflows:
                 envman add --key NDK_CCACHE --value "$(command -v ccache)"
                 envman add --key CMAKE_C_COMPILER_LAUNCHER --value ccache
                 envman add --key CMAKE_CXX_COMPILER_LAUNCHER --value ccache
-                envman add --key GRADLE_OPTS --value "-Dorg.gradle.daemon=false"
+                # Limit parallelism so concurrent Kotlin/KSP/CMake workers don't
+                # collectively blow the metaspace cap (OOM). Matches the
+                # eas.json testing profile's proven GRADLE_OPTS.
+                envman add --key GRADLE_OPTS --value "-Xmx4096m -XX:MaxMetaspaceSize=1g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2"
       - restore-cache@3:
           title: Restore ccache
           inputs:
