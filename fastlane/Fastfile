@@ -91,8 +91,19 @@ platform :ios do
       )
     end
 
-    # Signing is already set on the project by the Bitrise "Manage iOS code
-    # signing" step; gym just archives + exports with the installed profiles.
+    # The Bitrise "Manage iOS code signing" step installs the cert + profiles
+    # and registers the bundle IDs, but it does NOT write signing settings onto
+    # the project. Expo also generates the autofill extension target with an
+    # empty DEVELOPMENT_TEAM, so set the team on EVERY target and let xcodebuild
+    # pick the matching (already-created) profiles via -allowProvisioningUpdates
+    # + the App Store Connect API key from before_all.
+    team_id = ENV["BITRISE_DEVELOPER_TEAM"] || ENV["IOS_TEAM_ID"]
+    update_code_signing_settings(
+      path: get_xcodeproj_path,
+      use_automatic_signing: true,
+      team_id: team_id
+    )
+
     gym(
       scheme: get_scheme,
       configuration: "Release",
@@ -100,7 +111,8 @@ platform :ios do
       workspace: get_xcworkspace_path,
       output_directory: "./build/ios",
       output_name: "#{get_scheme}.ipa",
-      clean: clean
+      clean: clean,
+      xcargs: "-allowProvisioningUpdates"
     )
   end
 end
@@ -124,6 +136,9 @@ platform :android do
       task: gradle_task,
       build_type: "Release",
       project_dir: "android/",
+      # Skip lint-vital — it OOMs (Metaspace) on CI and isn't needed for
+      # distribution. Matches the eas.json release gradleCommand.
+      flags: "-x lintVitalRelease -x lintVitalAnalyzeRelease",
       properties: {
         "android.injected.version.code" => ENV["BUILD_NUMBER"],
         "android.injected.version.name" => get_package_version
