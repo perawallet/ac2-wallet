@@ -5,14 +5,16 @@ const ENV = process.env.APP_ENV || 'debug';
 const getBundleIdentifier = () => {
   switch (ENV) {
     case 'development':
-      return 'com.anonymous.ac2.dev';
+      return 'app.perawallet.ac2.dev';
     case 'testing':
-      return 'com.anonymous.ac2.test';
+      return 'app.perawallet.ac2.test';
+    case 'staging':
+      return 'app.perawallet.ac2.staging';
     case 'production':
-      return 'com.anonymous.ac2';
+      return 'app.perawallet.ac2';
     case 'debug':
     default:
-      return 'com.anonymous.ac2';
+      return 'app.perawallet.ac2.debug';
   }
 };
 
@@ -22,6 +24,8 @@ const getAppName = () => {
       return 'AC2 Dev';
     case 'testing':
       return 'AC2 Test';
+    case 'staging':
+      return 'AC2 Staging';
     case 'production':
       return 'AC2';
     case 'debug':
@@ -102,6 +106,11 @@ module.exports = {
       // missing extension target dependency + duplicate Sources). MUST run
       // after the autofill plugin. Remove once the fixes land upstream.
       './plugins/withPasskeyAutofillFixes',
+      // Wires android/app/build.gradle release builds to a release keystore
+      // (decoded by CI from $ANDROID_KEYSTORE_BASE64). Falls back to debug
+      // signing locally when $ANDROID_KEYSTORE_PASSWORD is absent. prebuild
+      // regenerates build.gradle each run, so this re-applies every time.
+      './plugins/withAndroidReleaseSigning',
     ],
     experiments: {
       typedRoutes: true,
