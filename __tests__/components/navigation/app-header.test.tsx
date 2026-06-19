@@ -16,13 +16,13 @@ describe('AppHeader', () => {
   });
 
   it('toggles the drawer from the hamburger', () => {
-    render(<AppHeader title="Chat" />);
+    render(<AppHeader title="Chat" showActions />);
     fireEvent.press(screen.getByLabelText('Open chats'));
     expect(uiStore.state.drawerOpen).toBe(true);
   });
 
   it('pushes the scan overlay', () => {
-    render(<AppHeader title="Chat" />);
+    render(<AppHeader title="Chat" showActions />);
     fireEvent.press(screen.getByLabelText('Scan QR code'));
     expect(mockPush).toHaveBeenCalledWith('/scan');
   });

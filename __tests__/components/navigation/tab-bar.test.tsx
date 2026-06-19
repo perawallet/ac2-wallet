@@ -7,7 +7,7 @@ jest.mock(
 );
 
 function makeProps(navigate: jest.Mock, emit: jest.Mock) {
-  const routes = ['chat', 'wallet', 'audit', 'menu'].map((name) => ({ key: name, name }));
+  const routes = ['chat', 'wallet', 'credentials', 'menu'].map((name) => ({ key: name, name }));
   return {
     state: { index: 0, routes },
     navigation: { navigate, emit: emit.mockReturnValue({ defaultPrevented: false }) },
@@ -19,7 +19,9 @@ function makeProps(navigate: jest.Mock, emit: jest.Mock) {
 describe('TabBar', () => {
   it('renders all four tab labels', () => {
     render(<TabBar {...makeProps(jest.fn(), jest.fn())} />);
-    ['Chat', 'Wallet', 'Audit', 'Menu'].forEach((l) => expect(screen.getByText(l)).toBeTruthy());
+    ['Chat', 'Wallet', 'Credentials', 'Menu'].forEach((l) =>
+      expect(screen.getByText(l)).toBeTruthy(),
+    );
   });
 
   it('navigates to a tab when pressed', () => {

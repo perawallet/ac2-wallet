@@ -2,13 +2,13 @@ import { formatMicroAmount, truncateAddress } from '@/utils/format';
 
 describe('formatMicroAmount', () => {
   it('formats zero', () => {
-    expect(formatMicroAmount(0n, 6)).toBe('0');
+    expect(formatMicroAmount(0n, 6)).toBe('0.00');
   });
   it('formats a whole number', () => {
-    expect(formatMicroAmount(12_000_000n, 6)).toBe('12');
+    expect(formatMicroAmount(12_000_000n, 6)).toBe('12.00');
   });
-  it('formats a fractional amount and trims trailing zeros', () => {
-    expect(formatMicroAmount(12_500_000n, 6)).toBe('12.5');
+  it('formats a fractional amount, keeping at least two decimals', () => {
+    expect(formatMicroAmount(12_500_000n, 6)).toBe('12.50');
     expect(formatMicroAmount(1_230_000n, 6)).toBe('1.23');
   });
   it('keeps sub-unit precision', () => {

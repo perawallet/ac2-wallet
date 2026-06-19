@@ -23,30 +23,28 @@ jest.mock('@/hooks/useAccountBalance', () => ({
   }),
 }));
 
+import * as Clipboard from 'expo-clipboard';
 import { networkStore } from '@/stores/network';
 import WalletTab from '@/app/(tabs)/wallet';
 
 describe('WalletTab', () => {
-  beforeEach(() => networkStore.setState(() => ({ network: 'testnet' })));
+  beforeEach(() => {
+    networkStore.setState(() => ({ network: 'testnet' }));
+    (Clipboard.setStringAsync as jest.Mock).mockClear();
+  });
 
   it('renders truncated address and formatted balances', () => {
     render(<WalletTab />);
     expect(screen.getByText('TESTAD…0000')).toBeTruthy();
-    expect(screen.getByText('12.5')).toBeTruthy();
-    expect(screen.getByText('5')).toBeTruthy();
+    expect(screen.getByText('5.00 USDC')).toBeTruthy();
+    expect(screen.getByText('12.50 ALGO')).toBeTruthy();
   });
 
-  it('switches the network when a toggle option is pressed', () => {
+  it('copies the full address when the address card is pressed', () => {
     render(<WalletTab />);
-    fireEvent.press(screen.getByText('mainnet'));
-    expect(networkStore.state.network).toBe('mainnet');
-  });
-
-  it('opens the receive modal showing the full address', () => {
-    render(<WalletTab />);
-    fireEvent.press(screen.getByText('Receive'));
-    expect(
-      screen.getByText('TESTADDRESS000000000000000000000000000000000000000000000000'),
-    ).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Copy wallet address'));
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
+      'TESTADDRESS000000000000000000000000000000000000000000000000',
+    );
   });
 });
