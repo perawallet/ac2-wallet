@@ -91,12 +91,10 @@ platform :ios do
       )
     end
 
-    # Pin each target to its App Store provisioning profile. The profiles are the
-    # ones uploaded to Bitrise's Code Signing section and installed on the VM by
-    # the "Install uploaded provisioning profiles" script step (the auto-managed
-    # signing step can't see the extension target, so it never provisions it).
-    # Per-target because a single global specifier would force the app's profile
-    # onto the extension.
+    # Pin each target to its App Store provisioning profile. Both profiles are
+    # installed on the VM by the Bitrise "certificate-and-profile-installer" step
+    # from the files uploaded to Code Signing & Files. Per-target because a single
+    # global specifier would force the app's profile onto the extension.
     app_bundle_id = "app.perawallet.ac2"
     extension_bundle_id = "#{app_bundle_id}.PasskeyAutofillCredentialProvider"
     app_profile = "AC2 Wallet"
@@ -133,7 +131,14 @@ platform :ios do
           app_bundle_id => app_profile,
           extension_bundle_id => extension_profile
         }
-      }
+      },
+      # Force manual signing for the archive. DEVELOPMENT_TEAM is what the
+      # extension target's `$(DEVELOPMENT_TEAM)` resolves from. Mirrors pera-rn.
+      xcargs: [
+        "CODE_SIGN_STYLE='Manual'",
+        "CODE_SIGN_IDENTITY='Apple Distribution'",
+        ("DEVELOPMENT_TEAM='#{team_id}'" if team_id)
+      ].compact.join(" ")
     )
   end
 end
