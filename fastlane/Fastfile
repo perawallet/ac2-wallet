@@ -98,7 +98,7 @@ platform :ios do
     app_bundle_id = "app.perawallet.ac2"
     extension_bundle_id = "#{app_bundle_id}.PasskeyAutofillCredentialProvider"
     app_profile = "AC2 Wallet"
-    extension_profile = "AC2 Wallet Extensions"
+    extension_profile = "AC2 Wallet Extension"
     team_id = ENV["BITRISE_DEVELOPER_TEAM"] || ENV["IOS_TEAM_ID"]
 
     update_code_signing_settings(
