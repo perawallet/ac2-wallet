@@ -176,7 +176,7 @@ workflows:
     steps:
       - set-java-version@1:
           inputs:
-            - java_version: "17"
+            - set_java_version: "17"
       - script@1:
           title: Decode signing keystore + Firebase service account
           inputs:
