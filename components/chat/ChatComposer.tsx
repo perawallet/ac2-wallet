@@ -1,7 +1,7 @@
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/input';
 import * as React from 'react';
-import { View } from 'react-native';
+import { Keyboard, View } from 'react-native';
 
 interface ChatComposerProps {
   onSend: (text: string) => void;
@@ -18,6 +18,7 @@ function ChatComposer({ onSend, enabled = true, placeholder = 'Message' }: ChatC
     if (!trimmed || !enabled) return;
     onSend(trimmed);
     setValue('');
+    Keyboard.dismiss();
   };
   return (
     <View
