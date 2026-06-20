@@ -1,22 +1,20 @@
-import React, { useMemo, useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useRouter } from 'expo-router';
+import { AC2MessageTypes } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
-import { AC2MessageTypes } from '@algorandfoundation/ac2-sdk/schema';
+import { Stack, useRouter } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import {
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useProvider } from '@/hooks/useProvider';
-import { sessionsStore, removeSession, type Session } from '@/stores/sessions';
-import { messagesStore, clearMessagesByConnection } from '@/stores/messages';
 import {
   ac2MessagesStore,
   clearAc2MessagesByConnection,
@@ -27,6 +25,9 @@ import {
   clearAgentIdentitiesByConnection,
   type AgentIdentity,
 } from '@/stores/agentIdentities';
+import { clearMessagesByConnection, messagesStore } from '@/stores/messages';
+import { removeSession, sessionsStore, type Session } from '@/stores/sessions';
+import { setCurrentConnection } from '@/stores/ui';
 
 /** Thread id used for messages/envelopes that carry no explicit `thid`. */
 const DEFAULT_THID = 'default';
@@ -253,12 +254,10 @@ export default function ConnectionsScreen() {
                       <View style={styles.actionRow}>
                         <TouchableOpacity
                           style={styles.openButton}
-                          onPress={() =>
-                            router.push({
-                              pathname: '/session',
-                              params: { origin: session.origin, requestId: session.id },
-                            })
-                          }
+                          onPress={() => {
+                            setCurrentConnection(session.origin, session.id);
+                            router.replace('/chat');
+                          }}
                         >
                           <MaterialIcons
                             name={session.status === 'active' ? 'chat' : 'sync'}

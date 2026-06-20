@@ -3,11 +3,21 @@ import { Store } from '@tanstack/react-store';
 export interface UiState {
   drawerOpen: boolean;
   currentSessionId: string | null;
+  /**
+   * Origin of the connection the Chat tab is showing. Tracked alongside the id
+   * so the tab can render a freshly-scanned connection before its session row
+   * exists in `sessionsStore` (the row is created by `useConnection`).
+   */
+  currentOrigin: string | null;
 }
 
-// Ephemeral UI state (not persisted): which session the Chat tab is showing
+// Ephemeral UI state (not persisted): which connection the Chat tab is showing
 // and whether the chat drawer is open.
-export const uiStore = new Store<UiState>({ drawerOpen: false, currentSessionId: null });
+export const uiStore = new Store<UiState>({
+  drawerOpen: false,
+  currentSessionId: null,
+  currentOrigin: null,
+});
 
 export function openDrawer() {
   uiStore.setState((s) => ({ ...s, drawerOpen: true }));
@@ -20,4 +30,8 @@ export function toggleDrawer() {
 }
 export function setCurrentSession(id: string | null) {
   uiStore.setState((s) => ({ ...s, currentSessionId: id }));
+}
+/** Select the connection (origin + requestId) the Chat tab should display. */
+export function setCurrentConnection(origin: string, requestId: string) {
+  uiStore.setState((s) => ({ ...s, currentOrigin: origin, currentSessionId: requestId }));
 }
