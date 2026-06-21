@@ -164,7 +164,6 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
 
   const handleDisconnect = () => {
     reset();
-    router.back();
   };
 
   const handleClear = () => {
