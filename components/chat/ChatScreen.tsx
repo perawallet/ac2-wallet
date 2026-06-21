@@ -1,7 +1,9 @@
+import { Modal } from '@/components/Modal';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ChatTimeline, type TimelineEntry } from '@/components/chat/ChatTimeline';
 import { ConnectionStatusBar } from '@/components/chat/ConnectionStatusBar';
 import { ThreadBar } from '@/components/chat/ThreadBar';
+import { Text } from '@/components/ui/text';
 import { useAc2Responders } from '@/hooks/useAc2Responders';
 import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
@@ -10,11 +12,13 @@ import {
   clearAc2Messages,
   clearAc2MessagesByConnection,
 } from '@/stores/ac2Messages';
+import { clearAgentIdentitiesByConnection } from '@/stores/agentIdentities';
 import { clearMessages, clearMessagesByConnection, messagesStore } from '@/stores/messages';
-import { setActiveThid } from '@/stores/ui';
+import { removeSession, renameSession } from '@/stores/sessions';
+import { clearCurrentConnection, setActiveThid } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
 import * as React from 'react';
-import { KeyboardAvoidingView, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Height of the header sitting above the chat content in both consumers: the
@@ -37,6 +41,7 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
     sendAc2,
     lastHeartbeat,
     reset,
+    session,
     address,
     activeStreamText,
     agentPresence,
@@ -164,19 +169,66 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
     return () => setActiveThid(null);
   }, [activeThid]);
 
-  const handleDisconnect = () => {
-    reset();
+  const [renameVisible, setRenameVisible] = React.useState(false);
+  const [renameText, setRenameText] = React.useState('');
+
+  const handleRename = React.useCallback(() => {
+    setRenameText(session?.name ?? '');
+    setRenameVisible(true);
+  }, [session?.name]);
+
+  const commitRename = () => {
+    if (renameText.trim()) renameSession(requestId, origin, renameText.trim());
+    setRenameVisible(false);
   };
 
-  const handleClear = () => {
-    if (address) {
-      clearMessages(address, origin, requestId);
-      clearAc2Messages(address, origin, requestId);
-      return;
-    }
-    clearMessagesByConnection(origin, requestId);
-    clearAc2MessagesByConnection(origin, requestId);
-  };
+  const handleDisconnect = React.useCallback(() => {
+    Alert.alert('Disconnect?', 'Close the connection to this agent? You can reconnect later.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Disconnect', style: 'destructive', onPress: reset },
+    ]);
+  }, [reset]);
+
+  const handleClear = React.useCallback(() => {
+    Alert.alert('Clear conversation?', 'This will remove all messages from this connection.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: () => {
+          if (address) {
+            clearMessages(address, origin, requestId);
+            clearAc2Messages(address, origin, requestId);
+          } else {
+            clearMessagesByConnection(origin, requestId);
+            clearAc2MessagesByConnection(origin, requestId);
+          }
+        },
+      },
+    ]);
+  }, [origin, requestId, address]);
+
+  const handleForget = React.useCallback(() => {
+    Alert.alert(
+      'Forget connection?',
+      'This permanently removes all messages, agent identities, and session data for this connection.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Forget',
+          style: 'destructive',
+          onPress: () => {
+            clearMessagesByConnection(origin, requestId);
+            clearAc2MessagesByConnection(origin, requestId);
+            clearAgentIdentitiesByConnection(origin, requestId);
+            removeSession(requestId, origin);
+            clearCurrentConnection();
+            reset();
+          },
+        },
+      ],
+    );
+  }, [origin, requestId, reset]);
 
   return (
     <KeyboardAvoidingView
@@ -188,8 +240,10 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
         isConnected={isConnected}
         isError={isError}
         heartbeatVisible={heartbeatVisible}
+        onRename={handleRename}
         onClear={handleClear}
         onDisconnect={handleDisconnect}
+        onForget={handleForget}
       >
         <ThreadBar
           threads={threads}
@@ -216,6 +270,29 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
         enabled={isConnected}
         placeholder={isConnected ? 'Message' : 'Connecting…'}
       />
+      <Modal
+        visible={renameVisible}
+        onClose={() => setRenameVisible(false)}
+        title="Rename connection"
+      >
+        <TextInput
+          className="rounded-lg border border-border bg-background px-3 py-2 text-foreground"
+          value={renameText}
+          onChangeText={setRenameText}
+          placeholder="Display name"
+          placeholderTextColor="#9CA3AF"
+          returnKeyType="done"
+          onSubmitEditing={commitRename}
+        />
+        <View className="mt-4 flex-row justify-end gap-3">
+          <Pressable onPress={() => setRenameVisible(false)} className="px-4 py-2">
+            <Text className="text-muted-foreground">Cancel</Text>
+          </Pressable>
+          <Pressable onPress={commitRename} className="rounded-lg bg-primary px-4 py-2">
+            <Text className="font-medium text-primary-foreground">Save</Text>
+          </Pressable>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }

@@ -59,7 +59,7 @@ function Drawer() {
                 className="border-b border-border p-4 active:bg-muted"
               >
                 <Text className="font-semibold text-foreground" numberOfLines={1}>
-                  {s.origin}
+                  {s.name?.trim() || s.origin}
                 </Text>
                 <Text className="text-xs text-muted-foreground">{s.status}</Text>
               </Pressable>

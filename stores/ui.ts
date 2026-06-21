@@ -41,6 +41,10 @@ export function setCurrentSession(id: string | null) {
 export function setCurrentConnection(origin: string, requestId: string) {
   uiStore.setState((s) => ({ ...s, currentOrigin: origin, currentSessionId: requestId }));
 }
+/** Clear the currently-selected connection so the Chat tab returns to the empty state. */
+export function clearCurrentConnection() {
+  uiStore.setState((s) => ({ ...s, currentOrigin: null, currentSessionId: null }));
+}
 /** Sync the active conversation thread from `ChatScreen` so History can filter to it. */
 export function setActiveThid(thid: string | null) {
   uiStore.setState((s) => ({ ...s, activeThid: thid }));
