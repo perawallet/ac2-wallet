@@ -1,5 +1,6 @@
 import { formatTime } from '@/components/chat/format';
 import { Button } from '@/components/ui/button';
+import { RawContentViewer } from '@/components/ui/RawContentViewer';
 import { Text } from '@/components/ui/text';
 import { DEFAULT_THID } from '@/lib/ac2';
 import { THEME } from '@/lib/theme';
@@ -16,7 +17,7 @@ import { Stack } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Alert, FlatList, ScrollView, View } from 'react-native';
+import { Alert, FlatList, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SUCCESS = '#10B981';
@@ -36,10 +37,6 @@ async function copyToClipboard(value: string, label: string) {
 }
 
 function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
-  const [jsonVisible, setJsonVisible] = React.useState(false);
-  const { colorScheme } = useColorScheme();
-  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
-
   const isOutbound = entry.direction === 'outbound';
   const { envelope } = entry;
   const signature = getSignature(entry);
@@ -110,26 +107,11 @@ function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
         </View>
       )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-8 self-start px-2"
-        onPress={() => setJsonVisible((v) => !v)}
-      >
-        <MaterialIcons name="code" size={14} color={palette.foreground} />
-        <Text className="text-xs">{jsonVisible ? 'Hide JSON' : 'View JSON'}</Text>
-      </Button>
-      {jsonVisible && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          className="mt-2 rounded-lg bg-slate-800 p-2 dark:bg-slate-950"
-        >
-          <Text className="font-mono text-[11px] leading-4 text-emerald-400">
-            {JSON.stringify(envelope, null, 2)}
-          </Text>
-        </ScrollView>
-      )}
+      <RawContentViewer
+        className="mt-2"
+        contentType="json"
+        content={JSON.stringify(envelope, null, 2)}
+      />
       <Text className="mt-1 self-end text-[10px] text-muted-foreground">
         {formatTime(entry.receivedAt)}
       </Text>

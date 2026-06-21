@@ -1,5 +1,6 @@
 import { formatTime } from '@/components/chat/format';
 import { Button } from '@/components/ui/button';
+import { RawContentViewer } from '@/components/ui/RawContentViewer';
 import { Text } from '@/components/ui/text';
 import { cn } from '@/lib/utils';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
@@ -9,7 +10,7 @@ import type {
 } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as React from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 
 interface Ac2MessageCardProps {
   entry: Ac2MessageEntry;
@@ -73,15 +74,11 @@ function Ac2MessageCard({
         </Text>
       )}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        className="mt-1 rounded-lg bg-slate-800 p-2 dark:bg-slate-950"
-      >
-        <Text className="font-mono text-[11px] leading-4 text-emerald-400">
-          {JSON.stringify(entry.envelope.body, null, 2)}
-        </Text>
-      </ScrollView>
+      <RawContentViewer
+        className="mt-1"
+        contentType="json"
+        content={JSON.stringify(entry.envelope.body, null, 2)}
+      />
 
       {req && (
         <View className="mt-2 flex-row justify-end gap-2">
