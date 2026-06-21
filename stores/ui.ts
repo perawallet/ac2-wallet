@@ -9,6 +9,11 @@ export interface UiState {
    * exists in `sessionsStore` (the row is created by `useConnection`).
    */
   currentOrigin: string | null;
+  /**
+   * The active conversation thread id on the current connection. Synced from
+   * `ChatScreen` so the History modal can filter to the right thread.
+   */
+  activeThid: string | null;
 }
 
 // Ephemeral UI state (not persisted): which connection the Chat tab is showing
@@ -17,6 +22,7 @@ export const uiStore = new Store<UiState>({
   drawerOpen: false,
   currentSessionId: null,
   currentOrigin: null,
+  activeThid: null,
 });
 
 export function openDrawer() {
@@ -34,4 +40,8 @@ export function setCurrentSession(id: string | null) {
 /** Select the connection (origin + requestId) the Chat tab should display. */
 export function setCurrentConnection(origin: string, requestId: string) {
   uiStore.setState((s) => ({ ...s, currentOrigin: origin, currentSessionId: requestId }));
+}
+/** Sync the active conversation thread from `ChatScreen` so History can filter to it. */
+export function setActiveThid(thid: string | null) {
+  uiStore.setState((s) => ({ ...s, activeThid: thid }));
 }

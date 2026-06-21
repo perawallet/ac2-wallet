@@ -7,6 +7,7 @@ import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
 import { ac2MessagesStore, clearAc2Messages } from '@/stores/ac2Messages';
 import { clearMessages, messagesStore } from '@/stores/messages';
+import { setActiveThid } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
@@ -154,6 +155,12 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
       return () => clearTimeout(timer);
     }
   }, [lastHeartbeat, isConnected]);
+
+  // Keep the History modal in sync with the active thread.
+  React.useEffect(() => {
+    setActiveThid(activeThid);
+    return () => setActiveThid(null);
+  }, [activeThid]);
 
   const handleDisconnect = () => {
     reset();

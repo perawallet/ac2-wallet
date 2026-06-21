@@ -1,7 +1,7 @@
 import { ChatEmptyState } from '@/components/chat/ChatEmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { sessionsStore } from '@/stores/sessions';
-import { uiStore } from '@/stores/ui';
+import { setCurrentConnection, uiStore } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
@@ -40,6 +40,12 @@ export default function ChatTab() {
       requestId = active.id;
     }
   }
+
+  // Keep uiStore in sync with the resolved connection (the fallback branch
+  // derives origin/requestId locally without writing them to the store).
+  React.useEffect(() => {
+    if (origin && requestId) setCurrentConnection(origin, requestId);
+  }, [origin, requestId]);
 
   if (!origin || !requestId) {
     return (

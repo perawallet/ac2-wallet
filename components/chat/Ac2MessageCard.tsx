@@ -9,7 +9,7 @@ import type {
 } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as React from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 interface Ac2MessageCardProps {
   entry: Ac2MessageEntry;
@@ -47,13 +47,15 @@ function Ac2MessageCard({
   return (
     <View
       className={cn(
-        'my-1 self-stretch rounded-xl border border-border bg-secondary p-3',
+        'my-1 self-stretch rounded-xl border border-border bg-white p-3 dark:bg-slate-800',
         isOutbound ? 'border-r-4 border-r-primary' : 'border-l-4 border-l-primary',
       )}
     >
       <View className="flex-row items-center gap-1.5">
         <MaterialIcons name="vpn-key" size={14} color="#6366F1" />
-        <Text className="flex-1 text-xs font-bold text-primary">{entry.envelope.type}</Text>
+        <Text className="flex-1 font-mono text-xs font-bold text-primary">
+          {entry.envelope.type}
+        </Text>
         <Text className="text-[11px] font-semibold text-primary">
           {isOutbound ? '→ peer' : 'peer →'}
         </Text>
@@ -71,9 +73,15 @@ function Ac2MessageCard({
         </Text>
       )}
 
-      <Text className="mt-1 font-mono text-xs text-muted-foreground" numberOfLines={6}>
-        {JSON.stringify(entry.envelope.body, null, 2)}
-      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        className="mt-1 rounded-lg bg-slate-800 p-2 dark:bg-slate-950"
+      >
+        <Text className="font-mono text-[11px] leading-4 text-emerald-400">
+          {JSON.stringify(entry.envelope.body, null, 2)}
+        </Text>
+      </ScrollView>
 
       {req && (
         <View className="mt-2 flex-row justify-end gap-2">
