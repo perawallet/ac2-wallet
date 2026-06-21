@@ -9,7 +9,6 @@ import { ac2MessagesStore, clearAc2Messages } from '@/stores/ac2Messages';
 import { clearMessages, messagesStore } from '@/stores/messages';
 import { setActiveThid } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
-import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { KeyboardAvoidingView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,7 +25,6 @@ interface ChatScreenProps {
 }
 
 function ChatScreen({ origin, requestId }: ChatScreenProps) {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
     isConnected,
