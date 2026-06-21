@@ -24,6 +24,8 @@ function RawContentViewer({
   const { colorScheme } = useColorScheme();
   const [expanded, setExpanded] = React.useState(initiallyExpanded);
   const iconColor = colorScheme === 'dark' ? '#E2E8F0' : '#334155';
+  const lineCount = content.split('\n').length;
+  const canExpand = lineCount > collapsedLines;
 
   const handleCopy = React.useCallback(async () => {
     try {
@@ -48,18 +50,20 @@ function RawContentViewer({
         >
           <MaterialIcons name="content-copy" size={14} color={iconColor} />
         </Pressable>
-        <Pressable
-          onPress={() => setExpanded((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel={expanded ? 'Collapse content' : 'Expand content'}
-          className="p-1"
-        >
-          <MaterialIcons
-            name={expanded ? 'expand-less' : 'expand-more'}
-            size={16}
-            color={iconColor}
-          />
-        </Pressable>
+        {canExpand && (
+          <Pressable
+            onPress={() => setExpanded((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? 'Collapse content' : 'Expand content'}
+            className="p-1"
+          >
+            <MaterialIcons
+              name={expanded ? 'expand-less' : 'expand-more'}
+              size={16}
+              color={iconColor}
+            />
+          </Pressable>
+        )}
       </View>
 
       <View className="p-2">

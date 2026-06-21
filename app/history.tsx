@@ -11,7 +11,6 @@ import { uiStore } from '@/stores/ui';
 import type { AC2SigningResponse } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
-import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Stack } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -20,20 +19,9 @@ import * as React from 'react';
 import { Alert, FlatList, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const SUCCESS = '#10B981';
-
 function getSignature(entry: Ac2MessageEntry): string | null {
   if (entry.envelope.type !== 'ac2/SigningResponse') return null;
   return (entry.envelope as AC2SigningResponse).body.signature ?? null;
-}
-
-async function copyToClipboard(value: string, label: string) {
-  try {
-    await Clipboard.setStringAsync(value);
-    Alert.alert('Copied', `${label} copied to clipboard.`);
-  } catch {
-    Alert.alert('Copy failed', 'Could not copy to the clipboard.');
-  }
 }
 
 function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
@@ -83,28 +71,12 @@ function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
       )}
 
       {signature && (
-        <View className="mb-2 rounded-lg bg-slate-800 p-2 dark:bg-slate-950">
-          <View className="mb-1 flex-row items-center gap-1">
-            <MaterialIcons name="verified" size={13} color={SUCCESS} />
-            <Text className="flex-1 font-mono text-xs font-bold text-slate-200">Signature</Text>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2"
-              onPress={() => copyToClipboard(signature, 'Signature')}
-            >
-              <MaterialIcons name="content-copy" size={13} color="#E2E8F0" />
-              <Text className="text-xs text-slate-200">Copy</Text>
-            </Button>
-          </View>
-          <Text
-            className="font-mono text-[11px] text-emerald-400"
-            numberOfLines={2}
-            ellipsizeMode="middle"
-          >
-            {signature}
-          </Text>
-        </View>
+        <RawContentViewer
+          className="mb-2"
+          contentType="signature"
+          content={signature}
+          collapsedLines={2}
+        />
       )}
 
       <RawContentViewer
