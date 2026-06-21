@@ -90,3 +90,18 @@ export function clearAc2MessagesByConnection(origin: string, requestId: string) 
     messages: state.messages.filter((m) => m.origin !== origin || m.requestId !== requestId),
   }));
 }
+
+/**
+ * Removes AC2 envelopes for one conversation thread on a connection.
+ */
+export function clearAc2MessagesByThread(origin: string, requestId: string, thid: string) {
+  ac2MessagesStore.setState((state) => ({
+    ...state,
+    messages: state.messages.filter(
+      (m) =>
+        m.origin !== origin ||
+        m.requestId !== requestId ||
+        (m.thid ?? 'default') !== (thid || 'default'),
+    ),
+  }));
+}

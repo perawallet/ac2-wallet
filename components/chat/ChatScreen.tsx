@@ -5,8 +5,12 @@ import { ThreadBar } from '@/components/chat/ThreadBar';
 import { useAc2Responders } from '@/hooks/useAc2Responders';
 import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
-import { ac2MessagesStore, clearAc2Messages } from '@/stores/ac2Messages';
-import { clearMessages, messagesStore } from '@/stores/messages';
+import {
+  ac2MessagesStore,
+  clearAc2Messages,
+  clearAc2MessagesByConnection,
+} from '@/stores/ac2Messages';
+import { clearMessages, clearMessagesByConnection, messagesStore } from '@/stores/messages';
 import { setActiveThid } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
 import * as React from 'react';
@@ -165,8 +169,13 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
   };
 
   const handleClear = () => {
-    if (address) clearMessages(address, origin, requestId);
-    clearAc2Messages(address || '', origin, requestId);
+    if (address) {
+      clearMessages(address, origin, requestId);
+      clearAc2Messages(address, origin, requestId);
+      return;
+    }
+    clearMessagesByConnection(origin, requestId);
+    clearAc2MessagesByConnection(origin, requestId);
   };
 
   return (
