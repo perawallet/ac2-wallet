@@ -16,10 +16,10 @@ jest.mock('react-native-mmkv', () => {
   return { createMMKV };
 });
 
-import { render, screen, fireEvent } from '@testing-library/react-native';
 import { Drawer } from '@/components/navigation/Drawer';
-import { uiStore } from '@/stores/ui';
 import { sessionsStore } from '@/stores/sessions';
+import { uiStore } from '@/stores/ui';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
@@ -31,7 +31,12 @@ jest.mock(
 describe('Drawer', () => {
   beforeEach(() => {
     mockPush.mockClear();
-    uiStore.setState(() => ({ drawerOpen: true, currentSessionId: null }));
+    uiStore.setState(() => ({
+      drawerOpen: true,
+      currentSessionId: null,
+      currentOrigin: null,
+      activeThid: null,
+    }));
     sessionsStore.setState(() => ({
       sessions: [
         {

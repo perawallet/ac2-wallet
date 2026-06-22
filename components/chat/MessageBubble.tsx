@@ -1,22 +1,35 @@
+import { formatTime } from '@/components/chat/format';
+import { Text } from '@/components/ui/text';
+import { cn } from '@/lib/utils';
 import * as React from 'react';
 import { View } from 'react-native';
-import { cn } from '@/lib/utils';
-import { Text } from '@/components/ui/text';
 
 interface MessageBubbleProps {
   text: string;
   mine: boolean;
+  /** Optional epoch-ms timestamp; renders a compact time label when provided. */
+  timestamp?: number;
 }
 
-function MessageBubble({ text, mine }: MessageBubbleProps) {
+function MessageBubble({ text, mine, timestamp }: MessageBubbleProps) {
   return (
     <View
       className={cn(
         'my-1 max-w-[80%] rounded-2xl px-4 py-2',
-        mine ? 'self-end bg-primary' : 'self-start bg-muted',
+        mine ? 'self-end bg-primary' : 'self-start border border-border bg-card',
       )}
     >
-      <Text className={mine ? 'text-primary-foreground' : 'text-foreground'}>{text}</Text>
+      <Text className={mine ? 'text-primary-foreground' : 'text-card-foreground'}>{text}</Text>
+      {timestamp !== undefined && (
+        <Text
+          className={cn(
+            'mt-1 self-end text-[10px]',
+            mine ? 'text-primary-foreground/70' : 'text-muted-foreground',
+          )}
+        >
+          {formatTime(timestamp)}
+        </Text>
+      )}
     </View>
   );
 }

@@ -1,13 +1,13 @@
-import * as React from 'react';
-import { View, Pressable, useWindowDimensions, ScrollView } from 'react-native';
-import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
-import { useStore } from '@tanstack/react-store';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text } from '@/components/ui/text';
 import { IconButton } from '@/components/ui/IconButton';
-import { uiStore, closeDrawer, setCurrentSession } from '@/stores/ui';
+import { Text } from '@/components/ui/text';
 import { sessionsStore, type Session } from '@/stores/sessions';
+import { closeDrawer, setCurrentConnection, uiStore } from '@/stores/ui';
+import { useStore } from '@tanstack/react-store';
+import { useRouter } from 'expo-router';
+import * as React from 'react';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function Drawer() {
   const router = useRouter();
@@ -27,7 +27,7 @@ function Drawer() {
   }));
 
   const openSession = (session: Session) => {
-    setCurrentSession(session.id);
+    setCurrentConnection(session.origin, session.id);
     closeDrawer();
     router.push('/chat');
   };
@@ -59,7 +59,7 @@ function Drawer() {
                 className="border-b border-border p-4 active:bg-muted"
               >
                 <Text className="font-semibold text-foreground" numberOfLines={1}>
-                  {s.origin}
+                  {s.name?.trim() || s.origin}
                 </Text>
                 <Text className="text-xs text-muted-foreground">{s.status}</Text>
               </Pressable>

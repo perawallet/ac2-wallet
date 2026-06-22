@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
-import * as Linking from 'expo-linking';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRouter, Stack } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useProvider } from '@/hooks/useProvider';
+import { setCurrentConnection } from '@/stores/ui';
+import { MaterialIcons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Linking from 'expo-linking';
+import { Stack, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 function isValidURL(urlString: string) {
   try {
@@ -112,10 +113,8 @@ export default function ScanScreen() {
         origin += pathname;
       }
 
-      router.replace({
-        pathname: '/session',
-        params: { origin, requestId },
-      });
+      setCurrentConnection(origin, requestId);
+      router.replace('/chat');
       return;
     }
 

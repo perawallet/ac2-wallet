@@ -228,3 +228,18 @@ export function clearMessagesByConnection(origin: string, requestId: string) {
     messages: state.messages.filter((m) => m.origin !== origin || m.requestId !== requestId),
   }));
 }
+
+/**
+ * Removes all chat/tool messages for one thread on a connection.
+ */
+export function clearMessagesByThread(origin: string, requestId: string, thid: string) {
+  messagesStore.setState((state) => ({
+    ...state,
+    messages: state.messages.filter(
+      (m) =>
+        m.origin !== origin ||
+        m.requestId !== requestId ||
+        (m.thid ?? 'default') !== (thid || 'default'),
+    ),
+  }));
+}

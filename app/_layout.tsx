@@ -23,6 +23,7 @@ import { ThemeProvider } from '@react-navigation/native';
 import { useEventListener } from 'expo';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { registerGlobals } from 'react-native-webrtc';
@@ -109,6 +110,7 @@ export default function RootLayout() {
   return (
     <FontLoadingContext.Provider value={{ fontsLoaded }}>
       <PreventScreenshotProvider>
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
         <WalletProvider provider={provider}>
           <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
             <Stack screenOptions={{ headerShown: false }}>

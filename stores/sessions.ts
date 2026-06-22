@@ -4,6 +4,8 @@ import { createMMKV } from 'react-native-mmkv';
 export interface Session {
   id: string; // Typically the requestId
   origin: string;
+  /** Optional user-defined display name for this connection. */
+  name?: string;
   timestamp: number;
   status: 'active' | 'closed' | 'failed';
   lastActivity: number;
@@ -96,6 +98,13 @@ export function removeSession(id: string, origin: string) {
   sessionsStore.setState((state) => ({
     ...state,
     sessions: state.sessions.filter((s) => !(s.id === id && s.origin === origin)),
+  }));
+}
+
+export function renameSession(id: string, origin: string, name: string) {
+  sessionsStore.setState((state) => ({
+    ...state,
+    sessions: state.sessions.map((s) => (s.id === id && s.origin === origin ? { ...s, name } : s)),
   }));
 }
 

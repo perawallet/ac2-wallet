@@ -1,10 +1,4 @@
 import { useProvider } from '@/hooks/useProvider';
-import { accountsStore } from '@/stores/accounts';
-import { keyStore } from '@/stores/keystore';
-import { addMessage, addToolActivity, setThreadHistory } from '@/stores/messages';
-import { addAc2Message } from '@/stores/ac2Messages';
-import { Ac2Client } from '@algorandfoundation/ac2-sdk';
-import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
 import {
   attachHeartbeatChannel,
   createAc2Client,
@@ -15,6 +9,15 @@ import {
   sendConversationClose,
   sendConversationOpen,
 } from '@/lib/ac2';
+import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
+import { accountsStore } from '@/stores/accounts';
+import { keyStore } from '@/stores/keystore';
+import {
+  addMessage,
+  addToolActivity,
+  clearMessagesByThread,
+  setThreadHistory,
+} from '@/stores/messages';
 import {
   addSession,
   Session,
@@ -24,6 +27,8 @@ import {
 } from '@/stores/sessions';
 import { decodeAddress } from '@/utils/algorand';
 import { toUrlSafe } from '@/utils/base64';
+import { Ac2Client } from '@algorandfoundation/ac2-sdk';
+import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
 import type { KeyData } from '@algorandfoundation/keystore';
 import { encodeAddress } from '@algorandfoundation/keystore';
 import { assertion, encoding, SignalClient } from '@algorandfoundation/liquid-client';
@@ -34,9 +39,8 @@ import {
   getMasterKey,
   storage,
 } from '@algorandfoundation/react-native-keystore';
-import { Buffer } from 'buffer';
 import { useStore } from '@tanstack/react-store';
-import { useRouter } from 'expo-router';
+import { Buffer } from 'buffer';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, NativeModules } from 'react-native';
 
@@ -90,7 +94,6 @@ interface UseConnectionResult {
 }
 
 export function useConnection(origin: string, requestId: string): UseConnectionResult {
-  const router = useRouter();
   const { accounts, keys, key, passkey, sessions } = useProvider();
 
   const [isConnected, setIsConnected] = useState(false);
@@ -218,13 +221,16 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         { getClient: () => ac2ClientRef.current, getAddress: () => address },
         thid,
       );
+      clearMessagesByThread(origin, requestId, thid);
+      clearAc2MessagesByThread(origin, requestId, thid);
+      setRemoteThreads((prev) => prev.filter((t) => t.thid !== thid));
       if (activeThidRef.current === thid) {
         setActiveThid(DEFAULT_THID);
         activeThidRef.current = DEFAULT_THID;
       }
       lastUserActivityRef.current = Date.now();
     },
-    [address],
+    [address, origin, requestId],
   );
 
   const sendAc2 = useCallback(
@@ -280,7 +286,6 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           }
           if (active) {
             setIsConnected(false);
-            router.back();
           }
         }
       }, 5000);
@@ -291,7 +296,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (inactivityInterval) clearInterval(inactivityInterval);
     };
-  }, [isConnected, router]);
+  }, [isConnected]);
 
   useEffect(() => {
     let active = true;
@@ -948,7 +953,6 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               setIsConnected(false);
               setAc2Client(null);
               ac2ClientRef.current = null;
-              router.back();
             }
           },
         });
@@ -963,7 +967,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           Alert.alert(
             'Connection Failed',
             err.message || 'Failed to setup connection to the peer',
-            [{ text: 'OK', onPress: () => router.back() }],
+            [{ text: 'OK' }],
           );
         }
       } finally {
@@ -992,7 +996,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         clientRef.current = null;
       }
     };
-  }, [origin, requestId, router, accounts.length > 0, keys.length > 0]);
+  }, [origin, requestId, accounts.length > 0, keys.length > 0]);
 
   return {
     session,
