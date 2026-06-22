@@ -8,16 +8,18 @@ import { Redirect } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import { useFontsLoaded } from './_layout';
 
 export default function Index() {
   const { keys, status } = useProvider();
   const { colorScheme } = useColorScheme();
   const logs = useStore(logsStore, (state) => state.logs);
+  const fontsLoaded = useFontsLoaded();
   const lastLog = logs.length > 0 ? logs[0].message : 'Initializing...';
 
   const primaryColor = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
 
-  if (status === 'loading') {
+  if (!fontsLoaded || status === 'loading') {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
         <View className="mb-10">
@@ -25,7 +27,9 @@ export default function Index() {
         </View>
         <ActivityIndicator size="large" color={primaryColor} />
         <View className="mt-6 items-center">
-          <Text className="text-center text-lg font-semibold text-foreground">{lastLog}</Text>
+          <Text className="text-center text-lg font-semibold text-foreground">
+            {fontsLoaded ? lastLog : 'Loading fonts...'}
+          </Text>
           <Text className="mt-2 text-center text-sm text-muted-foreground">
             Securing your keys and passkeys
           </Text>
