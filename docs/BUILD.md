@@ -10,12 +10,12 @@ wiring) is driven from `app.config.js` and the `plugins/` config plugins.
 A single **nightly** pipeline builds both platforms for the production bundle and
 publishes them internally:
 
-| Platform | Bundle / identifier  | Delivery                              |
-| -------- | -------------------- | ------------------------------------- |
-| iOS      | `app.perawallet.ac2` | TestFlight (internal testers)         |
-| Android  | `app.perawallet.ac2` | Firebase App Distribution (`ac2-alpha`) |
+| Platform | Bundle / identifier       | Delivery                              |
+| -------- | ------------------------- | ------------------------------------- |
+| iOS      | `app.perawallet.ac2-wallet` | TestFlight (internal testers)         |
+| Android  | `app.perawallet.ac2`      | Firebase App Distribution (`ac2-alpha`) |
 
-The iOS autofill extension uses `app.perawallet.ac2.PasskeyAutofillCredentialProvider`.
+The iOS autofill extension uses `app.perawallet.ac2-wallet.PasskeyAutofillCredentialProvider`.
 
 There is **no separate release pipeline**. When a nightly build is good, promote
 it to production manually:
@@ -106,13 +106,13 @@ connection — no SSH key secret needed.
 1. **Register the App IDs** — Apple Developer portal → Identifiers, and enable
    the capabilities so they match the prebuilt entitlements (the Expo autofill
    plugin puts **AutoFill Credential Provider** on *both* targets):
-   - `app.perawallet.ac2`: **App Groups**, **Associated Domains**,
+   - `app.perawallet.ac2-wallet`: **App Groups**, **Associated Domains**,
      **AutoFill Credential Provider**.
-   - `app.perawallet.ac2.PasskeyAutofillCredentialProvider`: **App Groups**,
+   - `app.perawallet.ac2-wallet.PasskeyAutofillCredentialProvider`: **App Groups**,
      **AutoFill Credential Provider**.
-   - Create App Group `group.app.perawallet.ac2.passkey-autofill` and assign it
+   - Create App Group `group.app.perawallet.ac2-wallet` and assign it
      to both.
-2. **App Store Connect** — create the app `app.perawallet.ac2` (name "AC2"), pick
+2. **App Store Connect** — create the app `app.perawallet.ac2-wallet` (name "AC2"), pick
    an SKU. Add an internal TestFlight testing group with your testers.
 3. **App Store Connect API key** — Users and Access → Integrations → App Store
    Connect API → generate a key with **App Manager** access; download the `.p8`.

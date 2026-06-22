@@ -2,21 +2,27 @@ const { version } = require('./package.json');
 
 const ENV = process.env.APP_ENV || 'debug';
 
-const getBundleIdentifier = () => {
+// Per-env suffix shared by both platforms; production gets none.
+const getEnvSuffix = () => {
   switch (ENV) {
     case 'development':
-      return 'app.perawallet.ac2.dev';
+      return '.dev';
     case 'testing':
-      return 'app.perawallet.ac2.test';
+      return '.test';
     case 'staging':
-      return 'app.perawallet.ac2.staging';
+      return '.staging';
     case 'production':
-      return 'app.perawallet.ac2';
+      return '';
     case 'debug':
     default:
-      return 'app.perawallet.ac2.debug';
+      return '.debug';
   }
 };
+
+// iOS lives on the App Store account that owns `app.perawallet.ac2-wallet`;
+// Android stays on `app.perawallet.ac2`. Keep them as separate bases.
+const getIosBundleIdentifier = () => `app.perawallet.ac2-wallet${getEnvSuffix()}`;
+const getAndroidPackage = () => `app.perawallet.ac2${getEnvSuffix()}`;
 
 const getAppName = () => {
   switch (ENV) {
@@ -45,7 +51,7 @@ module.exports = {
     newArchEnabled: true,
     ios: {
       supportsTablet: true,
-      bundleIdentifier: getBundleIdentifier(),
+      bundleIdentifier: getIosBundleIdentifier(),
     },
     icon: './assets/icon.png',
     splash: {
@@ -60,7 +66,7 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: getBundleIdentifier(),
+      package: getAndroidPackage(),
       allowBackup: false,
     },
     web: {
@@ -99,6 +105,9 @@ module.exports = {
         {
           site: 'https://debug.liquidauth.com',
           label: 'AC2-Controller',
+          // Override the plugin default (group.<bundleId>.passkey-autofill) to
+          // match the App Group registered under the new account.
+          appGroup: 'group.app.perawallet.ac2-wallet',
         },
       ],
       // Bundled local workarounds for the autofill plugin's WIP iOS/Android

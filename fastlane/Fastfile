@@ -95,7 +95,7 @@ platform :ios do
     # installed on the VM by the Bitrise "certificate-and-profile-installer" step
     # from the files uploaded to Code Signing & Files. Per-target because a single
     # global specifier would force the app's profile onto the extension.
-    app_bundle_id = "app.perawallet.ac2"
+    app_bundle_id = "app.perawallet.ac2-wallet"
     extension_bundle_id = "#{app_bundle_id}.PasskeyAutofillCredentialProvider"
     app_profile = "AC2 Wallet"
     extension_profile = "AC2 Wallet Extension"
