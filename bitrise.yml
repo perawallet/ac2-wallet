@@ -1,4 +1,4 @@
-format_version: "13"
+format_version: '13'
 default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
 project_type: react-native
 
@@ -75,8 +75,8 @@ workflows:
     steps:
       - git-clone@8:
           inputs:
-            - clone_depth: "0"
-            - fetch_tags: "yes"
+            - clone_depth: '0'
+            - fetch_tags: 'yes'
       - script@1:
           title: Build release notes from git log
           inputs:
@@ -185,7 +185,7 @@ workflows:
     steps:
       - set-java-version@1:
           inputs:
-            - set_java_version: "17"
+            - set_java_version: '17'
       - script@1:
           title: Decode signing keystore + Firebase service account
           inputs:

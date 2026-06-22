@@ -21,9 +21,7 @@ const withAndroidReleaseSigning = (config) => {
         '[withAndroidReleaseSigning] app/build.gradle is not groovy; cannot patch signing config',
       );
     }
-    config.modResults.contents = setReleaseSigningConfig(
-      config.modResults.contents,
-    );
+    config.modResults.contents = setReleaseSigningConfig(config.modResults.contents);
     return config;
   });
 };

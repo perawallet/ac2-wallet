@@ -10,15 +10,16 @@ wiring) is driven from `app.config.js` and the `plugins/` config plugins.
 A single **nightly** pipeline builds both platforms for the production bundle and
 publishes them internally:
 
-| Platform | Bundle / identifier       | Delivery                              |
-| -------- | ------------------------- | ------------------------------------- |
-| iOS      | `app.perawallet.ac2-wallet` | TestFlight (internal testers)         |
-| Android  | `app.perawallet.ac2`      | Firebase App Distribution (`ac2-alpha`) |
+| Platform | Bundle / identifier         | Delivery                                |
+| -------- | --------------------------- | --------------------------------------- |
+| iOS      | `app.perawallet.ac2-wallet` | TestFlight (internal testers)           |
+| Android  | `app.perawallet.ac2`        | Firebase App Distribution (`ac2-alpha`) |
 
 The iOS autofill extension uses `app.perawallet.ac2-wallet.PasskeyAutofillCredentialProvider`.
 
 There is **no separate release pipeline**. When a nightly build is good, promote
 it to production manually:
+
 - **iOS** — in App Store Connect, submit the chosen TestFlight build for App Store review.
 - **Android** — promote the Firebase build / upload it to a Play track when ready.
 
@@ -76,26 +77,28 @@ Firebase.
 ## Required Bitrise secrets
 
 ### iOS
+
 The Apple **service connection** (API key) is configured in Bitrise settings, not
 as a secret — it powers the signing step. Fastlane's TestFlight upload needs the
 same App Store Connect API key as secrets:
 
-| Key | What |
-| --- | --- |
-| `APP_STORE_CONNECT_API_KEY_KEY_ID`    | App Store Connect API key ID |
-| `APP_STORE_CONNECT_API_KEY_ISSUER_ID` | App Store Connect API issuer ID |
+| Key                                   | What                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| `APP_STORE_CONNECT_API_KEY_KEY_ID`    | App Store Connect API key ID                                             |
+| `APP_STORE_CONNECT_API_KEY_ISSUER_ID` | App Store Connect API issuer ID                                          |
 | `APP_STORE_CONNECT_API_KEY_CONTENT`   | **base64** of the `.p8` key file (`base64 -i AuthKey_XXXX.p8 \| pbcopy`) |
 
 ### Android
-| Key | What |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64`        | base64 of the release keystore |
-| `ANDROID_KEYSTORE_PASSWORD`      | keystore store password (also gates release signing on) |
-| `ANDROID_KEY_ALIAS`             | key alias |
-| `ANDROID_KEY_PASSWORD`          | key password |
-| `FIREBASE_SERVICE_ACCOUNT_BASE64`| base64 of a Firebase service-account JSON with App Distribution access |
-| `FIREBASE_APP_ID_ANDROID`        | Firebase Android app ID (e.g. `1:123:android:abc`) |
-| `FIREBASE_TESTER_GROUPS`         | (optional) defaults to `ac2-alpha` |
+
+| Key                               | What                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| `ANDROID_KEYSTORE_BASE64`         | base64 of the release keystore                                         |
+| `ANDROID_KEYSTORE_PASSWORD`       | keystore store password (also gates release signing on)                |
+| `ANDROID_KEY_ALIAS`               | key alias                                                              |
+| `ANDROID_KEY_PASSWORD`            | key password                                                           |
+| `FIREBASE_SERVICE_ACCOUNT_BASE64` | base64 of a Firebase service-account JSON with App Distribution access |
+| `FIREBASE_APP_ID_ANDROID`         | Firebase Android app ID (e.g. `1:123:android:abc`)                     |
+| `FIREBASE_TESTER_GROUPS`          | (optional) defaults to `ac2-alpha`                                     |
 
 Repo access (incl. private repos) is handled by the Bitrise GitHub App
 connection — no SSH key secret needed.
@@ -103,9 +106,10 @@ connection — no SSH key secret needed.
 ## One-time remote setup (not yet done)
 
 ### iOS
+
 1. **Register the App IDs** — Apple Developer portal → Identifiers, and enable
    the capabilities so they match the prebuilt entitlements (the Expo autofill
-   plugin puts **AutoFill Credential Provider** on *both* targets):
+   plugin puts **AutoFill Credential Provider** on _both_ targets):
    - `app.perawallet.ac2-wallet`: **App Groups**, **Associated Domains**,
      **AutoFill Credential Provider**.
    - `app.perawallet.ac2-wallet.PasskeyAutofillCredentialProvider`: **App Groups**,
@@ -117,16 +121,17 @@ connection — no SSH key secret needed.
 3. **App Store Connect API key** — Users and Access → Integrations → App Store
    Connect API → generate a key with **App Manager** access; download the `.p8`.
 4. Use that key in **two** places (same key):
-   - the Bitrise **Apple service connection** (App Settings → *Code signing &
-     files* / Workspace → Apple service connection) — for the signing step;
+   - the Bitrise **Apple service connection** (App Settings → _Code signing &
+     files_ / Workspace → Apple service connection) — for the signing step;
    - the three `APP_STORE_CONNECT_API_KEY_*` secrets — for Fastlane's TestFlight
      upload.
 
 ### Android
+
 5. **Firebase** — add an Android app with package `app.perawallet.ac2` (gives you
    `FIREBASE_APP_ID_ANDROID`; no `google-services.json` needed). Create a tester
-   group **`ac2-alpha`**. Create a service account with the *Firebase App
-   Distribution Admin* role, download its JSON, and `base64` it.
+   group **`ac2-alpha`**. Create a service account with the _Firebase App
+   Distribution Admin_ role, download its JSON, and `base64` it.
 6. **Release keystore:**
    ```sh
    keytool -genkeypair -v -keystore release.keystore -alias ac2 \
@@ -136,6 +141,7 @@ connection — no SSH key secret needed.
    Back up the keystore (signing continuity for a future Play Store move).
 
 ### Bitrise
+
 7. Add the app, set the secrets above, configure the Apple service connection,
    and add a **scheduled build** targeting the `nightly` pipeline.
 8. The `Manage iOS code signing` step reads `BITRISE_PROJECT_PATH` /
