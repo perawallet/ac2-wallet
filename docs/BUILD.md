@@ -84,7 +84,7 @@ same App Store Connect API key as secrets:
 | --- | --- |
 | `APP_STORE_CONNECT_API_KEY_KEY_ID`    | App Store Connect API key ID |
 | `APP_STORE_CONNECT_API_KEY_ISSUER_ID` | App Store Connect API issuer ID |
-| `APP_STORE_CONNECT_API_KEY_CONTENT`   | Contents of the `.p8` key file |
+| `APP_STORE_CONNECT_API_KEY_CONTENT`   | **base64** of the `.p8` key file (`base64 -i AuthKey_XXXX.p8 \| pbcopy`) |
 
 ### Android
 | Key | What |

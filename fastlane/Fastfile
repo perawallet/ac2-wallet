@@ -51,7 +51,11 @@ platform :ios do
       app_store_connect_api_key(
         key_id: ENV["APP_STORE_CONNECT_API_KEY_KEY_ID"],
         issuer_id: ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"],
+        # base64 of the .p8 so the EC key's PEM newlines survive being stored as
+        # a Bitrise secret. Plain PEM gets its newlines stripped and OpenSSL then
+        # fails with "invalid curve name".
         key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"],
+        is_key_content_base64: true,
         duration: 1200,
         in_house: false
       )
