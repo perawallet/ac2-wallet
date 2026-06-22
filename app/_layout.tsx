@@ -4,27 +4,29 @@ import '@/lib/runtime/install-crypto';
 // Installs `global.Buffer` before any algokit-utils module (which uses a bare
 // global `Buffer`) is evaluated.
 import '@/lib/runtime/install-buffer';
-import '@/global.css';
-import { useEventListener } from 'expo';
-import { Stack } from 'expo-router';
-import { keyStore } from '@/stores/keystore';
-import { keyStoreHooks } from '@/stores/before-after';
-import { accountsStore } from '@/stores/accounts';
-import { identitiesStore } from '@/stores/identities';
-import { ReactNativeProvider, WalletProvider } from '@/providers/ReactNativeProvider';
-import { passkeysStore } from '@/stores/passkeys';
-import { registerGlobals } from 'react-native-webrtc';
-import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
-import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
-import { bootstrap } from '@/lib/keystore/bootstrap';
-import { PreventScreenshotProvider } from '@/providers/PreventScreenshotProvider';
-import React from 'react';
-import { ReactKeystoreOptions } from '@algorandfoundation/react-native-keystore';
-import { ThemeProvider } from '@react-navigation/native';
-import { useColorScheme } from 'nativewind';
-import { NAV_THEME } from '@/lib/theme';
 import { Drawer } from '@/components/navigation/Drawer';
+import '@/global.css';
+import { bootstrap } from '@/lib/keystore/bootstrap';
+import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
+import { NAV_THEME } from '@/lib/theme';
+import { PreventScreenshotProvider } from '@/providers/PreventScreenshotProvider';
+import { ReactNativeProvider, WalletProvider } from '@/providers/ReactNativeProvider';
+import { accountsStore } from '@/stores/accounts';
+import { keyStoreHooks } from '@/stores/before-after';
+import { identitiesStore } from '@/stores/identities';
+import { keyStore } from '@/stores/keystore';
+import { passkeysStore } from '@/stores/passkeys';
+import { ReactKeystoreOptions } from '@algorandfoundation/react-native-keystore';
+import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
+import { MaterialIcons } from '@expo/vector-icons';
+import { ThemeProvider } from '@react-navigation/native';
+import { useEventListener } from 'expo';
+import { useFonts } from 'expo-font';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'nativewind';
+import React from 'react';
+import { registerGlobals } from 'react-native-webrtc';
 
 globalPolyfill();
 registerGlobals();
@@ -69,8 +71,19 @@ const provider = new ReactNativeProvider(
 
 setupNavigatorPolyfill();
 
+// Create a context to track font loading status
+const FontLoadingContext = React.createContext<{ fontsLoaded: boolean }>({ fontsLoaded: false });
+
+export function useFontsLoaded() {
+  const context = React.useContext(FontLoadingContext);
+  return context.fontsLoaded;
+}
+
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
+  const [fontsLoaded] = useFonts({
+    ...MaterialIcons.font,
+  });
 
   React.useEffect(() => {
     bootstrap(biometricOptions).catch((e) => console.error('Bootstrap promise error:', e));
@@ -95,18 +108,20 @@ export default function RootLayout() {
   });
 
   return (
-    <PreventScreenshotProvider>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-      <WalletProvider provider={provider}>
-        <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="scan" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="history" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="profile" options={{ presentation: 'modal' }} />
-          </Stack>
-          <Drawer />
-        </ThemeProvider>
-      </WalletProvider>
-    </PreventScreenshotProvider>
+    <FontLoadingContext.Provider value={{ fontsLoaded }}>
+      <PreventScreenshotProvider>
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        <WalletProvider provider={provider}>
+          <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="scan" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="history" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="profile" options={{ presentation: 'modal' }} />
+            </Stack>
+            <Drawer />
+          </ThemeProvider>
+        </WalletProvider>
+      </PreventScreenshotProvider>
+    </FontLoadingContext.Provider>
   );
 }
