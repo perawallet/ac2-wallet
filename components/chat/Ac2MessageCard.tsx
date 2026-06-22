@@ -67,9 +67,23 @@ function Ac2MessageCard({
   // Live countdown; only ticks when a message has an expiry.
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
-    if (!actionable?.expires_time) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
+    const expiresTime = actionable?.expires_time;
+    if (!expiresTime) return;
+
+    const expiresAtMs = expiresTime * 1000;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const tick = () => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= expiresAtMs && interval) clearInterval(interval);
+    };
+
+    tick();
+    interval = setInterval(tick, 1000);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [actionable?.expires_time]);
 
   const expired = actionable?.expires_time !== undefined && actionable.expires_time * 1000 < now;

@@ -9,7 +9,12 @@ import {
 
 describe('uiStore', () => {
   beforeEach(() =>
-    uiStore.setState(() => ({ drawerOpen: false, currentSessionId: null, currentOrigin: null })),
+    uiStore.setState(() => ({
+      drawerOpen: false,
+      currentSessionId: null,
+      currentOrigin: null,
+      activeThid: null,
+    })),
   );
 
   it('opens, closes and toggles the drawer', () => {

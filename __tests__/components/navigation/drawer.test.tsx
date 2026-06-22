@@ -31,7 +31,12 @@ jest.mock(
 describe('Drawer', () => {
   beforeEach(() => {
     mockPush.mockClear();
-    uiStore.setState(() => ({ drawerOpen: true, currentSessionId: null, currentOrigin: null }));
+    uiStore.setState(() => ({
+      drawerOpen: true,
+      currentSessionId: null,
+      currentOrigin: null,
+      activeThid: null,
+    }));
     sessionsStore.setState(() => ({
       sessions: [
         {
