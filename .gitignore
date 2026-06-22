@@ -41,3 +41,17 @@ app-example
 # generated native folders
 /ios
 /android
+
+/docs/superpowers
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output
+fastlane/README.md
+vendor/bundle
+
+# build output / signing secrets decoded by CI
+/build
+/config/*
+!/config/.gitkeep

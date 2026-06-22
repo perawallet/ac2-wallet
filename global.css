@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tokens matched to the design system style sheets (light + dark).
+ * Brand: Primary #0052FF (light) / #3B82F6 (dark) -> --primary;
+ *        Tertiary #BF3003 (light) / #D16900 (dark) -> --accent;
+ *        Secondary slate #64748B -> --muted-foreground; Neutral #0F172A -> fg/bg ramp.
+ * Brand colors carry white foreground in light mode and dark foreground in dark mode
+ * (as the sheets show: dark glyphs on the brand colors in dark mode).
+ * Keep hex equivalents in lib/theme.ts in sync.
+ */
+@layer base {
+  :root {
+    --background: 226 48% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 221 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --accent: 14 97% 38%;
+    --accent-foreground: 0 0% 100%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --ring: 221 100% 50%;
+  }
+
+  .dark:root {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --card: 222 33% 13%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 33% 20%;
+    --secondary-foreground: 210 40% 98%;
+    --accent: 30 100% 41%;
+    --accent-foreground: 222 47% 11%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --border: 217 33% 22%;
+    --input: 217 33% 22%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --ring: 217 91% 60%;
+  }
+}

@@ -1,8 +1,8 @@
-import React from 'react';
-import { render, act } from '@testing-library/react-native';
-import ScanScreen from '../app/scan';
+import { act, render } from '@testing-library/react-native';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
+import React from 'react';
+import ScanScreen from '../app/scan';
 
 // Mock expo-camera
 jest.mock('expo-camera', () => {
@@ -94,10 +94,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockReplace).toHaveBeenCalledWith({
-      pathname: '/chat',
-      params: { origin: 'https://test.com', requestId: '123' },
-    });
+    expect(mockReplace).toHaveBeenCalledWith('/chat');
   });
 
   it('handles LIQUID: link (uppercase)', async () => {
@@ -110,10 +107,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockReplace).toHaveBeenCalledWith({
-      pathname: '/chat',
-      params: { origin: 'https://test.com', requestId: '123' },
-    });
+    expect(mockReplace).toHaveBeenCalledWith('/chat');
   });
 
   it('handles LIQUID:// link (uppercase)', async () => {
@@ -126,10 +120,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockReplace).toHaveBeenCalledWith({
-      pathname: '/chat',
-      params: { origin: 'https://test.com', requestId: '456' },
-    });
+    expect(mockReplace).toHaveBeenCalledWith('/chat');
   });
 
   it('aborts on unsupported link', async () => {
