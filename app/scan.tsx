@@ -114,7 +114,7 @@ export default function ScanScreen() {
       }
 
       setCurrentConnection(origin, requestId);
-      router.replace('/chat');
+      router.back();
       return;
     }
 
