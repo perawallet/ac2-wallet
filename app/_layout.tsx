@@ -3,10 +3,10 @@
 import '@/lib/runtime/install-crypto';
 // Installs `global.Buffer` before any algokit-utils module (which uses a bare
 // global `Buffer`) is evaluated.
+import '@/lib/runtime/install-buffer';
 import { Drawer } from '@/components/navigation/Drawer';
 import '@/global.css';
 import { bootstrap } from '@/lib/keystore/bootstrap';
-import '@/lib/runtime/install-buffer';
 import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
 import { NAV_THEME } from '@/lib/theme';
 import { PreventScreenshotProvider } from '@/providers/PreventScreenshotProvider';
