@@ -2,19 +2,27 @@ const { version } = require('./package.json');
 
 const ENV = process.env.APP_ENV || 'debug';
 
-const getBundleIdentifier = () => {
+// Per-env suffix shared by both platforms; production gets none.
+const getEnvSuffix = () => {
   switch (ENV) {
     case 'development':
-      return 'com.anonymous.ac2.dev';
+      return '.dev';
     case 'testing':
-      return 'com.anonymous.ac2.test';
+      return '.test';
+    case 'staging':
+      return '.staging';
     case 'production':
-      return 'com.anonymous.ac2';
+      return '';
     case 'debug':
     default:
-      return 'com.anonymous.ac2';
+      return '.debug';
   }
 };
+
+// iOS lives on the App Store account that owns `app.perawallet.ac2-wallet`;
+// Android stays on `app.perawallet.ac2`. Keep them as separate bases.
+const getIosBundleIdentifier = () => `app.perawallet.ac2-wallet${getEnvSuffix()}`;
+const getAndroidPackage = () => `app.perawallet.ac2${getEnvSuffix()}`;
 
 const getAppName = () => {
   switch (ENV) {
@@ -22,6 +30,8 @@ const getAppName = () => {
       return 'AC2 Dev';
     case 'testing':
       return 'AC2 Test';
+    case 'staging':
+      return 'AC2 Staging';
     case 'production':
       return 'AC2';
     case 'debug':
@@ -41,7 +51,7 @@ module.exports = {
     newArchEnabled: true,
     ios: {
       supportsTablet: true,
-      bundleIdentifier: getBundleIdentifier(),
+      bundleIdentifier: getIosBundleIdentifier(),
     },
     icon: './assets/icon.png',
     splash: {
@@ -56,7 +66,7 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: getBundleIdentifier(),
+      package: getAndroidPackage(),
       allowBackup: false,
     },
     web: {
@@ -84,7 +94,7 @@ module.exports = {
             compileSdkVersion: 35,
             gradleProperties: {
               'org.gradle.jvmargs':
-                '-Xmx4096m -XX:MaxMetaspaceSize=1g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8',
+                '-Xmx6144m -XX:MaxMetaspaceSize=1g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8',
             },
           },
         },
@@ -95,6 +105,9 @@ module.exports = {
         {
           site: 'https://debug.liquidauth.com',
           label: 'AC2-Controller',
+          // Override the plugin default (group.<bundleId>.passkey-autofill) to
+          // match the App Group registered under the new account.
+          appGroup: 'group.app.perawallet.ac2-wallet',
         },
       ],
       // Bundled local workarounds for the autofill plugin's WIP iOS/Android
@@ -102,6 +115,11 @@ module.exports = {
       // missing extension target dependency + duplicate Sources). MUST run
       // after the autofill plugin. Remove once the fixes land upstream.
       './plugins/withPasskeyAutofillFixes',
+      // Wires android/app/build.gradle release builds to a release keystore
+      // (decoded by CI from $ANDROID_KEYSTORE_BASE64). Falls back to debug
+      // signing locally when $ANDROID_KEYSTORE_PASSWORD is absent. prebuild
+      // regenerates build.gradle each run, so this re-applies every time.
+      './plugins/withAndroidReleaseSigning',
     ],
     experiments: {
       typedRoutes: true,
