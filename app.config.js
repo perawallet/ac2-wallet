@@ -126,6 +126,9 @@ module.exports = {
       reactCompiler: true,
     },
     extra: {
+      termsOfServiceUrl:
+        process.env.TERMS_OF_SERVICE_URL ?? 'https://perawallet.app/ac2-terms-of-services/',
+      privacyPolicyUrl: process.env.PRIVACY_POLICY_URL ?? 'https://perawallet.app/privacy-policy/',
       provider: {
         name: 'AC2-Controller',
         primaryColor: '#3B82F6',
