@@ -15,9 +15,15 @@ function MessageBubble({ text, mine, timestamp }: MessageBubbleProps) {
   return (
     <View
       className={cn(
-        'my-1 max-w-[80%] rounded-2xl px-4 py-2',
+        'my-1 max-w-[80%] px-4 py-2',
         mine ? 'self-end bg-primary' : 'self-start border border-border bg-card',
       )}
+      style={{
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        borderBottomLeftRadius: mine ? 16 : 4,
+        borderBottomRightRadius: mine ? 4 : 16,
+      }}
     >
       <Text className={mine ? 'text-primary-foreground' : 'text-card-foreground'}>{text}</Text>
       {timestamp !== undefined && (
