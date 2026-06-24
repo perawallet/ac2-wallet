@@ -48,8 +48,13 @@ export default function MenuTab() {
   const termsUrl = Constants.expoConfig?.extra?.termsOfServiceUrl as string | undefined;
   const privacyUrl = Constants.expoConfig?.extra?.privacyPolicyUrl as string | undefined;
 
-  function openLink(url: string | undefined) {
-    if (url) Linking.openURL(url);
+  async function openLink(url: string | undefined) {
+    if (!url) return;
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      console.error('Failed to open URL', { url, error });
+    }
   }
 
   return (
