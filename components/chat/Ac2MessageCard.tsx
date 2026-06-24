@@ -121,6 +121,13 @@ function Ac2MessageCard({
       {/* ── ac2/SigningRequest ─────────────────────────────── */}
       {req && (
         <View className="mt-2 gap-1.5">
+          <View className="flex-row items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+            <MaterialIcons name="warning-amber" size={16} color="#D97706" />
+            <Text className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
+              You are about to sign a transaction. This can affect your account and funds. Only
+              approve if you trust this request.
+            </Text>
+          </View>
           <Text className="text-sm font-medium text-foreground">{req.body.description}</Text>
           <View className="flex-row flex-wrap gap-1">
             <Badge label={`key: ${req.body.key_type ?? 'account'}`} />
