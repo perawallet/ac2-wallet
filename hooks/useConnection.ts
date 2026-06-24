@@ -83,6 +83,8 @@ interface UseConnectionResult {
   isConnected: boolean;
   lastHeartbeat: number;
   reset: () => void;
+  /** Tear down any stale transport and re-run the connection/auth flow. */
+  reconnect: () => void;
   /** Active conversation `thid`; defaults to `'default'`. */
   activeThid: string;
   /** Open/switch to a thread; sends `ac2/ConversationOpen`. Returns the `thid`. */
@@ -107,6 +109,8 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
   const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // Bumped by `reconnect()` to re-trigger the connection effect on demand.
+  const [reconnectNonce, setReconnectNonce] = useState(0);
 
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const streamChannelRef = useRef<RTCDataChannel | null>(null);
@@ -140,10 +144,13 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     state.sessions.find((s) => s.id === requestId && s.origin === origin),
   );
 
-  const reset = useCallback(() => {
+  // Close and null out every transport ref (AC2 client, data/stream/heartbeat
+  // channels, and the signal client). Leaving `clientRef`/`dataChannelRef` set
+  // after a drop is what previously wedged the connection effect's guard
+  // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
+  // "Connecting…" with no way to recover.
+  const clearTransport = useCallback(() => {
     if (ac2ClientRef.current) {
-      // Closing the client closes the underlying transport, which closes
-      // the DataChannel. Guard against double-close below.
       try {
         ac2ClientRef.current.close();
       } catch {
@@ -153,17 +160,41 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
       setAc2Client(null);
     }
     if (dataChannelRef.current) {
-      dataChannelRef.current.close();
+      try {
+        dataChannelRef.current.close();
+      } catch {
+        /* noop */
+      }
       dataChannelRef.current = null;
     }
     if (streamChannelRef.current) {
-      streamChannelRef.current.close();
+      try {
+        streamChannelRef.current.close();
+      } catch {
+        /* noop */
+      }
       streamChannelRef.current = null;
     }
     if (heartbeatChannelRef.current) {
-      heartbeatChannelRef.current.close();
+      try {
+        heartbeatChannelRef.current.close();
+      } catch {
+        /* noop */
+      }
       heartbeatChannelRef.current = null;
     }
+    if (clientRef.current) {
+      try {
+        clientRef.current.close();
+      } catch {
+        /* noop */
+      }
+      clientRef.current = null;
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    clearTransport();
     setActiveStreamText('');
     setAgentPresence(null);
     setAgentPresenceDetail(null);
@@ -171,7 +202,20 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     setIsLoading(false);
     setError(null);
     updateSessionStatus(requestId, origin, 'closed');
-  }, [requestId, origin]);
+  }, [requestId, origin, clearTransport]);
+
+  // Manually re-establish a dropped connection. Tears down any stale transport
+  // (so the connection effect's guard doesn't short-circuit), flips back into
+  // the loading/connecting state, and bumps the nonce to re-run setup.
+  const reconnect = useCallback(() => {
+    clearTransport();
+    authFlowInProgressRef.current = false;
+    lastUserActivityRef.current = Date.now();
+    setError(null);
+    setIsConnected(false);
+    setIsLoading(true);
+    setReconnectNonce((n) => n + 1);
+  }, [clearTransport]);
 
   const send = useCallback(
     (text: string) => {
@@ -281,11 +325,13 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         const inactiveTime = now - lastUserActivityRef.current;
         if (inactiveTime >= 60000) {
           console.log('Closing connection due to inactivity (1 minute)');
-          if (dataChannelRef.current) {
-            dataChannelRef.current.close();
-          }
+          // Fully tear down so the connection effect's guard doesn't keep a
+          // stale client around — otherwise a later reconnect is impossible.
+          clearTransport();
+          updateSessionStatus(requestId, origin, 'closed');
           if (active) {
             setIsConnected(false);
+            setIsLoading(false);
           }
         }
       }, 5000);
@@ -296,7 +342,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (inactivityInterval) clearInterval(inactivityInterval);
     };
-  }, [isConnected]);
+  }, [isConnected, clearTransport, origin, requestId]);
 
   useEffect(() => {
     let active = true;
@@ -951,8 +997,10 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
             updateSessionStatus(requestId, origin, 'closed');
             if (active) {
               setIsConnected(false);
-              setAc2Client(null);
-              ac2ClientRef.current = null;
+              setIsLoading(false);
+              // Drop every stale transport ref so the next mount / reconnect
+              // isn't blocked by the connection effect's guard.
+              clearTransport();
             }
           },
         });
@@ -996,7 +1044,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         clientRef.current = null;
       }
     };
-  }, [origin, requestId, accounts.length > 0, keys.length > 0]);
+  }, [origin, requestId, accounts.length > 0, keys.length > 0, reconnectNonce]);
 
   return {
     session,
@@ -1013,6 +1061,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     isConnected,
     lastHeartbeat,
     reset,
+    reconnect,
     activeThid,
     openConversation,
     closeConversation,
