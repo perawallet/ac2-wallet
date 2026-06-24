@@ -57,13 +57,15 @@ module.exports = {
     splash: {
       image: './assets/splash.png',
       resizeMode: 'contain',
-      backgroundColor: '#ffffff',
+      backgroundColor: '#0052FF',
+      imageWidth: 578,
     },
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#ffffff',
+        backgroundColor: '#0052FF',
       },
+
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: getAndroidPackage(),
@@ -78,13 +80,10 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          image: './assets/images/splash-icon.png',
-          imageWidth: 200,
+          image: './assets/splash.png',
           resizeMode: 'contain',
-          backgroundColor: '#ffffff',
-          dark: {
-            backgroundColor: '#000000',
-          },
+          backgroundColor: '#0052FF',
+          imageWidth: 578,
         },
       ],
       [
