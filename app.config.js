@@ -59,10 +59,6 @@ module.exports = {
       resizeMode: 'contain',
       backgroundColor: '#0052FF',
       imageWidth: 578,
-      dark: {
-        image: './assets/splash-dark.png',
-        backgroundColor: '#3B82F6',
-      },
     },
     android: {
       adaptiveIcon: {
@@ -88,10 +84,6 @@ module.exports = {
           resizeMode: 'contain',
           backgroundColor: '#0052FF',
           imageWidth: 578,
-          dark: {
-            image: './assets/splash-dark.png',
-            backgroundColor: '#3B82F6',
-          },
         },
       ],
       [
