@@ -2,6 +2,7 @@ import { Modal } from '@/components/Modal';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ChatTimeline, type TimelineEntry } from '@/components/chat/ChatTimeline';
 import { ConnectionStatusBar } from '@/components/chat/ConnectionStatusBar';
+import { ReconnectBar } from '@/components/chat/ReconnectBar';
 import { ThreadBar } from '@/components/chat/ThreadBar';
 import { Text } from '@/components/ui/text';
 import { useAc2Responders } from '@/hooks/useAc2Responders';
@@ -37,10 +38,12 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
   const {
     isConnected,
     isError,
+    isLoading,
     send,
     sendAc2,
     lastHeartbeat,
     reset,
+    reconnect,
     session,
     address,
     activeStreamText,
@@ -265,11 +268,13 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
           rejectKey={rejectKey}
         />
       </View>
-      <ChatComposer
-        onSend={send}
-        enabled={isConnected}
-        placeholder={isConnected ? 'Message' : 'Connecting…'}
-      />
+      {isConnected ? (
+        <ChatComposer onSend={send} enabled placeholder="Message" />
+      ) : isLoading ? (
+        <ChatComposer onSend={send} enabled={false} placeholder="Connecting…" />
+      ) : (
+        <ReconnectBar onReconnect={reconnect} isError={isError} />
+      )}
       <Modal
         visible={renameVisible}
         onClose={() => setRenameVisible(false)}

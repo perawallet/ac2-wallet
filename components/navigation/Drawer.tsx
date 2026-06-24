@@ -2,12 +2,48 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/text';
 import { sessionsStore, type Session } from '@/stores/sessions';
 import { closeDrawer, setCurrentConnection, uiStore } from '@/stores/ui';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const HEARTBEAT_WINDOW_MS = 1000;
+
+function SessionStatusIndicator({ session }: { session: Session }) {
+  const [heartbeatVisible, setHeartbeatVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    if (session.status !== 'active') {
+      setHeartbeatVisible(false);
+      return;
+    }
+
+    const elapsed = Date.now() - session.lastActivity;
+    if (elapsed < HEARTBEAT_WINDOW_MS) {
+      setHeartbeatVisible(true);
+      const timer = setTimeout(() => setHeartbeatVisible(false), HEARTBEAT_WINDOW_MS - elapsed);
+      return () => clearTimeout(timer);
+    }
+
+    setHeartbeatVisible(false);
+  }, [session.lastActivity, session.status]);
+
+  const color =
+    session.status === 'failed' ? '#EF4444' : session.status === 'active' ? '#10B981' : '#9CA3AF';
+
+  return (
+    <View className="h-6 w-6 items-center justify-center" accessibilityRole="image">
+      {session.status === 'active' && heartbeatVisible ? (
+        <MaterialIcons name="favorite" size={14} color={color} />
+      ) : (
+        <View className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+      )}
+    </View>
+  );
+}
 
 function Drawer() {
   const router = useRouter();
@@ -58,10 +94,15 @@ function Drawer() {
                 onPress={() => openSession(s)}
                 className="border-b border-border p-4 active:bg-muted"
               >
-                <Text className="font-semibold text-foreground" numberOfLines={1}>
-                  {s.name?.trim() || s.origin}
+                <View className="flex-row items-center gap-2">
+                  <SessionStatusIndicator session={s} />
+                  <Text className="flex-1 font-semibold text-foreground" numberOfLines={1}>
+                    {s.name?.trim() || s.origin}
+                  </Text>
+                </View>
+                <Text className="ml-8 text-xs text-muted-foreground" numberOfLines={1}>
+                  {s.id}
                 </Text>
-                <Text className="text-xs text-muted-foreground">{s.status}</Text>
               </Pressable>
             ))
           )}
