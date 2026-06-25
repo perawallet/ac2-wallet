@@ -129,6 +129,11 @@ module.exports = {
       // signing locally when $ANDROID_KEYSTORE_PASSWORD is absent. prebuild
       // regenerates build.gradle each run, so this re-applies every time.
       './plugins/withAndroidReleaseSigning',
+      // Strips READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE that expo-screen-capture
+      // contributes for its (unused) screenshot-detection API. We only use
+      // screenshot prevention (FLAG_SECURE), which needs no permission, and Play
+      // flags READ_MEDIA_IMAGES as a sensitive photo/video permission.
+      './plugins/withRemoveMediaPermissions',
     ],
     experiments: {
       typedRoutes: true,
