@@ -2,6 +2,17 @@ const { version } = require('./package.json');
 
 const ENV = process.env.APP_ENV || 'debug';
 
+// iOS build number / Android versionCode, driven by the monotonic CI
+// BUILD_NUMBER ($BITRISE_BUILD_NUMBER); falls back to 1 locally. Baking it here
+// means `expo prebuild` writes it straight into the native projects (iOS
+// CFBundleVersion, android/app/build.gradle versionCode), so the artifacts
+// carry it directly — the `android.injected.*` Gradle property proved
+// unreliable for the bundle task. Mirrors pera-rn's resolveBuildNumber (which
+// also adds a committed versionCodeBase to floor above existing store builds —
+// not needed here since AC2 is a fresh listing). The iOS Fastfile still runs
+// agvtool to propagate this to the PasskeyAutofill extension target.
+const buildNumber = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
+
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
   switch (ENV) {
@@ -52,6 +63,17 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: getIosBundleIdentifier(),
+      buildNumber: String(buildNumber),
+      infoPlist: {
+        // Declare export-compliance up front so TestFlight stops prompting for
+        // "Missing Compliance" on every upload. The app's crypto is P256/ECDSA
+        // signing + WebAuthn (auth, exempt), TLS/WebRTC transport (exempt), and
+        // AES-256-GCM keystore encryption (lib/keystore/crypto.ts) — all
+        // standard published algorithms in a mass-market app, claimed exempt
+        // under EAR License Exception ENC. Revisit if non-standard/proprietary
+        // confidentiality crypto is added.
+        ITSAppUsesNonExemptEncryption: false,
+      },
     },
     icon: './assets/icon.png',
     splash: {
@@ -69,6 +91,7 @@ module.exports = {
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: getAndroidPackage(),
+      versionCode: buildNumber,
       allowBackup: false,
     },
     web: {
@@ -119,6 +142,11 @@ module.exports = {
       // signing locally when $ANDROID_KEYSTORE_PASSWORD is absent. prebuild
       // regenerates build.gradle each run, so this re-applies every time.
       './plugins/withAndroidReleaseSigning',
+      // Strips READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE that expo-screen-capture
+      // contributes for its (unused) screenshot-detection API. We only use
+      // screenshot prevention (FLAG_SECURE), which needs no permission, and Play
+      // flags READ_MEDIA_IMAGES as a sensitive photo/video permission.
+      './plugins/withRemoveMediaPermissions',
     ],
     experiments: {
       typedRoutes: true,
