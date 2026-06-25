@@ -9,6 +9,13 @@ meta:
   bitrise.io:
     stack: ubuntu-noble-24.04-bitrise-2025-android
 
+# Pin Node so a stack change can't move it under us. The 2025 stacks default to
+# Node 24; this selects the preinstalled v22 (Expo SDK 54 / RN 0.81 supported).
+# `tools` runs before Git Clone so it can't read .nvmrc — keep this in sync with
+# the repo's .nvmrc (22), which pins Node for local dev.
+tools:
+  nodejs: 22:installed
+
 # ============================================================================
 # Pipelines
 #   nightly : internal build of both platforms (iOS app.perawallet.ac2-wallet,
@@ -148,15 +155,8 @@ workflows:
             - content: |-
                 #!/usr/bin/env bash
                 set -ex
-                # Pin Node to the repo's .nvmrc (22) so a Bitrise stack change
-                # can't move it under us. nvm + several Node versions ship on
-                # the stack; `nvm install` reads .nvmrc, installing if missing.
-                export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-                [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                nvm install
-                nvm use
+                # Node is pinned by the top-level `tools: nodejs` in this file.
                 node -v
-                # corepack must bind pnpm to the Node selected above.
                 corepack enable
                 corepack prepare pnpm@10.12.1 --activate
                 pnpm install --frozen-lockfile --prefer-offline
