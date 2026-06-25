@@ -2,6 +2,12 @@ const { version } = require('./package.json');
 
 const ENV = process.env.APP_ENV || 'debug';
 
+// Android versionCode from CI ($BITRISE_BUILD_NUMBER -> BUILD_NUMBER). Baking it
+// here means `expo prebuild` writes it into android/app/build.gradle's
+// defaultConfig, so the AAB/APK carries it directly — the `android.injected.*`
+// Gradle property is unreliable for the bundle task. Falls back to 1 locally.
+const androidVersionCode = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
+
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
   switch (ENV) {
@@ -79,6 +85,7 @@ module.exports = {
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: getAndroidPackage(),
+      versionCode: androidVersionCode,
       allowBackup: false,
     },
     web: {
