@@ -7,7 +7,7 @@ project_type: react-native
 # own meta block.
 meta:
   bitrise.io:
-    stack: linux-docker-android-24.04
+    stack: ubuntu-noble-24.04-bitrise-2025-android
 
 # ============================================================================
 # Pipelines
@@ -82,7 +82,7 @@ workflows:
   android:
     meta:
       bitrise.io:
-        stack: linux-docker-android-24.04
+        stack: ubuntu-noble-24.04-bitrise-2025-android
     before_run:
       - _prepare
     after_run:
@@ -95,7 +95,7 @@ workflows:
   android_play:
     meta:
       bitrise.io:
-        stack: linux-docker-android-24.04
+        stack: ubuntu-noble-24.04-bitrise-2025-android
     before_run:
       - _prepare
     after_run:
@@ -109,7 +109,7 @@ workflows:
   android_play_build:
     meta:
       bitrise.io:
-        stack: linux-docker-android-24.04
+        stack: ubuntu-noble-24.04-bitrise-2025-android
     before_run:
       - _prepare
     after_run:
