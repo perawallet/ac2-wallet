@@ -2,11 +2,16 @@ const { version } = require('./package.json');
 
 const ENV = process.env.APP_ENV || 'debug';
 
-// Android versionCode from CI ($BITRISE_BUILD_NUMBER -> BUILD_NUMBER). Baking it
-// here means `expo prebuild` writes it into android/app/build.gradle's
-// defaultConfig, so the AAB/APK carries it directly — the `android.injected.*`
-// Gradle property is unreliable for the bundle task. Falls back to 1 locally.
-const androidVersionCode = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
+// iOS build number / Android versionCode, driven by the monotonic CI
+// BUILD_NUMBER ($BITRISE_BUILD_NUMBER); falls back to 1 locally. Baking it here
+// means `expo prebuild` writes it straight into the native projects (iOS
+// CFBundleVersion, android/app/build.gradle versionCode), so the artifacts
+// carry it directly — the `android.injected.*` Gradle property proved
+// unreliable for the bundle task. Mirrors pera-rn's resolveBuildNumber (which
+// also adds a committed versionCodeBase to floor above existing store builds —
+// not needed here since AC2 is a fresh listing). The iOS Fastfile still runs
+// agvtool to propagate this to the PasskeyAutofill extension target.
+const buildNumber = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
 
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
@@ -58,6 +63,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: getIosBundleIdentifier(),
+      buildNumber: String(buildNumber),
       infoPlist: {
         // Declare export-compliance up front so TestFlight stops prompting for
         // "Missing Compliance" on every upload. The app's crypto is P256/ECDSA
@@ -85,7 +91,7 @@ module.exports = {
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: getAndroidPackage(),
-      versionCode: androidVersionCode,
+      versionCode: buildNumber,
       allowBackup: false,
     },
     web: {
