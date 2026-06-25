@@ -131,6 +131,11 @@ workflows:
             - content: |-
                 #!/usr/bin/env bash
                 set -e
+                # Surface the build number that drives iOS CFBundleVersion and
+                # Android versionCode. If BUILD_NUMBER is blank here, both
+                # platforms would ship build "1" and the stores reject the
+                # upload as a duplicate.
+                echo "BITRISE_BUILD_NUMBER='$BITRISE_BUILD_NUMBER'  BUILD_NUMBER='$BUILD_NUMBER'"
                 NOTES=$(git log -10 --pretty=format:'- %s' 2>/dev/null || echo "Build $BUILD_NUMBER")
                 envman add --key RELEASE_NOTES --value "$NOTES"
       - restore-cache@3:
