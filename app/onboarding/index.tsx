@@ -19,6 +19,7 @@ export default function Welcome() {
   const { createWallet } = useWalletSetup();
   const [consentVisible, setConsentVisible] = React.useState(true);
   const [ageConfirmed, setAgeConfirmed] = React.useState(false);
+  const [termsConfirmed, setTermsConfirmed] = React.useState(false);
   const [sanctionsConfirmed, setSanctionsConfirmed] = React.useState(false);
   const { colorScheme } = useColorScheme();
   const iconColor =
@@ -141,6 +142,25 @@ export default function Welcome() {
 
               {/* Checkboxes */}
               <View className="mt-5 gap-4">
+                {/* Terms confirmation */}
+                <Pressable
+                  className="flex-row items-start gap-3"
+                  onPress={() => setTermsConfirmed((v) => !v)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: termsConfirmed }}
+                  accessibilityLabel="I have read and agree to the Terms of Service"
+                >
+                  <MaterialIcons
+                    name={termsConfirmed ? 'check-box' : 'check-box-outline-blank'}
+                    size={22}
+                    color={termsConfirmed ? primaryColor : iconColor}
+                    style={{ marginTop: 1 }}
+                  />
+                  <Text className="flex-1 text-sm leading-relaxed text-card-foreground">
+                    I have read and agree to the Terms of Service.
+                  </Text>
+                </Pressable>
+
                 {/* Age confirmation */}
                 <Pressable
                   className="flex-row items-start gap-3"
@@ -187,7 +207,7 @@ export default function Welcome() {
             <View className="flex-shrink-0 px-5 pb-5 pt-4">
               <Button
                 onPress={continueAfterConsent}
-                disabled={!ageConfirmed || !sanctionsConfirmed}
+                disabled={!termsConfirmed || !ageConfirmed || !sanctionsConfirmed}
                 accessibilityLabel="I accept"
               >
                 <Text className="text-primary-foreground">I accept</Text>
