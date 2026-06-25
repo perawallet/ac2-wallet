@@ -143,6 +143,15 @@ workflows:
             - content: |-
                 #!/usr/bin/env bash
                 set -ex
+                # Pin Node to the repo's .nvmrc (22) so a Bitrise stack change
+                # can't move it under us. nvm + several Node versions ship on
+                # the stack; `nvm install` reads .nvmrc, installing if missing.
+                export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+                [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+                nvm install
+                nvm use
+                node -v
+                # corepack must bind pnpm to the Node selected above.
                 corepack enable
                 corepack prepare pnpm@10.12.1 --activate
                 pnpm install --frozen-lockfile --prefer-offline
