@@ -10,24 +10,44 @@ meta:
     stack: linux-docker-android-22.04
 
 # ============================================================================
-# Pipeline
+# Pipelines
 #   nightly : internal build of both platforms (iOS app.perawallet.ac2-wallet,
 #             Android app.perawallet.ac2).
 #             iOS -> TestFlight (internal), Android -> Firebase (ac2-alpha).
 #             Point a Bitrise scheduled build at this pipeline. When a build is
 #             good, promote it to production manually (submit the TestFlight
-#             build to the App Store; promote the Firebase/Play build).
+#             build to the App Store; promote the Play release).
+#   release : release build of both platforms. iOS -> TestFlight (same as
+#             nightly), Android -> Google Play internal track (AAB). Running
+#             both in one pipeline means they share the same
+#             $BITRISE_BUILD_NUMBER, so the version name (package.json) and
+#             build number / version code are identical across platforms. Run
+#             this manually for a release; then submit the TestFlight build in
+#             App Store Connect and promote the Play internal track to
+#             production once verified.
+#
+# To get the FIRST Android build onto Play (supply can't create a new app):
+# run the standalone `android_play_build` workflow, download the AAB from its
+# artifacts, and upload it by hand in the Play Console. After that first manual
+# upload the `release` pipeline's automated Play upload works.
 # ============================================================================
 pipelines:
   nightly:
     stages:
       - build: {}
+  release:
+    stages:
+      - release: {}
 
 stages:
   build:
     workflows:
       - ios: {}
       - android: {}
+  release:
+    workflows:
+      - ios: {}
+      - android_play: {}
 
 app:
   envs:
@@ -66,7 +86,35 @@ workflows:
     before_run:
       - _prepare
     after_run:
-      - _android
+      - _android_setup
+      - _android_firebase
+
+  # Release build -> Google Play internal track. Shares the Android setup with
+  # the nightly Firebase workflow; only the artifact (AAB vs APK) and upload
+  # target differ.
+  android_play:
+    meta:
+      bitrise.io:
+        stack: linux-docker-android-22.04
+    before_run:
+      - _prepare
+    after_run:
+      - _android_setup
+      - _android_play
+
+  # Build-only: produces a signed release AAB and publishes it as a build
+  # artifact, with NO Play upload. Run this once to get the first AAB for the
+  # manual Play Console upload (supply can't bootstrap a new app). Needs no
+  # Play service account — only the signing keystore secrets.
+  android_play_build:
+    meta:
+      bitrise.io:
+        stack: linux-docker-android-22.04
+    before_run:
+      - _prepare
+    after_run:
+      - _android_setup
+      - _android_play_build
 
   # --------------------------------------------------------------------------
   # Shared utility workflows (prefixed with _ so they are not directly run).
@@ -181,20 +229,23 @@ workflows:
           inputs:
             - deploy_path: ./build/ios
 
-  _android:
+  # Shared Android setup: JDK, release keystore, ccache, cache restore, prebuild.
+  # Consumed by both _android_firebase (nightly) and _android_play (release).
+  # The service-account secret differs per target, so it's decoded in each of
+  # those workflows rather than here.
+  _android_setup:
     steps:
       - set-java-version@1:
           inputs:
             - set_java_version: '17'
       - script@1:
-          title: Decode signing keystore + Firebase service account
+          title: Decode signing keystore
           inputs:
             - content: |-
                 #!/usr/bin/env bash
                 set -e
                 mkdir -p config
                 echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > config/release.keystore
-                echo "$FIREBASE_SERVICE_ACCOUNT_BASE64" | base64 --decode > config/firebase-service-account.json
                 envman add --key ANDROID_KEYSTORE_PATH --value "$BITRISE_SOURCE_DIR/config/release.keystore"
                 # Fail fast (seconds, not a 20-min build) with a clear error if
                 # the keystore decode / store password / alias are wrong.
@@ -240,6 +291,18 @@ workflows:
                 #!/usr/bin/env bash
                 set -ex
                 pnpm expo prebuild --platform android --clean
+
+  # Nightly path: build the release APK and push it to Firebase App Distribution.
+  _android_firebase:
+    steps:
+      - script@1:
+          title: Decode Firebase service account
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                mkdir -p config
+                echo "$FIREBASE_SERVICE_ACCOUNT_BASE64" | base64 --decode > config/firebase-service-account.json
       - script@1:
           title: Build APK + upload to Firebase App Distribution
           inputs:
@@ -269,3 +332,89 @@ workflows:
       - deploy-to-bitrise-io@2:
           inputs:
             - deploy_path: android/app/build/outputs/apk/release
+
+  # Release path: build the release AAB and upload it to the Google Play
+  # internal track. The Play Developer API service-account JSON comes from the
+  # Bitrise integration (uploaded under Code Signing & Files, exposed as
+  # $BITRISEIO_SERVICE_ACCOUNT_JSON_KEY_URL). Falls back to a base64 secret
+  # (PLAY_SERVICE_ACCOUNT_JSON_BASE64) if the URL isn't set.
+  _android_play:
+    steps:
+      - script@1:
+          title: Fetch Google Play service account
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                mkdir -p config
+                if [ -n "$BITRISEIO_SERVICE_ACCOUNT_JSON_KEY_URL" ]; then
+                  curl -fsSL "$BITRISEIO_SERVICE_ACCOUNT_JSON_KEY_URL" -o config/play-service-account.json
+                elif [ -n "$PLAY_SERVICE_ACCOUNT_JSON_BASE64" ]; then
+                  echo "$PLAY_SERVICE_ACCOUNT_JSON_BASE64" | base64 --decode > config/play-service-account.json
+                else
+                  echo "No Play service account: set the Bitrise service-account file or PLAY_SERVICE_ACCOUNT_JSON_BASE64" >&2
+                  exit 1
+                fi
+      - script@1:
+          title: Build AAB + upload to Google Play (internal)
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -ex
+                bundle exec fastlane android deploy_play_store
+      - script@1:
+          title: ccache stats
+          is_always_run: true
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                ccache -s || true
+      - save-cache@1:
+          title: Save Gradle caches
+          inputs:
+            - key: android-gradle-{{ checksum "pnpm-lock.yaml" }}
+            - paths: |-
+                ~/.gradle/caches
+                ~/.gradle/wrapper
+      - save-cache@1:
+          title: Save ccache
+          inputs:
+            - key: android-ccache-{{ checksum "pnpm-lock.yaml" }}
+            - paths: ~/.ccache
+      - deploy-to-bitrise-io@2:
+          inputs:
+            - deploy_path: android/app/build/outputs/bundle/release
+
+  # Build-only path: build the signed release AAB and publish it as a Bitrise
+  # artifact, no Play upload. Used for the first manual Play Console upload.
+  _android_play_build:
+    steps:
+      - script@1:
+          title: Build signed release AAB
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -ex
+                bundle exec fastlane android build_play_aab
+      - script@1:
+          title: ccache stats
+          is_always_run: true
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                ccache -s || true
+      - save-cache@1:
+          title: Save Gradle caches
+          inputs:
+            - key: android-gradle-{{ checksum "pnpm-lock.yaml" }}
+            - paths: |-
+                ~/.gradle/caches
+                ~/.gradle/wrapper
+      - save-cache@1:
+          title: Save ccache
+          inputs:
+            - key: android-ccache-{{ checksum "pnpm-lock.yaml" }}
+            - paths: ~/.ccache
+      - deploy-to-bitrise-io@2:
+          inputs:
+            - deploy_path: android/app/build/outputs/bundle/release
