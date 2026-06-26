@@ -61,7 +61,7 @@ module.exports = {
     userInterfaceStyle: 'automatic',
     newArchEnabled: true,
     ios: {
-      supportsTablet: true,
+      supportsTablet: false,
       bundleIdentifier: getIosBundleIdentifier(),
       buildNumber: String(buildNumber),
       infoPlist: {
