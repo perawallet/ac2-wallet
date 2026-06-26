@@ -1,9 +1,12 @@
 import { formatTime } from '@/components/chat/format';
+import { Modal } from '@/components/Modal';
 import { Button } from '@/components/ui/button';
 import { RawContentViewer } from '@/components/ui/RawContentViewer';
 import { Text } from '@/components/ui/text';
+import { getTransactionSummary, type TransactionSummary } from '@/lib/algorand/transactions';
 import { cn } from '@/lib/utils';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
+import { truncateAddress } from '@/utils/format';
 import type {
   AC2KeyRequest as KeyRequestMessage,
   AC2KeyResponse as KeyResponseMessage,
@@ -13,7 +16,59 @@ import type {
 } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as React from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+
+function TxnDetails({ txn }: { txn: TransactionSummary }) {
+  const from = 'from' in txn ? txn.from.toString() : undefined;
+  const to = 'to' in txn ? txn.to.toString() : undefined;
+  const amount = 'amount' in txn ? txn.amount : undefined;
+  const assetId = 'assetId' in txn ? txn.assetId : undefined;
+  const appId = 'appId' in txn ? txn.appId : undefined;
+  return (
+    <View className="gap-1">
+      {from && (
+        <View className="flex-row items-start gap-2">
+          <Text className="w-12 text-xs font-medium text-slate-500 dark:text-slate-400">From:</Text>
+          <Text className="flex-1 font-mono text-xs text-foreground">
+            {truncateAddress(from, 8, 8)}
+          </Text>
+        </View>
+      )}
+      {to && (
+        <View className="flex-row items-start gap-2">
+          <Text className="w-12 text-xs font-medium text-slate-500 dark:text-slate-400">To:</Text>
+          <Text className="flex-1 font-mono text-xs text-foreground">
+            {truncateAddress(to, 8, 8)}
+          </Text>
+        </View>
+      )}
+      {amount !== undefined && (
+        <View className="flex-row items-start gap-2">
+          <Text className="w-12 text-xs font-medium text-slate-500 dark:text-slate-400">
+            Amount:
+          </Text>
+          <Text className="flex-1 font-mono text-xs text-foreground">
+            {amount.toLocaleString()}
+          </Text>
+        </View>
+      )}
+      {assetId !== undefined && (
+        <View className="flex-row items-start gap-2">
+          <Text className="w-12 text-xs font-medium text-slate-500 dark:text-slate-400">
+            Asset:
+          </Text>
+          <Text className="flex-1 font-mono text-xs text-foreground">{assetId.toString()}</Text>
+        </View>
+      )}
+      {appId !== undefined && (
+        <View className="flex-row items-start gap-2">
+          <Text className="w-12 text-xs font-medium text-slate-500 dark:text-slate-400">App:</Text>
+          <Text className="flex-1 font-mono text-xs text-foreground">{appId.toString()}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 // Compact label chip used across type-specific summary rows.
 function Badge({ label }: { label: string }) {
@@ -88,6 +143,12 @@ function Ac2MessageCard({
 
   const expired = actionable?.expires_time !== undefined && actionable.expires_time * 1000 < now;
 
+  const txnSummary =
+    req?.body.sig_hint === 'transaction-algorand' ? getTransactionSummary(req.body.payload) : null;
+  const isAppCall = txnSummary ? 'appId' in txnSummary : false;
+
+  const [appCallInfoVisible, setAppCallInfoVisible] = React.useState(false);
+
   // Outbound response/rejection casts.
   const sigResponse =
     entry.envelope.type === 'ac2/SigningResponse'
@@ -121,14 +182,32 @@ function Ac2MessageCard({
       {/* ── ac2/SigningRequest ─────────────────────────────── */}
       {req && (
         <View className="mt-2 gap-1.5">
-          <View className="flex-row items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
-            <MaterialIcons name="warning-amber" size={16} color="#D97706" />
-            <Text className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
-              You are about to sign a transaction. This can affect your account and funds. Only
-              approve if you trust this request.
-            </Text>
-          </View>
+          <Pressable
+            onPress={isAppCall ? () => setAppCallInfoVisible(true) : undefined}
+            className="rounded-lg"
+          >
+            <View className="flex-row items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+              <MaterialIcons name="warning-amber" size={16} color="#D97706" />
+              <Text className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                {isAppCall
+                  ? "Smart contract call — reject if you don't understand what you're signing."
+                  : 'You are about to sign a transaction. Only approve if you trust this request.'}
+              </Text>
+              {isAppCall && <MaterialIcons name="info-outline" size={14} color="#D97706" />}
+            </View>
+          </Pressable>
           <Text className="text-sm font-medium text-foreground">{req.body.description}</Text>
+
+          {/* ── Algorand Transaction Details ──────────────── */}
+          {txnSummary && (
+            <View className="mt-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-900/30">
+              <Text className="mb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Transaction Details
+              </Text>
+              <TxnDetails txn={txnSummary} />
+            </View>
+          )}
+
           <View className="flex-row flex-wrap gap-1">
             <Badge label={`key: ${req.body.key_type ?? 'account'}`} />
             {req.body.sig_hint && <Badge label={req.body.sig_hint} />}
@@ -305,6 +384,21 @@ function Ac2MessageCard({
       <Text className="mt-1 self-end text-[10px] text-muted-foreground">
         {formatTime(entry.receivedAt)}
       </Text>
+
+      {/* ── Smart contract info modal ─────────────────────── */}
+      <Modal
+        visible={appCallInfoVisible}
+        onClose={() => setAppCallInfoVisible(false)}
+        title="Smart Contract Call"
+        titleIcon={<MaterialIcons name="warning" size={20} color="#D97706" />}
+      >
+        <Text className="text-sm leading-relaxed text-foreground">
+          Smart contracts can do anything their code says, including draining your assets if the
+          contract is malicious. Where possible the Wallet shows the action in plain language. If
+          the data appears as raw JSON below, do not approve unless you understand what you are
+          signing.
+        </Text>
+      </Modal>
     </View>
   );
 }
