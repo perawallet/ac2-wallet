@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@algorandfoundation/ac2-sdk": "1.0.0-canary.1",
-    "@algorandfoundation/keystore": "1.0.0-canary.16",
+    "@algorandfoundation/keystore": "npm:@wjbeau/keystore@1.0.0-canary.16",
     "@algorandfoundation/liquid-client": "1.0.0-canary.8",
     "@roamhq/wrtc": "^0.10.0",
     "@sinclair/typebox": "^0.32.0",
