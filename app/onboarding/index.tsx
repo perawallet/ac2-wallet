@@ -96,9 +96,10 @@ export default function Welcome() {
         <View className="flex-1 items-center justify-center bg-black/50 p-5">
           <View className="w-full max-h-[90%] rounded-3xl bg-card shadow-lg">
             {/* Header */}
-            <View className="flex-shrink-0 border-b border-border px-5 pb-4 pt-5">
+            <View className="flex-shrink-0 flex-row items-center gap-2 border-b border-border px-5 pb-4 pt-5">
+              <MaterialIcons name="warning" size={20} color="#D97706" />
               <Text className="text-lg font-bold text-card-foreground">
-                ⚠️ Please read before you accept
+                Please read before you accept
               </Text>
             </View>
 
