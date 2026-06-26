@@ -73,6 +73,13 @@ module.exports = {
         // under EAR License Exception ENC. Revisit if non-standard/proprietary
         // confidentiality crypto is added.
         ITSAppUsesNonExemptEncryption: false,
+        // react-native-keychain reads biometry-protected items on launch.
+        // On a physical device SecItemCopyMatching routes through
+        // LocalAuthentication/TCC, which hard-aborts the process (TCC 0) unless
+        // this usage string is present. The Simulator has no TCC biometric
+        // enforcement, which is why the crash only shows up on TestFlight.
+        NSFaceIDUsageDescription:
+          'AC2 uses Face ID to unlock your wallet and authorize sensitive actions.',
       },
     },
     icon: './assets/icon.png',
