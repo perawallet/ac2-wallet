@@ -16,6 +16,7 @@ import {
 import { clearAgentIdentitiesByConnection } from '@/stores/agentIdentities';
 import { clearMessages, clearMessagesByConnection, messagesStore } from '@/stores/messages';
 import { removeSession, renameSession } from '@/stores/sessions';
+import { localStorage } from '@/stores/mmkv-local';
 import { clearCurrentConnection, setActiveThid } from '@/stores/ui';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
@@ -38,7 +39,9 @@ interface ChatScreenProps {
 function ChatScreen({ origin, requestId }: ChatScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [bannerDismissed, setBannerDismissed] = React.useState(false);
+  const [bannerDismissed, setBannerDismissed] = React.useState(() =>
+    Boolean(localStorage.getBoolean('mnemonicBackedUp')),
+  );
   const {
     isConnected,
     isError,
