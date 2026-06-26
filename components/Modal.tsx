@@ -15,10 +15,11 @@ interface ModalProps extends RNModalProps {
   visible: boolean;
   onClose: () => void;
   title?: string;
+  titleIcon?: React.ReactNode;
   children: React.ReactNode;
 }
 
-export const Modal = ({ visible, onClose, title, children, ...props }: ModalProps) => {
+export const Modal = ({ visible, onClose, title, titleIcon, children, ...props }: ModalProps) => {
   const { colorScheme } = useColorScheme();
   const iconColor =
     colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
@@ -34,11 +35,12 @@ export const Modal = ({ visible, onClose, title, children, ...props }: ModalProp
       <View className="flex-1 items-center justify-center bg-black/50 p-5">
         <View className="max-h-[80%] w-full rounded-3xl bg-card shadow-lg">
           <View className="flex-row items-center justify-between border-b border-border p-5">
-            {title ? (
-              <Text className="text-lg font-bold text-card-foreground">{title}</Text>
-            ) : (
-              <View />
-            )}
+            <View className="flex-row items-center gap-2">
+              {titleIcon}
+              {title ? (
+                <Text className="text-lg font-bold text-card-foreground">{title}</Text>
+              ) : null}
+            </View>
             <Pressable onPress={onClose} accessibilityRole="button" className="p-1">
               <MaterialIcons name="close" size={24} color={iconColor} />
             </Pressable>

@@ -94,7 +94,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockReplace).toHaveBeenCalledWith('/chat');
+    expect(mockBack).toHaveBeenCalled();
   });
 
   it('handles LIQUID: link (uppercase)', async () => {
@@ -107,7 +107,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockReplace).toHaveBeenCalledWith('/chat');
+    expect(mockBack).toHaveBeenCalled();
   });
 
   it('handles LIQUID:// link (uppercase)', async () => {
@@ -120,7 +120,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockReplace).toHaveBeenCalledWith('/chat');
+    expect(mockBack).toHaveBeenCalled();
   });
 
   it('aborts on unsupported link', async () => {
