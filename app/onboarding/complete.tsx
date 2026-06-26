@@ -5,9 +5,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
+import { localStorage } from '@/stores/mmkv-local';
 
 export default function CompleteScreen() {
   const router = useRouter();
+  React.useEffect(() => {
+    localStorage.set('mnemonicBackedUp', true);
+  }, []);
   return (
     <Screen className="items-center justify-center gap-4 p-8">
       <View className="h-20 w-20 items-center justify-center rounded-full bg-primary">
