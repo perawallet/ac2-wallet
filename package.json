@@ -5,7 +5,7 @@
   "workspaces": [
     "packages/*"
   ],
-  "main": "expo-router/entry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android --port 8082",

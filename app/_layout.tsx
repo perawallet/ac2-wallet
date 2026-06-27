@@ -1,10 +1,7 @@
-// MUST be first: installs `global.crypto` before any `@noble/hashes` import
-// is evaluated. See `lib/runtime/install-crypto.ts`.
-import '@/lib/runtime/install-crypto';
-// Installs `global.Buffer` before any algokit-utils module (which uses a bare
-// global `Buffer`) is evaluated.
-import '@/lib/runtime/install-buffer';
+// The crypto/buffer polyfills are installed by the custom entry point
+// (`index.js`) before any route module is evaluated. See that file for why.
 import { Drawer } from '@/components/navigation/Drawer';
+import { LoadingScreen } from '@/components/LoadingScreen';
 import '@/global.css';
 import { bootstrap } from '@/lib/keystore/bootstrap';
 import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
@@ -20,6 +17,7 @@ import { ReactKeystoreOptions } from '@algorandfoundation/react-native-keystore'
 import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ThemeProvider } from '@react-navigation/native';
+import { useStore } from '@tanstack/react-store';
 import { useEventListener } from 'expo';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -79,6 +77,43 @@ export function useFontsLoaded() {
   return context.fontsLoaded;
 }
 
+/**
+ * Single gate for the whole app: until fonts have loaded and the keystore has
+ * finished its first bootstrap (`status !== 'loading'`), render the loading
+ * screen instead of the navigation tree. This guarantees no authenticated
+ * screen (wallet / credentials / menu / chat) mounts before its data is
+ * available on initial launch.
+ *
+ * The gate only blocks the *first* load. Later re-bootstraps (e.g. passkey
+ * autofill events) briefly flip status back to 'loading' to refresh keys in
+ * the background; tearing the navigation tree down there would bounce the user
+ * out of whatever screen they're on, so once we've loaded once we stay mounted.
+ */
+function RootNavigation({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const status = useStore(keyStore, (state) => state.status);
+  const [hasLoadedOnce, setHasLoadedOnce] = React.useState(false);
+
+  const ready = fontsLoaded && status !== 'loading';
+  React.useEffect(() => {
+    if (ready) setHasLoadedOnce(true);
+  }, [ready]);
+
+  if (!hasLoadedOnce) {
+    return <LoadingScreen fontsLoaded={fontsLoaded} />;
+  }
+
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="scan" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="history" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="profile" options={{ presentation: 'modal' }} />
+      </Stack>
+      <Drawer />
+    </>
+  );
+}
+
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
   const [fontsLoaded] = useFonts({
@@ -113,12 +148,7 @@ export default function RootLayout() {
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
         <WalletProvider provider={provider}>
           <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="scan" options={{ presentation: 'modal' }} />
-              <Stack.Screen name="history" options={{ presentation: 'modal' }} />
-              <Stack.Screen name="profile" options={{ presentation: 'modal' }} />
-            </Stack>
-            <Drawer />
+            <RootNavigation fontsLoaded={fontsLoaded} />
           </ThemeProvider>
         </WalletProvider>
       </PreventScreenshotProvider>
