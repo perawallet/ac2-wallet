@@ -248,7 +248,7 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
     >
       {!bannerDismissed && (
         <Pressable
-          onPress={() => router.push('/onboarding/import')}
+          onPress={() => router.push('/onboarding/backup')}
           className="flex-row items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30"
         >
           <MaterialIcons name="warning-amber" size={18} color="#D97706" />
