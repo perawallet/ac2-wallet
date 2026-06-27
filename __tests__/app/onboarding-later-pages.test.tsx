@@ -2,6 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react-native';
 import BackupScreen from '@/app/onboarding/backup';
 import CompleteScreen from '@/app/onboarding/complete';
 
+jest.mock('react-native-mmkv', () => ({
+  createMMKV: () => ({ getString: () => undefined, set: jest.fn(), delete: jest.fn() }),
+}));
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn(), replace: jest.fn() }) }));
 jest.mock(
   'react-native-safe-area-context',
