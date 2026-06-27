@@ -7,6 +7,8 @@ import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Alert, Linking, Pressable, Switch, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { networkStore, setNetwork } from '@/stores/network';
 
 function SectionHeader({ label }: { label: string }) {
   return (
@@ -48,6 +50,14 @@ export function MenuScreen() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const palette = isDark ? THEME.dark : THEME.light;
+  const [currentNetwork, setCurrentNetwork] = useState(networkStore.state.network);
+
+  useEffect(() => {
+    const subscription = networkStore.subscribe(() => {
+      setCurrentNetwork(networkStore.state.network);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const termsUrl = Constants.expoConfig?.extra?.termsOfServiceUrl as string | undefined;
   const privacyUrl = Constants.expoConfig?.extra?.privacyPolicyUrl as string | undefined;
@@ -86,6 +96,18 @@ export function MenuScreen() {
     <Screen className="justify-start p-4">
       <SectionHeader label="Preferences" />
       <View className="overflow-hidden rounded-xl">
+        <MenuRow
+          icon="language"
+          label={currentNetwork === 'mainnet' ? 'MainNet' : 'TestNet'}
+          right={
+            <Switch
+              value={currentNetwork === 'mainnet'}
+              onValueChange={(value) => setNetwork(value ? 'mainnet' : 'testnet')}
+              trackColor={{ false: palette.border, true: palette.primary }}
+              thumbColor={palette.background}
+            />
+          }
+        />
         <MenuRow
           icon="dark-mode"
           label="Dark Mode"
