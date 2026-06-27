@@ -3,7 +3,7 @@
 This Expo / React-Native app is the **controller / wallet** side of the
 [AC2](https://github.com/algorandfoundation/ac2-sdk) protocol. It pairs
 with the reference plugin in
-[`packages/ac2-open-claw-reference`](../packages/ac2-open-claw-reference/README.md),
+[`ac2-open-claw-reference`](https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference),
 which is the **agent** side hosted in OpenClaw.
 
 ## What the controller contributes to AC2
@@ -62,4 +62,4 @@ consume.
    on `ac2-heartbeat`.
 
 For the agent-side counterpart see
-[`packages/ac2-open-claw-reference/README.md`](../packages/ac2-open-claw-reference/README.md).
+[`ac2-open-claw-reference`](https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference).
