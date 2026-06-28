@@ -7,6 +7,7 @@ import { localStorage } from '@/stores/mmkv-local';
 import { sessionsStore } from '@/stores/sessions';
 import { setCurrentConnection, uiStore } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { Modal as RNModal, ScrollView, View } from 'react-native';
@@ -72,10 +73,9 @@ export default function ChatTab() {
         >
           <View className="flex-1 items-center justify-center bg-black/50 p-5">
             <View className="w-full rounded-3xl bg-card shadow-lg">
-              <View className="border-b border-border px-5 pb-4 pt-5">
-                <Text className="text-lg font-bold text-card-foreground">
-                  ⚠️ Connect to AI Agents
-                </Text>
+              <View className="flex-row items-center gap-2 border-b border-border px-5 pb-4 pt-5">
+                <MaterialIcons name="warning" size={20} color="#D97706" />
+                <Text className="text-lg font-bold text-card-foreground">Connect to AI Agents</Text>
               </View>
               <ScrollView className="px-5 py-4">
                 <Text className="text-sm leading-relaxed text-muted-foreground">
