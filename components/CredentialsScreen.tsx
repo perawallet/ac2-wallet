@@ -30,12 +30,10 @@ function PasskeyCard({
   passkey,
   iconColor,
   onDelete,
-  deleting,
 }: {
   passkey: Passkey;
   iconColor: string;
   onDelete: () => void;
-  deleting: boolean;
 }) {
   const created = formatDate(passkey.createdAt);
   return (
@@ -56,14 +54,9 @@ function PasskeyCard({
           accessibilityRole="button"
           accessibilityLabel={`Delete ${passkey.name || 'credential'}`}
           className="h-9 w-9 items-center justify-center rounded-full bg-muted"
-          disabled={deleting}
           onPress={onDelete}
         >
-          <MaterialIcons
-            name={deleting ? 'hourglass-empty' : 'delete-outline'}
-            size={20}
-            color={deleting ? iconColor : '#DC2626'}
-          />
+          <MaterialIcons name="delete-outline" size={20} color="#DC2626" />
         </Pressable>
       </View>
       <View className="gap-1">
@@ -75,24 +68,11 @@ function PasskeyCard({
 }
 
 export function CredentialsScreen() {
-  const { passkeys, passkey, status } = useProvider();
+  const { passkeys, passkey } = useProvider();
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
-  const [deletingIds, setDeletingIds] = React.useState<Set<string>>(new Set());
-
-  const providerReady = status !== 'loading' && typeof passkey?.store?.removePasskey === 'function';
-
   const handleDelete = React.useCallback(
     (target: Passkey) => {
-      if (!providerReady) {
-        Alert.alert(
-          'Please wait',
-          'Credentials are still loading. Try deleting again in a moment.',
-          [{ text: 'OK' }],
-        );
-        return;
-      }
-
       Alert.alert(
         'Delete credential?',
         `Are you sure you want to delete ${target.name || 'this credential'}? This cannot be undone.`,
@@ -102,35 +82,19 @@ export function CredentialsScreen() {
             text: 'Yes',
             style: 'destructive',
             onPress: async () => {
-              let canDelete = false;
-              setDeletingIds((prev) => {
-                if (prev.has(target.id)) return prev;
-                canDelete = true;
-                const next = new Set(prev);
-                next.add(target.id);
-                return next;
-              });
-              if (!canDelete) return;
-
               try {
                 await passkey.store.removePasskey(target.id);
               } catch {
                 Alert.alert('Delete failed', 'Unable to delete this credential right now.', [
                   { text: 'OK' },
                 ]);
-              } finally {
-                setDeletingIds((prev) => {
-                  const next = new Set(prev);
-                  next.delete(target.id);
-                  return next;
-                });
               }
             },
           },
         ],
       );
     },
-    [passkey, providerReady],
+    [passkey],
   );
 
   if (passkeys.length === 0) {
@@ -158,7 +122,6 @@ export function CredentialsScreen() {
             key={currentPasskey.id}
             passkey={currentPasskey}
             iconColor={palette.primary}
-            deleting={deletingIds.has(currentPasskey.id)}
             onDelete={() => handleDelete(currentPasskey)}
           />
         ))}
