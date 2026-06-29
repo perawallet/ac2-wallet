@@ -2,6 +2,10 @@ import { render, screen, fireEvent } from '@testing-library/react-native';
 import { Ac2MessageCard } from '@/components/chat/Ac2MessageCard';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
 
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 const baseEntry = (envelope: Record<string, unknown>): Ac2MessageEntry =>
   ({
     id: 'e1',
@@ -91,7 +95,6 @@ describe('Ac2MessageCard — fund-moving payment', () => {
     expect(screen.getByText('5 ALGO')).toBeTruthy();
     expect(screen.getByText('Sends')).toBeTruthy();
     expect(screen.queryByText('Safe · no funds involved')).toBeNull();
-    jest.restoreAllMocks();
   });
 });
 
@@ -126,6 +129,5 @@ describe('Ac2MessageCard — app-call warning banner', () => {
     });
     render(<Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />);
     expect(screen.getByText(/Smart contract call/)).toBeTruthy();
-    jest.restoreAllMocks();
   });
 });

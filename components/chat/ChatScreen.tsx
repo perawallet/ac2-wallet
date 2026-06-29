@@ -8,7 +8,7 @@ import { Text } from '@/components/ui/text';
 import { useAc2Responders } from '@/hooks/useAc2Responders';
 import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
-import { deriveOutcomeByThid, isMergedResponse } from '@/lib/ac2/messageDisplay';
+import { deriveOutcomeByThid, isMergedResponse, isResponseEnvelope } from '@/lib/ac2/messageDisplay';
 import {
   ac2MessagesStore,
   clearAc2Messages,
@@ -131,7 +131,7 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
     for (const m of ac2Messages) {
       if (m.direction !== 'outbound') continue;
       const t = m.envelope.type;
-      if (t === 'ac2/SigningResponse' || t === 'ac2/SigningRejected' || t === 'ac2/KeyResponse') {
+      if (isResponseEnvelope(t)) {
         if (m.envelope.thid) set.add(m.envelope.thid);
       }
     }
