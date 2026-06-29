@@ -96,7 +96,7 @@ describe('Ac2MessageCard — fund-moving payment', () => {
 });
 
 describe('Ac2MessageCard — key request', () => {
-  it('shows the operation text and Approve action', () => {
+  it('shows the operation text and Approve and Decline actions', () => {
     const entry = baseEntry({
       type: 'ac2/KeyRequest',
       id: 'req-3',
@@ -105,5 +105,27 @@ describe('Ac2MessageCard — key request', () => {
     render(<Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />);
     expect(screen.getByText('Sign on your behalf')).toBeTruthy();
     expect(screen.getByText('Approve')).toBeTruthy();
+    expect(screen.getByText('Decline')).toBeTruthy();
+  });
+});
+
+describe('Ac2MessageCard — app-call warning banner', () => {
+  it('shows the smart contract call warning for app-call transactions', () => {
+    jest
+      .spyOn(require('@/lib/algorand/transactions'), 'getTransactionSummary')
+      .mockReturnValue({
+        type: require('@algorandfoundation/algokit-utils/transact').TransactionType.AppCall,
+        appId: 123n,
+        from: { toString: () => 'SENDER' },
+        args: undefined,
+      });
+    const entry = baseEntry({
+      type: 'ac2/SigningRequest',
+      id: 'req-4',
+      body: { description: 'Call a smart contract', sig_hint: 'transaction-algorand', payload: 'AA==' },
+    });
+    render(<Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />);
+    expect(screen.getByText(/Smart contract call/)).toBeTruthy();
+    jest.restoreAllMocks();
   });
 });
