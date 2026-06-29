@@ -32,14 +32,17 @@ describe('Ac2MessageCard — non-fund signing request', () => {
     body: { description: 'Confirm it is really you', key_type: 'identity', display_hint: 'text' },
   });
 
-  it('shows the description, safe badge, and Decline/Approve actions', () => {
+  it('shows the description and Decline/Approve actions, with no badge or warning', () => {
     render(
       <Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />,
     );
     expect(screen.getByText('Confirm it is really you')).toBeTruthy();
-    expect(screen.getByText('Safe · no funds involved')).toBeTruthy();
     expect(screen.getByText('Decline')).toBeTruthy();
     expect(screen.getByText('Approve')).toBeTruthy();
+    // Non-fund-moving requests carry no safety badge (we can't attest safety)
+    // and no transaction warning.
+    expect(screen.queryByText('Safe · no funds involved')).toBeNull();
+    expect(screen.queryByText(/about to sign a transaction/)).toBeNull();
     // No protocol noise on the face.
     expect(screen.queryByText('ac2/SigningRequest')).toBeNull();
   });
@@ -77,7 +80,7 @@ describe('Ac2MessageCard — non-fund signing request', () => {
 
 describe('Ac2MessageCard — fund-moving payment', () => {
   // amount 5 ALGO encoded? We rely on getTransactionSummary; mock it.
-  it('shows a plain-language value summary and no safe badge', () => {
+  it('shows a value summary plus the transaction warning, and no safe badge', () => {
     jest
       .spyOn(require('@/lib/algorand/transactions'), 'getTransactionSummary')
       .mockReturnValue({
@@ -94,6 +97,9 @@ describe('Ac2MessageCard — fund-moving payment', () => {
     render(<Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />);
     expect(screen.getByText('5 ALGO')).toBeTruthy();
     expect(screen.getByText('Sends')).toBeTruthy();
+    // Legal-approved generic transaction warning, but not the smart-contract one.
+    expect(screen.getByText(/about to sign a transaction/)).toBeTruthy();
+    expect(screen.queryByText(/Smart contract call/)).toBeNull();
     expect(screen.queryByText('Safe · no funds involved')).toBeNull();
   });
 });

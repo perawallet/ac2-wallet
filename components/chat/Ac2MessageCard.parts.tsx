@@ -42,18 +42,6 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   );
 }
 
-/** Green reassurance pill for non-fund-moving requests. */
-export function SafeBadge() {
-  return (
-    <View className="flex-row items-center gap-1.5 self-start rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 dark:border-emerald-800 dark:bg-emerald-950/30">
-      <View className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-        Safe · no funds involved
-      </Text>
-    </View>
-  );
-}
-
 /** Plain-language "what moves" block for fund-moving transactions. */
 export function ValueSummary({ summary }: { summary: ValueSummaryData }) {
   return (

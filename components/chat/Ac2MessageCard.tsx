@@ -1,7 +1,6 @@
 import { formatTime } from '@/components/chat/format';
 import {
   OutcomeRow,
-  SafeBadge,
   TechnicalDetails,
   ValueSummary,
 } from '@/components/chat/Ac2MessageCard.parts';
@@ -144,27 +143,30 @@ function Ac2MessageCard({
         </Text>
       </View>
 
-      {/* ── App-call warning (kept prominent) ──────────────── */}
-      {isAppCall && (
-        <Pressable onPress={() => setAppCallInfoVisible(true)} className="mt-2 rounded-lg">
+      {/* ── Transaction warning (legal-approved copy; fund-moving only) ─── */}
+      {fundMoving && (
+        <Pressable
+          onPress={isAppCall ? () => setAppCallInfoVisible(true) : undefined}
+          className="mt-2 rounded-lg"
+        >
           <View className="flex-row items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
             <MaterialIcons name="warning-amber" size={16} color="#D97706" />
             <Text className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
-              Smart contract call — reject if you don&apos;t understand what you&apos;re signing.
+              {isAppCall
+                ? "Smart contract call — reject if you don't understand what you're signing."
+                : 'You are about to sign a transaction. Only approve if you trust this request.'}
             </Text>
-            <MaterialIcons name="info-outline" size={14} color="#D97706" />
+            {isAppCall && <MaterialIcons name="info-outline" size={14} color="#D97706" />}
           </View>
         </Pressable>
       )}
 
-      {/* ── Safety / value cue ─────────────────────────────── */}
-      <View className="mt-2">
-        {fundMoving ? (
-          valueSummary && <ValueSummary summary={valueSummary} />
-        ) : (
-          <SafeBadge />
-        )}
-      </View>
+      {/* ── Value summary (fund-moving) ────────────────────── */}
+      {fundMoving && valueSummary && (
+        <View className="mt-2">
+          <ValueSummary summary={valueSummary} />
+        </View>
+      )}
 
       {/* ── Expiry countdown ───────────────────────────────── */}
       {actionable?.expires_time && !outcome && (

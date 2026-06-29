@@ -2,20 +2,12 @@ import { render, screen, fireEvent } from '@testing-library/react-native';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
 import {
   OutcomeRow,
-  SafeBadge,
   TechnicalDetails,
   ValueSummary,
 } from '@/components/chat/Ac2MessageCard.parts';
 
 const env = (type: string, body: Record<string, unknown> = {}) =>
   ({ type, body }) as unknown as Ac2MessageEntry['envelope'];
-
-describe('SafeBadge', () => {
-  it('renders the no-funds reassurance', () => {
-    render(<SafeBadge />);
-    expect(screen.getByText('Safe · no funds involved')).toBeTruthy();
-  });
-});
 
 describe('ValueSummary', () => {
   it('shows the lead, amount, and truncated recipient', () => {
