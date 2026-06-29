@@ -141,10 +141,7 @@ export function TechnicalDetails({
               <TxnDetails txn={txnSummary} />
             </View>
           )}
-          <RawContentViewer
-            contentType="json"
-            content={JSON.stringify(envelope.body, null, 2)}
-          />
+          <RawContentViewer contentType="json" content={JSON.stringify(envelope.body, null, 2)} />
         </View>
       )}
     </View>

@@ -62,9 +62,7 @@ export type Outcome = 'approved' | 'rejected';
 
 export function isResponseEnvelope(type: string): boolean {
   return (
-    type === 'ac2/SigningResponse' ||
-    type === 'ac2/SigningRejected' ||
-    type === 'ac2/KeyResponse'
+    type === 'ac2/SigningResponse' || type === 'ac2/SigningRejected' || type === 'ac2/KeyResponse'
   );
 }
 

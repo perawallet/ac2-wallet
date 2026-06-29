@@ -8,7 +8,11 @@ import { Text } from '@/components/ui/text';
 import { useAc2Responders } from '@/hooks/useAc2Responders';
 import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
-import { deriveOutcomeByThid, isMergedResponse, isResponseEnvelope } from '@/lib/ac2/messageDisplay';
+import {
+  deriveOutcomeByThid,
+  isMergedResponse,
+  isResponseEnvelope,
+} from '@/lib/ac2/messageDisplay';
 import {
   ac2MessagesStore,
   clearAc2Messages,
@@ -150,7 +154,12 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
       ...threadAc2Messages
         .filter((m) => !isMergedResponse(m))
         .map(
-          (m): TimelineEntry => ({ kind: 'ac2', id: `a-${m.id}`, timestamp: m.receivedAt, data: m }),
+          (m): TimelineEntry => ({
+            kind: 'ac2',
+            id: `a-${m.id}`,
+            timestamp: m.receivedAt,
+            data: m,
+          }),
         ),
     ].sort((a, b) => a.timestamp - b.timestamp);
 

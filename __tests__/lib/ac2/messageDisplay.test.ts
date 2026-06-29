@@ -13,8 +13,11 @@ import {
 } from '@/lib/ac2/messageDisplay';
 
 // Minimal envelope/entry builders — we only populate the fields the helpers read.
-const env = (type: string, body: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
-  ({ type, body, ...extra }) as unknown as Ac2MessageEntry['envelope'];
+const env = (
+  type: string,
+  body: Record<string, unknown> = {},
+  extra: Record<string, unknown> = {},
+) => ({ type, body, ...extra }) as unknown as Ac2MessageEntry['envelope'];
 
 const entry = (direction: 'inbound' | 'outbound', envelope: Ac2MessageEntry['envelope']) =>
   ({ direction, envelope }) as unknown as Ac2MessageEntry;

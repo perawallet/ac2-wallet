@@ -1,21 +1,13 @@
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
-import {
-  OutcomeRow,
-  TechnicalDetails,
-  ValueSummary,
-} from '@/components/chat/Ac2MessageCard.parts';
+import { OutcomeRow, TechnicalDetails, ValueSummary } from '@/components/chat/Ac2MessageCard.parts';
 
 const env = (type: string, body: Record<string, unknown> = {}) =>
   ({ type, body }) as unknown as Ac2MessageEntry['envelope'];
 
 describe('ValueSummary', () => {
   it('shows the lead, amount, and truncated recipient', () => {
-    render(
-      <ValueSummary
-        summary={{ lead: 'Sends', amount: '5 ALGO', to: 'ABCDEFGHIJKLMNOP' }}
-      />,
-    );
+    render(<ValueSummary summary={{ lead: 'Sends', amount: '5 ALGO', to: 'ABCDEFGHIJKLMNOP' }} />);
     expect(screen.getByText('Sends')).toBeTruthy();
     expect(screen.getByText('5 ALGO')).toBeTruthy();
     expect(screen.getByText('To')).toBeTruthy();

@@ -1,17 +1,9 @@
 import { formatTime } from '@/components/chat/format';
-import {
-  OutcomeRow,
-  TechnicalDetails,
-  ValueSummary,
-} from '@/components/chat/Ac2MessageCard.parts';
+import { OutcomeRow, TechnicalDetails, ValueSummary } from '@/components/chat/Ac2MessageCard.parts';
 import { Modal } from '@/components/Modal';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import {
-  formatValueSummary,
-  isFundMovingRequest,
-  type Outcome,
-} from '@/lib/ac2/messageDisplay';
+import { formatValueSummary, isFundMovingRequest, type Outcome } from '@/lib/ac2/messageDisplay';
 import { getTransactionSummary, type TransactionSummary } from '@/lib/algorand/transactions';
 import { cn } from '@/lib/utils';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
