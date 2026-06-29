@@ -81,6 +81,10 @@ module.exports = {
         NSFaceIDUsageDescription:
           'AC2 uses Face ID to unlock your wallet and authorize sensitive actions.',
       },
+      associatedDomains: ['webcredentials:debug.liquidauth.com'],
+      entitlements: {
+        'com.apple.developer.authentication-services.autofill-credential-provider': true,
+      },
     },
     icon: './assets/icon.png',
     splash: {
@@ -94,7 +98,6 @@ module.exports = {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#0052FF',
       },
-
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: getAndroidPackage(),
@@ -137,6 +140,7 @@ module.exports = {
           // Override the plugin default (group.<bundleId>.passkey-autofill) to
           // match the App Group registered under the new account.
           appGroup: 'group.app.perawallet.ac2-wallet',
+          appleTeamId: 'KHH37325LN',
         },
       ],
       // Bundled local workarounds for the autofill plugin's WIP iOS/Android
