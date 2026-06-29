@@ -2,6 +2,7 @@ import { Ac2MessageCard } from '@/components/chat/Ac2MessageCard';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ToolActivityCard } from '@/components/chat/ToolActivityCard';
 import { TypingIndicator, type AgentPresence } from '@/components/chat/TypingIndicator';
+import type { Outcome } from '@/lib/ac2/messageDisplay';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
 import type { Message } from '@/stores/messages';
 import type {
@@ -29,6 +30,7 @@ interface ChatTimelineProps {
   timeline: TimelineEntry[];
   isConnected: boolean;
   actionedRequestIds: Set<string>;
+  outcomeByThid: Map<string, Outcome>;
   approveSigning: (request: SigningRequestMessage) => void;
   rejectSigning: (request: SigningRequestMessage) => void;
   approveKey: (request: KeyRequestMessage) => void;
@@ -39,6 +41,7 @@ function ChatTimeline({
   timeline,
   isConnected,
   actionedRequestIds,
+  outcomeByThid,
   approveSigning,
   rejectSigning,
   approveKey,
@@ -99,6 +102,7 @@ function ChatTimeline({
       return <TypingIndicator presence={item.presence} text={item.text} detail={item.detail} />;
     }
 
+    const requestId = (item.data.envelope as SigningRequestMessage).id;
     return (
       <Ac2MessageCard
         entry={item.data}
@@ -107,9 +111,10 @@ function ChatTimeline({
           item.data.direction !== 'outbound' &&
           (item.data.envelope.type === 'ac2/SigningRequest' ||
             item.data.envelope.type === 'ac2/KeyRequest')
-            ? actionedRequestIds.has((item.data.envelope as SigningRequestMessage).id)
+            ? actionedRequestIds.has(requestId)
             : false
         }
+        outcome={outcomeByThid.get(requestId)}
         approveSigning={approveSigning}
         rejectSigning={rejectSigning}
         approveKey={approveKey}

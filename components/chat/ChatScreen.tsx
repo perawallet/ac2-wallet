@@ -9,6 +9,11 @@ import { useAc2Responders } from '@/hooks/useAc2Responders';
 import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
 import {
+  deriveOutcomeByThid,
+  isMergedResponse,
+  isResponseEnvelope,
+} from '@/lib/ac2/messageDisplay';
+import {
   ac2MessagesStore,
   clearAc2Messages,
   clearAc2MessagesByConnection,
@@ -130,21 +135,32 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
     for (const m of ac2Messages) {
       if (m.direction !== 'outbound') continue;
       const t = m.envelope.type;
-      if (t === 'ac2/SigningResponse' || t === 'ac2/SigningRejected' || t === 'ac2/KeyResponse') {
+      if (isResponseEnvelope(t)) {
         if (m.envelope.thid) set.add(m.envelope.thid);
       }
     }
     return set;
   }, [ac2Messages]);
 
+  // Approve/decline outcomes keyed by request id (response.thid === request.id).
+  // Derived from the full connection history so it survives reloads.
+  const outcomeByThid = React.useMemo(() => deriveOutcomeByThid(ac2Messages), [ac2Messages]);
+
   const timeline: TimelineEntry[] = React.useMemo(() => {
     const entries: TimelineEntry[] = [
       ...textMessages.map(
         (m): TimelineEntry => ({ kind: 'text', id: `t-${m.id}`, timestamp: m.timestamp, data: m }),
       ),
-      ...threadAc2Messages.map(
-        (m): TimelineEntry => ({ kind: 'ac2', id: `a-${m.id}`, timestamp: m.receivedAt, data: m }),
-      ),
+      ...threadAc2Messages
+        .filter((m) => !isMergedResponse(m))
+        .map(
+          (m): TimelineEntry => ({
+            kind: 'ac2',
+            id: `a-${m.id}`,
+            timestamp: m.receivedAt,
+            data: m,
+          }),
+        ),
     ].sort((a, b) => a.timestamp - b.timestamp);
 
     // While the agent is working, render an ephemeral indicator instead of a
@@ -283,6 +299,7 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
           timeline={timeline}
           isConnected={isConnected}
           actionedRequestIds={actionedRequestIds}
+          outcomeByThid={outcomeByThid}
           approveSigning={approveSigning}
           rejectSigning={rejectSigning}
           approveKey={approveKey}
