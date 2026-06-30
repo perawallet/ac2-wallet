@@ -21,7 +21,11 @@ export default function ScanScreen() {
   const { accounts } = useProvider();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const scannedRef = React.useRef(false);
   const router = useRouter();
+  const dismissScanner = React.useCallback(() => {
+    router.dismissTo('/chat');
+  }, [router]);
 
   useEffect(() => {
     if (!permission) {
@@ -47,7 +51,8 @@ export default function ScanScreen() {
   }
 
   const handleBarcodeScanned = async (scanningResult: { type: string; data: string }) => {
-    if (scanned) return;
+    if (scannedRef.current) return;
+    scannedRef.current = true;
     setScanned(true);
     let { data } = scanningResult;
 
@@ -56,17 +61,17 @@ export default function ScanScreen() {
     if (lowerData.startsWith('fido:')) {
       try {
         await Linking.openURL(data);
-        router.back();
+        dismissScanner();
       } catch {
         Alert.alert('Error', 'Could not open FIDO link natively');
-        router.back();
+        dismissScanner();
       }
       return;
     }
 
     if (!lowerData.startsWith('liquid:')) {
       Alert.alert('Error', 'Unsupported QR code. Only fido: and liquid: links are supported.');
-      router.back();
+      dismissScanner();
       return;
     }
 
@@ -81,7 +86,7 @@ export default function ScanScreen() {
     if (isValidURL(processedData)) {
       if (accounts.length === 0) {
         Alert.alert('Error', 'No accounts found. Please create or import an account first.');
-        router.back();
+        dismissScanner();
         return;
       }
 
@@ -104,7 +109,7 @@ export default function ScanScreen() {
 
       if (!requestId) {
         Alert.alert('Error', 'Invalid QR code: missing requestId');
-        router.back();
+        dismissScanner();
         return;
       }
 
@@ -114,12 +119,12 @@ export default function ScanScreen() {
       }
 
       setCurrentConnection(origin, requestId);
-      router.back();
+      dismissScanner();
       return;
     }
 
     Alert.alert('Error', 'Invalid liquid link format.');
-    router.back();
+    dismissScanner();
   };
 
   return (
@@ -132,17 +137,16 @@ export default function ScanScreen() {
         barcodeScannerSettings={{
           barcodeTypes: ['qr'],
         }}
-      >
-        <View style={styles.overlay}>
-          <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-            <MaterialIcons name="close" size={30} color="white" />
-          </TouchableOpacity>
-          <View style={styles.scanAreaContainer}>
-            <View style={styles.scanArea} />
-            <Text style={styles.scanText}>Align QR code within the frame</Text>
-          </View>
+      />
+      <View style={styles.overlay}>
+        <TouchableOpacity style={styles.closeButton} onPress={dismissScanner}>
+          <MaterialIcons name="close" size={30} color="white" />
+        </TouchableOpacity>
+        <View style={styles.scanAreaContainer}>
+          <View style={styles.scanArea} />
+          <Text style={styles.scanText}>Align QR code within the frame</Text>
         </View>
-      </CameraView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -169,7 +173,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'space-between',
     padding: 20,

@@ -10,7 +10,7 @@ import { useStore } from '@tanstack/react-store';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
-import { Modal as RNModal, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 export default function ChatTab() {
   const router = useRouter();
@@ -63,37 +63,28 @@ export default function ChatTab() {
   if (!disclaimerAccepted) {
     return (
       <Screen edges={['bottom']}>
-        <RNModal
-          visible
-          transparent
-          animationType="fade"
-          onRequestClose={() => {
-            // Intentionally non-dismissible; user must accept.
-          }}
-        >
-          <View className="flex-1 items-center justify-center bg-black/50 p-5">
-            <View className="w-full rounded-3xl bg-card shadow-lg">
-              <View className="flex-row items-center gap-2 border-b border-border px-5 pb-4 pt-5">
-                <MaterialIcons name="warning" size={20} color="#D97706" />
-                <Text className="text-lg font-bold text-card-foreground">Connect to AI Agents</Text>
-              </View>
-              <ScrollView className="px-5 py-4">
-                <Text className="text-sm leading-relaxed text-muted-foreground">
-                  AC2 lets you connect to AI agents through third-party plugins. These agents are
-                  not operated, vetted, or endorsed by Pera or by the Algorand Foundation. AI may
-                  produce inaccurate, unexpected, hallucinated, or harmful output, including by
-                  proposing transactions or signing requests that do not reflect your actual
-                  instructions. Each agent’s own terms and privacy practices apply.
-                </Text>
-              </ScrollView>
-              <View className="px-5 pb-5 pt-4">
-                <Button onPress={handleDisclaimerAccept} accessibilityLabel="I understand">
-                  <Text className="text-primary-foreground">I understand</Text>
-                </Button>
-              </View>
+        <View className="flex-1 items-center justify-center bg-background p-5">
+          <View className="w-full rounded-2xl border border-border bg-card">
+            <View className="flex-row items-center gap-2 border-b border-border px-5 pb-4 pt-5">
+              <MaterialIcons name="warning" size={20} color="#D97706" />
+              <Text className="text-lg font-bold text-card-foreground">Connect to AI Agents</Text>
+            </View>
+            <ScrollView className="max-h-56 px-5 py-4">
+              <Text className="text-sm leading-relaxed text-muted-foreground">
+                AC2 lets you connect to AI agents through third-party plugins. These agents are not
+                operated, vetted, or endorsed by Pera or by the Algorand Foundation. AI may produce
+                inaccurate, unexpected, hallucinated, or harmful output, including by proposing
+                transactions or signing requests that do not reflect your actual instructions. Each
+                agent's own terms and privacy practices apply.
+              </Text>
+            </ScrollView>
+            <View className="px-5 pb-5 pt-4">
+              <Button onPress={handleDisclaimerAccept} accessibilityLabel="I understand">
+                <Text className="text-primary-foreground">I understand</Text>
+              </Button>
             </View>
           </View>
-        </RNModal>
+        </View>
       </Screen>
     );
   }
