@@ -1,9 +1,10 @@
-import { Tabs } from 'expo-router';
-import { TabBar } from '@/components/navigation/TabBar';
+import { ThemedCopilotProvider } from '@/components/CopilotUI';
 import { AppHeader } from '@/components/navigation/AppHeader';
+import { TabBar } from '@/components/navigation/TabBar';
 import { useGettingStartedGuide } from '@/hooks/useGettingStartedGuide';
-import { CopilotProvider, useCopilot } from 'react-native-copilot';
+import { Tabs } from 'expo-router';
 import * as React from 'react';
+import { useCopilot } from 'react-native-copilot';
 
 const TITLES: Record<string, string> = {
   chat: 'Chat',
@@ -38,7 +39,7 @@ function GettingStartedGuideStarter() {
 
 export default function TabsLayout() {
   return (
-    <CopilotProvider overlay="svg" animated>
+    <ThemedCopilotProvider>
       <GettingStartedGuideStarter />
       <Tabs
         tabBar={(props) => <TabBar {...props} />}
@@ -54,6 +55,6 @@ export default function TabsLayout() {
         <Tabs.Screen name="credentials" />
         <Tabs.Screen name="menu" />
       </Tabs>
-    </CopilotProvider>
+    </ThemedCopilotProvider>
   );
 }
