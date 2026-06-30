@@ -4,8 +4,8 @@ import { toggleDrawer } from '@/stores/ui';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CopilotStep, walkthroughable } from 'react-native-copilot';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const WalkthroughableView = walkthroughable(View);
 
@@ -24,7 +24,15 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
       <View className="h-14 flex-row items-center justify-between">
         <View className="w-[100]">
           {showActions ? (
-            <IconButton name="menu" accessibilityLabel="Open chats" onPress={toggleDrawer} />
+            <CopilotStep
+              name="view-chats"
+              order={0}
+              text="View your current and historical chats by pressing this menu icon."
+            >
+              <WalkthroughableView>
+                <IconButton name="menu" accessibilityLabel="Open chats" onPress={toggleDrawer} />
+              </WalkthroughableView>
+            </CopilotStep>
           ) : null}
         </View>
         <View className="grow items-center justify-center">
@@ -36,7 +44,7 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
               <CopilotStep
                 name="scan-qr"
                 order={1}
-                text="Tap the QR code button to scan an agent's connection code and start a secure AC2 chat session."
+                text="Tap the QR code button to scan an AC2 QR code and start a new chat with an agent."
               >
                 <WalkthroughableView>
                   <IconButton
@@ -49,7 +57,7 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
               <CopilotStep
                 name="history"
                 order={2}
-                text="History shows a full audit trail of every AC2 message you've sent and received."
+                text="History shows a full audit log of every AC2 message you've sent and received for the current chat. You can also export the history as a PDF or JSON file for your own records."
               >
                 <WalkthroughableView>
                   <IconButton
