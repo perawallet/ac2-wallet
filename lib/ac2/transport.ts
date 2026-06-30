@@ -28,6 +28,11 @@ const DEFAULT_DATA_CHANNELS = {
   'ac2-heartbeat': { ordered: true },
 };
 
+const SIGNALING_TIMEOUT_MS = 30000;
+const SOCKET_CONNECT_TIMEOUT_MS = 10000;
+const SIGNAL_CANDIDATE_NORMALIZER = Symbol('ac2.signalCandidateNormalizer');
+const SIGNAL_CANDIDATE_EVENTS = new Set(['offer-candidate', 'answer-candidate']);
+
 export interface Ac2TransportSetup {
   /** Active Liquid Auth `SignalClient` (already authenticated). */
   client: SignalClient;
@@ -57,7 +62,10 @@ export async function createAc2Transport(
     onSideChannel(channel);
   });
 
-  const datachannel = await signalClient.peer(
+  await waitForSignalSocketConnected(signalClient);
+  installSignalCandidateNormalizer(signalClient);
+
+  const peerPromise = signalClient.peer(
     requestId,
     'answer',
     {
@@ -68,5 +76,94 @@ export async function createAc2Transport(
     },
   );
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<RTCDataChannel>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      signalClient.peerClient?.close();
+      reject(
+        new Error(
+          'Timed out waiting for Liquid Auth answer-description. Check that the signaling socket is authenticated and the OpenClaw peer is still linked to this requestId.',
+        ),
+      );
+    }, SIGNALING_TIMEOUT_MS);
+  });
+
+  const datachannel = await Promise.race([peerPromise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+
   return { client: signalClient, datachannel };
+}
+
+export function normalizeIceCandidateForReactNative(
+  candidate: RTCIceCandidateInit,
+): RTCIceCandidateInit {
+  if (!candidate || typeof candidate.candidate !== 'string') return candidate;
+
+  const normalizedCandidate = candidate.candidate.trim().replace(/^a=/, '');
+  const normalized = { ...candidate, candidate: normalizedCandidate };
+
+  if (normalized.sdpMLineIndex === null && typeof normalized.sdpMid === 'string') {
+    const parsedMid = Number.parseInt(normalized.sdpMid, 10);
+    if (Number.isFinite(parsedMid)) normalized.sdpMLineIndex = parsedMid;
+  }
+
+  for (const key of Object.keys(normalized) as (keyof RTCIceCandidateInit)[]) {
+    if (normalized[key] === null) delete normalized[key];
+  }
+
+  return normalized;
+}
+
+export function installSignalCandidateNormalizer(signalClient: SignalClient): void {
+  const socket = signalClient.socket as any;
+  if (!socket || socket[SIGNAL_CANDIDATE_NORMALIZER] || typeof socket.on !== 'function') {
+    return;
+  }
+
+  const originalOn = socket.on.bind(socket);
+  socket.on = (event: string, listener: (...args: any[]) => unknown) => {
+    if (SIGNAL_CANDIDATE_EVENTS.has(event) && typeof listener === 'function') {
+      return originalOn(event, (candidate: RTCIceCandidateInit, ...args: any[]) =>
+        listener(normalizeIceCandidateForReactNative(candidate), ...args),
+      );
+    }
+
+    return originalOn(event, listener);
+  };
+
+  Object.defineProperty(socket, SIGNAL_CANDIDATE_NORMALIZER, { value: true });
+}
+
+async function waitForSignalSocketConnected(signalClient: SignalClient): Promise<void> {
+  // The liquid-client constructor resolves once socket.io is created, not once
+  // it is connected. Sending the SDP after the connect event keeps signaling
+  // ordering deterministic on React Native.
+  await (signalClient as any)._socketPromise;
+  const socket = signalClient.socket as any;
+  if (socket?.connected) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timed out waiting for Liquid Auth signal socket to connect'));
+    }, SOCKET_CONNECT_TIMEOUT_MS);
+
+    const onConnect = () => {
+      cleanup();
+      resolve();
+    };
+    const onConnectError = (err: Error) => {
+      cleanup();
+      reject(err);
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      socket?.off?.('connect', onConnect);
+      socket?.off?.('connect_error', onConnectError);
+    };
+
+    socket?.on?.('connect', onConnect);
+    socket?.on?.('connect_error', onConnectError);
+  });
 }
