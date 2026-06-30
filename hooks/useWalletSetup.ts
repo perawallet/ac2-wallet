@@ -1,10 +1,10 @@
-import { useCallback } from 'react';
+import { useProvider } from '@/hooks/useProvider';
+import { bootstrap } from '@/lib/keystore/bootstrap';
 import * as bip39 from '@scure/bip39';
 import { mnemonicToSeed } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
+import { useCallback } from 'react';
 import * as Keychain from 'react-native-keychain';
-import { useProvider } from '@/hooks/useProvider';
-import { bootstrap } from '@/lib/keystore/bootstrap';
 
 const MNEMONIC_SERVICE = 'app.perawallet.ac2.mnemonic';
 
@@ -62,7 +62,7 @@ export function useWalletSetup() {
         params: { parentKeyId: rootKeyId, context: 1, account: 0, index: 0, derivation: 9 },
       });
 
-      await bootstrap(undefined, false);
+      await bootstrap(undefined, true);
 
       await Keychain.setGenericPassword('mnemonic', mnemonic, { service: MNEMONIC_SERVICE });
     },
