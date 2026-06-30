@@ -51,14 +51,12 @@ import { Alert } from 'react-native';
 jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 describe('<ScanScreen />', () => {
-  const mockReplace = jest.fn();
-  const mockBack = jest.fn();
+  const mockDismissTo = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
     (useRouter as jest.Mock).mockReturnValue({
-      replace: mockReplace,
-      back: mockBack,
+      dismissTo: mockDismissTo,
     });
   });
 
@@ -70,7 +68,7 @@ describe('<ScanScreen />', () => {
     });
 
     expect(Linking.openURL).toHaveBeenCalledWith('fido:test');
-    expect(mockBack).toHaveBeenCalled();
+    expect(mockDismissTo).toHaveBeenCalledWith('/chat');
   });
 
   it('handles FIDO: link (uppercase)', async () => {
@@ -81,7 +79,7 @@ describe('<ScanScreen />', () => {
     });
 
     expect(Linking.openURL).toHaveBeenCalledWith('FIDO:test');
-    expect(mockBack).toHaveBeenCalled();
+    expect(mockDismissTo).toHaveBeenCalledWith('/chat');
   });
 
   it('handles liquid: link (lowercase)', async () => {
@@ -94,7 +92,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockBack).toHaveBeenCalled();
+    expect(mockDismissTo).toHaveBeenCalledWith('/chat');
   });
 
   it('handles LIQUID: link (uppercase)', async () => {
@@ -107,7 +105,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockBack).toHaveBeenCalled();
+    expect(mockDismissTo).toHaveBeenCalledWith('/chat');
   });
 
   it('handles LIQUID:// link (uppercase)', async () => {
@@ -120,7 +118,7 @@ describe('<ScanScreen />', () => {
       });
     });
 
-    expect(mockBack).toHaveBeenCalled();
+    expect(mockDismissTo).toHaveBeenCalledWith('/chat');
   });
 
   it('aborts on unsupported link', async () => {
@@ -134,6 +132,36 @@ describe('<ScanScreen />', () => {
       'Error',
       expect.stringContaining('Unsupported QR code'),
     );
-    expect(mockBack).toHaveBeenCalled();
+    expect(mockDismissTo).toHaveBeenCalledWith('/chat');
+  });
+
+  it('dismisses to chat after scanning a Liquid Auth QR', async () => {
+    render(<ScanScreen />);
+
+    await act(async () => {
+      await (global as any).triggerBarcodeScanned({
+        type: 'qr',
+        data: 'liquid:debug.liquidauth.com?requestId=019f1476-554e-73cb-82ee-ebe7ff16bfbf',
+      });
+    });
+
+    expect(mockDismissTo).toHaveBeenCalledWith('/chat');
+  });
+
+  it('ignores duplicate barcode callbacks for the same scan session', async () => {
+    render(<ScanScreen />);
+
+    await act(async () => {
+      await (global as any).triggerBarcodeScanned({
+        type: 'qr',
+        data: 'liquid:debug.liquidauth.com?requestId=019f1476-554e-73cb-82ee-ebe7ff16bfbf',
+      });
+      await (global as any).triggerBarcodeScanned({
+        type: 'qr',
+        data: 'liquid:debug.liquidauth.com?requestId=019f1476-554e-73cb-82ee-ebe7ff16bfbf',
+      });
+    });
+
+    expect(mockDismissTo).toHaveBeenCalledTimes(1);
   });
 });

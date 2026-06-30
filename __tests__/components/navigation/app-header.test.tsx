@@ -17,7 +17,12 @@ jest.mock('react-native-copilot', () => ({
 describe('AppHeader', () => {
   beforeEach(() => {
     mockPush.mockClear();
-    uiStore.setState(() => ({ drawerOpen: false, currentSessionId: null }));
+    uiStore.setState(() => ({
+      drawerOpen: false,
+      currentSessionId: null,
+      currentOrigin: null,
+      activeThid: null,
+    }));
   });
 
   it('toggles the drawer from the hamburger', () => {
