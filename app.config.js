@@ -165,7 +165,7 @@ module.exports = {
     },
     extra: {
       termsOfServiceUrl:
-        process.env.TERMS_OF_SERVICE_URL || 'http://ac2protocol.com/terms-of-service/',
+        process.env.TERMS_OF_SERVICE_URL || 'https://ac2protocol.org/terms-of-service/',
       privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || 'https://perawallet.app/privacy-policy/',
       provider: {
         name: 'AC2-Controller',
