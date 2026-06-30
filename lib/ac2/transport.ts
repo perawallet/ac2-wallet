@@ -30,6 +30,8 @@ const DEFAULT_DATA_CHANNELS = {
 
 const SIGNALING_TIMEOUT_MS = 30000;
 const SOCKET_CONNECT_TIMEOUT_MS = 10000;
+const SIGNAL_CANDIDATE_NORMALIZER = Symbol('ac2.signalCandidateNormalizer');
+const SIGNAL_CANDIDATE_EVENTS = new Set(['offer-candidate', 'answer-candidate']);
 
 export interface Ac2TransportSetup {
   /** Active Liquid Auth `SignalClient` (already authenticated). */
@@ -61,6 +63,7 @@ export async function createAc2Transport(
   });
 
   await waitForSignalSocketConnected(signalClient);
+  installSignalCandidateNormalizer(signalClient);
 
   const peerPromise = signalClient.peer(
     requestId,
@@ -90,6 +93,37 @@ export async function createAc2Transport(
   });
 
   return { client: signalClient, datachannel };
+}
+
+export function normalizeIceCandidateForReactNative(
+  candidate: RTCIceCandidateInit,
+): RTCIceCandidateInit {
+  if (!candidate || typeof candidate.candidate !== 'string') return candidate;
+
+  const normalizedCandidate = candidate.candidate.trim().replace(/^a=/, '');
+  if (normalizedCandidate === candidate.candidate) return candidate;
+
+  return { ...candidate, candidate: normalizedCandidate };
+}
+
+export function installSignalCandidateNormalizer(signalClient: SignalClient): void {
+  const socket = signalClient.socket as any;
+  if (!socket || socket[SIGNAL_CANDIDATE_NORMALIZER] || typeof socket.on !== 'function') {
+    return;
+  }
+
+  const originalOn = socket.on.bind(socket);
+  socket.on = (event: string, listener: (...args: any[]) => unknown) => {
+    if (SIGNAL_CANDIDATE_EVENTS.has(event) && typeof listener === 'function') {
+      return originalOn(event, (candidate: RTCIceCandidateInit, ...args: any[]) =>
+        listener(normalizeIceCandidateForReactNative(candidate), ...args),
+      );
+    }
+
+    return originalOn(event, listener);
+  };
+
+  Object.defineProperty(socket, SIGNAL_CANDIDATE_NORMALIZER, { value: true });
 }
 
 async function waitForSignalSocketConnected(signalClient: SignalClient): Promise<void> {
