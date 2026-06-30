@@ -41,8 +41,9 @@ import {
 } from '@algorandfoundation/react-native-keystore';
 import { useStore } from '@tanstack/react-store';
 import { Buffer } from 'buffer';
+import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, NativeModules } from 'react-native';
+import { Alert, NativeModules, Platform } from 'react-native';
 
 /**
  * Re-encrypt a key record with the supplied master key and reflect the new
@@ -96,7 +97,7 @@ interface UseConnectionResult {
 }
 
 export function useConnection(origin: string, requestId: string): UseConnectionResult {
-  const { accounts, keys, key, passkey, sessions } = useProvider();
+  const { accounts, keys, key, passkey } = useProvider();
 
   const [isConnected, setIsConnected] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
@@ -473,7 +474,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               decodedOptions.allowCredentials = [];
             }
             const existingIds = new Set(
-              decodedOptions.allowCredentials.map((c) =>
+              decodedOptions.allowCredentials.map((c: { id: ArrayBuffer }) =>
                 encoding.toBase64URL(new Uint8Array(c.id as ArrayBuffer)),
               ),
             );
@@ -750,14 +751,25 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           console.log('Session validation failed (ignored for debugging)');
         }
 
-        let options: any = { autoConnect: true };
-        if (NativeModules.CookieModule) {
+        let options: any = {
+          autoConnect: true,
+          transportOptions: {},
+          withCredentials: true,
+        };
+
+        if (Platform.OS === 'ios') {
+          options.transports = [EngineIoXHR];
+        } else if (NativeModules.CookieModule) {
           const cookie = await NativeModules.CookieModule.getCookie(origin);
 
           if (!active) return;
 
           if (cookie) {
             options.extraHeaders = { Cookie: cookie };
+            options.transports = ['polling'];
+            options.transportOptions = {
+              polling: { extraHeaders: { Cookie: cookie } },
+            };
           }
         }
 
