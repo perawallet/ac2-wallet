@@ -9,6 +9,7 @@ const POLL_INTERVAL_MS = 10_000;
 export interface AccountBalance {
   algoMicro: bigint;
   usdcMicro: bigint;
+  usdcOptedIn: boolean;
   isRefreshing: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
@@ -35,6 +36,7 @@ function isAccountNotFound(err: unknown): boolean {
 export function useAccountBalance(address: string | undefined, network: Network): AccountBalance {
   const [algoMicro, setAlgoMicro] = useState(0n);
   const [usdcMicro, setUsdcMicro] = useState(0n);
+  const [usdcOptedIn, setUsdcOptedIn] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -51,11 +53,13 @@ export function useAccountBalance(address: string | undefined, network: Network)
         const usdc = info.assets?.find((a) => a.assetId === usdcAssetId);
         setAlgoMicro(info.balance.microAlgo);
         setUsdcMicro(usdc?.amount ?? 0n);
+        setUsdcOptedIn(Boolean(usdc));
         setError(null);
       } catch (err) {
         if (isAccountNotFound(err)) {
           setAlgoMicro(0n);
           setUsdcMicro(0n);
+          setUsdcOptedIn(false);
           setError(null);
         } else {
           // Log the underlying cause: the UI only shows a generic "couldn't
@@ -86,5 +90,5 @@ export function useAccountBalance(address: string | undefined, network: Network)
     }, [load]),
   );
 
-  return { algoMicro, usdcMicro, isRefreshing, error, refetch };
+  return { algoMicro, usdcMicro, usdcOptedIn, isRefreshing, error, refetch };
 }
