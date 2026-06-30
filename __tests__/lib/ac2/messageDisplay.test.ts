@@ -6,6 +6,7 @@ import {
   directionLabel,
   displayHintLabel,
   formatValueSummary,
+  getTransactionRequestContext,
   isFundMovingRequest,
   isMergedResponse,
   isResponseEnvelope,
@@ -69,6 +70,31 @@ describe('formatValueSummary', () => {
     expect(
       formatValueSummary({ type: TransactionType.AppCall } as unknown as TransactionSummary),
     ).toBeNull();
+  });
+});
+
+describe('getTransactionRequestContext', () => {
+  it('extracts x402 group, resource, and network context', () => {
+    const description =
+      'x402 exact payment · network algorand:testnet-v1 · asset 10458941 · amount 1000 · payTo MPY ' +
+      'Sign transaction 2 of 2 as MZBFHONHBNAQN5MTOCCDNA4VZRTUNUVFM6WKV4K5Q4DUN53JD6E25DES54. ' +
+      'ASA transfer · asset 10458941 · amount 1000 · to MPY Sender: MZBF ' +
+      'Resource: Weather data · https://example.x402.goplausible.xyz/avm/weather · application/json';
+
+    expect(
+      getTransactionRequestContext(description, 'https://example.x402.goplausible.xyz'),
+    ).toEqual({
+      site: 'https://example.x402.goplausible.xyz',
+      purpose:
+        'x402 exact payment · network algorand:testnet-v1 · asset 10458941 · amount 1000 · payTo MPY',
+      resourceName: 'Weather data',
+      resourceUrl: 'https://example.x402.goplausible.xyz/avm/weather',
+      contentType: 'application/json',
+      network: 'algorand:testnet-v1',
+      signingIndex: 2,
+      signingTotal: 2,
+      signingAddress: 'MZBFHONHBNAQN5MTOCCDNA4VZRTUNUVFM6WKV4K5Q4DUN53JD6E25DES54',
+    });
   });
 });
 
