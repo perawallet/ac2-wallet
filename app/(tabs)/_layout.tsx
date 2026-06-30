@@ -16,12 +16,16 @@ const TITLES: Record<string, string> = {
 function GettingStartedGuideStarter() {
   const { start, copilotEvents } = useCopilot();
   const { shouldShowGuide, markAsSeen } = useGettingStartedGuide();
+  // `start` is recreated by copilot whenever steps register, so the initial
+  // capture in the effect closure would see an empty step list. A ref lets the
+  // timeout always call the latest version.
+  const startRef = React.useRef(start);
+  startRef.current = start;
 
   React.useEffect(() => {
     if (!shouldShowGuide) return;
-    // Delay slightly so all CopilotStep components finish registering.
     const timer = setTimeout(() => {
-      void start();
+      void startRef.current();
     }, 800);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
