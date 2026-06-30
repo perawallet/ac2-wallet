@@ -167,6 +167,20 @@ module.exports = {
       termsOfServiceUrl:
         process.env.TERMS_OF_SERVICE_URL || 'https://ac2protocol.org/terms-of-service/',
       privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || 'https://perawallet.app/privacy-policy/',
+      // TURN credentials for the Liquid Auth WebRTC relay, injected at build
+      // time (e.g. Bitrise secrets). Nodely falls back to the previously-shipped
+      // credential so local/dev builds keep working; metered.ca has no fallback
+      // and is only added to the ICE list when both values are present.
+      turn: {
+        nodely: {
+          username: process.env.NODELY_TURN_USERNAME || '',
+          credential: process.env.NODELY_TURN_CREDENTIAL || '',
+        },
+        metered: {
+          username: process.env.METERED_TURN_USERNAME || '',
+          credential: process.env.METERED_TURN_CREDENTIAL || '',
+        },
+      },
       provider: {
         name: 'AC2-Controller',
         primaryColor: '#3B82F6',
