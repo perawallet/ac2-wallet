@@ -61,6 +61,9 @@ export function MenuScreen() {
 
   const termsUrl = Constants.expoConfig?.extra?.termsOfServiceUrl as string | undefined;
   const privacyUrl = Constants.expoConfig?.extra?.privacyPolicyUrl as string | undefined;
+  const ac2OpenClawPluginUrl = Constants.expoConfig?.extra?.ac2OpenClawPluginUrl as
+    | string
+    | undefined;
 
   async function openLink(url: string | undefined) {
     if (!url) return;
@@ -142,6 +145,20 @@ export function MenuScreen() {
       <View className="overflow-hidden rounded-xl">
         <MenuRow icon="restart-alt" label="Reset Wallet" onPress={confirmResetWallet} isLast />
       </View>
+
+      {ac2OpenClawPluginUrl ? (
+        <>
+          <SectionHeader label="Integrations" />
+          <View className="overflow-hidden rounded-xl">
+            <MenuRow
+              icon="link"
+              label="OpenClaw Plugin"
+              onPress={() => openLink(ac2OpenClawPluginUrl)}
+              isLast
+            />
+          </View>
+        </>
+      ) : null}
     </Screen>
   );
 }
