@@ -70,7 +70,7 @@ describe('Ac2MessageCard — non-fund signing request', () => {
 
 describe('Ac2MessageCard — fund-moving payment', () => {
   // amount 5 ALGO encoded? We rely on getTransactionSummary; mock it.
-  it('shows a value summary plus the transaction warning, and no safe badge', () => {
+  it('shows a decoded transaction overview plus the transaction warning', () => {
     jest.spyOn(require('@/lib/algorand/transactions'), 'getTransactionSummary').mockReturnValue({
       type: require('@algorandfoundation/algokit-utils/transact').TransactionType.Payment,
       to: { toString: () => 'ABCDEFGHIJ' },
@@ -83,11 +83,15 @@ describe('Ac2MessageCard — fund-moving payment', () => {
       body: { description: 'Approve payment', sig_hint: 'transaction-algorand', payload: 'AA==' },
     });
     render(<Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />);
+    expect(screen.getByText('Single Algorand transaction')).toBeTruthy();
+    expect(screen.getByText('Wallet signs')).toBeTruthy();
+    expect(screen.getByText('ALGO payment')).toBeTruthy();
     expect(screen.getByText('5 ALGO')).toBeTruthy();
-    expect(screen.getByText('Sends')).toBeTruthy();
+    expect(screen.getByText('From your wallet')).toBeTruthy();
+    expect(screen.getByText('Requesting site')).toBeTruthy();
     // Legal-approved generic transaction warning, but not the smart-contract one.
     expect(screen.getByText(/about to sign a transaction/)).toBeTruthy();
-    expect(screen.queryByText(/Smart contract call/)).toBeNull();
+    expect(screen.queryByText('Smart contract call')).toBeNull();
     expect(screen.queryByText('Safe · no funds involved')).toBeNull();
   });
 });
@@ -124,6 +128,6 @@ describe('Ac2MessageCard — app-call warning banner', () => {
       },
     });
     render(<Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />);
-    expect(screen.getByText(/Smart contract call/)).toBeTruthy();
+    expect(screen.getAllByText(/Smart contract call/).length).toBeGreaterThan(0);
   });
 });
