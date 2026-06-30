@@ -101,9 +101,18 @@ export function normalizeIceCandidateForReactNative(
   if (!candidate || typeof candidate.candidate !== 'string') return candidate;
 
   const normalizedCandidate = candidate.candidate.trim().replace(/^a=/, '');
-  if (normalizedCandidate === candidate.candidate) return candidate;
+  const normalized = { ...candidate, candidate: normalizedCandidate };
 
-  return { ...candidate, candidate: normalizedCandidate };
+  if (normalized.sdpMLineIndex === null && typeof normalized.sdpMid === 'string') {
+    const parsedMid = Number.parseInt(normalized.sdpMid, 10);
+    if (Number.isFinite(parsedMid)) normalized.sdpMLineIndex = parsedMid;
+  }
+
+  for (const key of Object.keys(normalized) as (keyof RTCIceCandidateInit)[]) {
+    if (normalized[key] === null) delete normalized[key];
+  }
+
+  return normalized;
 }
 
 export function installSignalCandidateNormalizer(signalClient: SignalClient): void {

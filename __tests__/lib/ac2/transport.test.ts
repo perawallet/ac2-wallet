@@ -14,9 +14,8 @@ describe('normalizeIceCandidateForReactNative', () => {
 
     expect(normalizeIceCandidateForReactNative(candidate)).toEqual({
       candidate: 'candidate:1 1 UDP 2116026367 10.0.0.64 58151 typ host',
-      sdpMLineIndex: null,
+      sdpMLineIndex: 0,
       sdpMid: '0',
-      usernameFragment: null,
     });
   });
 
@@ -27,7 +26,20 @@ describe('normalizeIceCandidateForReactNative', () => {
       sdpMid: '0',
     };
 
-    expect(normalizeIceCandidateForReactNative(candidate)).toBe(candidate);
+    expect(normalizeIceCandidateForReactNative(candidate)).toEqual(candidate);
+  });
+
+  it('removes null candidate fields before crossing the native bridge', () => {
+    const candidate = {
+      candidate: 'candidate:2 1 UDP 2114977535 10.0.0.64 58151 typ host',
+      sdpMLineIndex: null,
+      sdpMid: null,
+      usernameFragment: null,
+    };
+
+    expect(normalizeIceCandidateForReactNative(candidate)).toEqual({
+      candidate: 'candidate:2 1 UDP 2114977535 10.0.0.64 58151 typ host',
+    });
   });
 });
 
@@ -60,7 +72,7 @@ describe('installSignalCandidateNormalizer', () => {
     expect(listener).toHaveBeenCalledWith(
       {
         candidate: 'candidate:2 1 UDP 2114977535 10.0.0.64 58151 typ host',
-        sdpMLineIndex: null,
+        sdpMLineIndex: 0,
         sdpMid: '0',
       },
       'extra-arg',
