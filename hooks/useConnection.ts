@@ -140,6 +140,10 @@ function passkeysFromSessionUser(sessionData: any, origin: string): Passkey[] {
     }));
 }
 
+function getSessionCredentialCount(sessionData: any): number {
+  return Array.isArray(sessionData?.user?.credentials) ? sessionData.user.credentials.length : 0;
+}
+
 interface UseConnectionResult {
   session: Session | undefined;
   address: string | null;
@@ -508,6 +512,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           try {
             const sessionData = await sessionCheck.json();
             initialSessionData = sessionData;
+            console.log('Liquid Auth session credentials:', getSessionCredentialCount(sessionData));
             if (!active) return;
             const sessionAddress =
               typeof sessionData?.address === 'string'
@@ -723,11 +728,9 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 console.error('Failed to update key metadata after assertion:', error);
               }
             }
-          } else {
+          } else if (!hasExistingAuthSession) {
             console.log(
-              hasExistingAuthSession
-                ? 'Existing Liquid Auth session has no matching local passkey; using attestation to bind this request'
-                : 'No existing passkey for origin, using attestation',
+              'No existing passkey for origin, using attestation',
             );
 
             const optionsResponse = await fetch(`${origin}/attestation/request`, {
@@ -858,6 +861,10 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 console.error('Failed to update key metadata after attestation:', error);
               }
             }
+          } else {
+            throw new Error(
+              'Liquid Auth session is active, but no passkey credential id was found locally or in /auth/session. Log out of Liquid Auth for this origin or clear the app passkey state, then scan again to create a fresh passkey.',
+            );
           }
         }
 
