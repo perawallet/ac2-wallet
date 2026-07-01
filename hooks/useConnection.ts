@@ -833,17 +833,20 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
 
         if (Platform.OS === 'ios') {
           options.transports = [EngineIoXHR];
-        } else if (NativeModules.CookieModule) {
+        }
+
+        if (NativeModules.CookieModule) {
           const cookie = await NativeModules.CookieModule.getCookie(origin);
 
           if (!active) return;
 
           if (cookie) {
             options.extraHeaders = { Cookie: cookie };
-            options.transports = ['polling'];
-            options.transportOptions = {
-              polling: { extraHeaders: { Cookie: cookie } },
-            };
+            options.transportOptions.polling = { extraHeaders: { Cookie: cookie } };
+
+            if (Platform.OS !== 'ios') {
+              options.transports = ['polling'];
+            }
           }
         }
 
