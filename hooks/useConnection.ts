@@ -728,9 +728,11 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 console.error('Failed to update key metadata after assertion:', error);
               }
             }
-          } else if (!hasExistingAuthSession) {
+          } else {
             console.log(
-              'No existing passkey for origin, using attestation',
+              hasExistingAuthSession
+                ? 'Existing Liquid Auth session has no matching credential id; using attestation for initial request setup'
+                : 'No existing passkey for origin, using attestation',
             );
 
             const optionsResponse = await fetch(`${origin}/attestation/request`, {
@@ -861,10 +863,6 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 console.error('Failed to update key metadata after attestation:', error);
               }
             }
-          } else {
-            throw new Error(
-              'Liquid Auth session is active, but no passkey credential id was found locally or in /auth/session. Log out of Liquid Auth for this origin or clear the app passkey state, then scan again to create a fresh passkey.',
-            );
           }
         }
 
