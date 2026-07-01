@@ -111,6 +111,35 @@ function passkeyFromKey(keyData: Key): Passkey | null {
   };
 }
 
+function passkeysFromSessionUser(sessionData: any, origin: string): Passkey[] {
+  const wallet =
+    typeof sessionData?.user?.wallet === 'string'
+      ? sessionData.user.wallet
+      : typeof sessionData?.session?.wallet === 'string'
+        ? sessionData.session.wallet
+        : undefined;
+  const credentials = Array.isArray(sessionData?.user?.credentials)
+    ? sessionData.user.credentials
+    : [];
+
+  return credentials
+    .filter((credential: any) => typeof credential?.credId === 'string')
+    .map((credential: any) => ({
+      id: credential.credId,
+      name: `${wallet ?? 'Liquid Auth'}@${normalizeOriginHost(origin)}`,
+      userHandle: wallet,
+      origin,
+      publicKey: new Uint8Array(),
+      algorithm: 'P256',
+      metadata: {
+        origin,
+        userHandle: wallet,
+        registered: true,
+        source: 'liquid-auth-session',
+      },
+    }));
+}
+
 interface UseConnectionResult {
   session: Session | undefined;
   address: string | null;
@@ -472,15 +501,25 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         const sessionCheck = await fetch(`${origin}/auth/session`);
         if (!active) return;
         const hasExistingAuthSession = sessionCheck.ok;
+        let initialSessionData: any = null;
         console.log('Initial session status:', hasExistingAuthSession);
 
         if (hasExistingAuthSession) {
           try {
             const sessionData = await sessionCheck.json();
+            initialSessionData = sessionData;
             if (!active) return;
-            if (sessionData.address) {
-              setAddress(sessionData.address);
-              addressRef.current = sessionData.address;
+            const sessionAddress =
+              typeof sessionData?.address === 'string'
+                ? sessionData.address
+                : typeof sessionData?.user?.wallet === 'string'
+                  ? sessionData.user.wallet
+                  : typeof sessionData?.session?.wallet === 'string'
+                    ? sessionData.session.wallet
+                    : null;
+            if (sessionAddress) {
+              setAddress(sessionAddress);
+              addressRef.current = sessionAddress;
             }
           } catch (error) {
             console.warn('Unable to parse existing auth session response:', error);
@@ -492,6 +531,12 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           const passkeysById = new Map<string, Passkey>(
             storedPasskeys.map((currentPasskey) => [currentPasskey.id, currentPasskey]),
           );
+
+          passkeysFromSessionUser(initialSessionData, origin).forEach((sessionPasskey) => {
+            if (!passkeysById.has(sessionPasskey.id)) {
+              passkeysById.set(sessionPasskey.id, sessionPasskey);
+            }
+          });
 
           currentKeys.forEach((currentKey) => {
             const keyBackedPasskey = passkeyFromKey(currentKey);
@@ -597,7 +642,9 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                       : typeof userHandle === 'object'
                         ? new Uint8Array(Object.values(userHandle))
                         : null;
-                  if (handleArray) {
+                  if (typeof userHandle === 'string') {
+                    selectedAddress = userHandle;
+                  } else if (handleArray) {
                     selectedAddress = encodeAddress(handleArray);
                   }
                 } catch (e) {
@@ -824,9 +871,17 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
 
           if (!active) return;
 
-          if (sessionData.address) {
-            setAddress(sessionData.address);
-            addressRef.current = sessionData.address;
+          const sessionAddress =
+            typeof sessionData?.address === 'string'
+              ? sessionData.address
+              : typeof sessionData?.user?.wallet === 'string'
+                ? sessionData.user.wallet
+                : typeof sessionData?.session?.wallet === 'string'
+                  ? sessionData.session.wallet
+                  : null;
+          if (sessionAddress) {
+            setAddress(sessionAddress);
+            addressRef.current = sessionAddress;
           }
         } else {
           console.log('Session validation failed (ignored for debugging)');
