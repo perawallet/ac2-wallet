@@ -156,10 +156,7 @@ export function setupNavigatorPolyfill() {
       };
       // Android Credential Manager is very strict about the RP ID.
       // It must match the domain where the assetlinks.json is hosted.
-      const result =
-        request.authenticatorSelection?.authenticatorAttachment === 'platform'
-          ? await Passkey.createPlatformKey(request as any)
-          : await Passkey.create(request as any);
+      const result = await Passkey.create(request as any);
       if (!result) return null;
 
       const clientDataJSON = toArrayBuffer(result.response.clientDataJSON);
