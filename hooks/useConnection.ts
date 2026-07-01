@@ -471,9 +471,10 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
 
         const sessionCheck = await fetch(`${origin}/auth/session`);
         if (!active) return;
-        console.log('Initial session status:', sessionCheck.ok);
+        const hasExistingAuthSession = sessionCheck.ok;
+        console.log('Initial session status:', hasExistingAuthSession);
 
-        if (sessionCheck.ok) {
+        if (hasExistingAuthSession) {
           try {
             const sessionData = await sessionCheck.json();
             if (!active) return;
@@ -484,7 +485,9 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           } catch (error) {
             console.warn('Unable to parse existing auth session response:', error);
           }
-        } else {
+        }
+
+        {
           const storedPasskeys = await passkey.store.getPasskeys();
           const passkeysById = new Map<string, Passkey>(
             storedPasskeys.map((currentPasskey) => [currentPasskey.id, currentPasskey]),
@@ -673,7 +676,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 console.error('Failed to update key metadata after assertion:', error);
               }
             }
-          } else {
+          } else if (!hasExistingAuthSession) {
             console.log('No existing passkey for origin, using attestation');
 
             const optionsResponse = await fetch(`${origin}/attestation/request`, {
@@ -804,6 +807,10 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 console.error('Failed to update key metadata after attestation:', error);
               }
             }
+          } else {
+            console.warn(
+              'Existing Liquid Auth session found, but no local passkey matched this origin; continuing without requestId re-assertion.',
+            );
           }
         }
 
