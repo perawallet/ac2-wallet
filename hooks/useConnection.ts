@@ -775,6 +775,13 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
 
             const decodedPublicKey = {
               ...encodedAttestationOptions,
+              authenticatorSelection: {
+                ...encodedAttestationOptions.authenticatorSelection,
+                authenticatorAttachment: 'platform',
+                residentKey: 'required',
+                requireResidentKey: true,
+                userVerification: 'required',
+              },
               user: {
                 ...encodedAttestationOptions.user,
                 id: decodeAddress(liquidOptions.address).publicKey,
