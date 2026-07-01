@@ -52,7 +52,7 @@ export default function ChatTab() {
 
   if (!origin || !requestId) {
     return (
-      <Screen edges={['bottom']}>
+      <Screen edges={[]}>
         <ChatEmptyState onScan={() => router.push('/scan')} />
       </Screen>
     );
@@ -62,7 +62,7 @@ export default function ChatTab() {
   // ChatScreen (and its hooks) must not mount until the user accepts.
   if (!disclaimerAccepted) {
     return (
-      <Screen edges={['bottom']}>
+      <Screen edges={[]}>
         <View className="flex-1 items-center justify-center bg-background p-5">
           <View className="w-full rounded-2xl border border-border bg-card">
             <View className="flex-row items-center gap-2 border-b border-border px-5 pb-4 pt-5">

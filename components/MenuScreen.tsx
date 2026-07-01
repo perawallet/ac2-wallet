@@ -96,7 +96,7 @@ export function MenuScreen() {
   }
 
   return (
-    <Screen className="justify-start p-4">
+    <Screen edges={[]} className="justify-start p-4">
       <SectionHeader label="Preferences" />
       <View className="overflow-hidden rounded-xl">
         <MenuRow

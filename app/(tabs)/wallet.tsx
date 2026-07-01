@@ -46,7 +46,7 @@ export default function WalletTab() {
   }, [address]);
 
   return (
-    <Screen className="px-5">
+    <Screen edges={[]} className="px-5 pt-4">
       <ScrollView
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refetch} />}
         showsVerticalScrollIndicator={false}
