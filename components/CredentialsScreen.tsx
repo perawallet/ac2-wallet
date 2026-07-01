@@ -99,7 +99,7 @@ export function CredentialsScreen() {
 
   if (passkeys.length === 0) {
     return (
-      <Screen className="items-center justify-center gap-3 p-8">
+      <Screen edges={[]} className="items-center justify-center gap-3 p-8">
         <View className="h-16 w-16 items-center justify-center rounded-2xl bg-muted">
           <MaterialIcons name="fingerprint" size={32} color={palette.mutedForeground} />
         </View>
@@ -112,7 +112,7 @@ export function CredentialsScreen() {
   }
 
   return (
-    <Screen className="px-5">
+    <Screen edges={[]} className="px-5">
       <ScrollView showsVerticalScrollIndicator={false}>
         <Text className="my-4 text-sm text-muted-foreground">
           {passkeys.length} credential{passkeys.length === 1 ? '' : 's'} stored on this device
