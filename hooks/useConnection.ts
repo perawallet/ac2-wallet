@@ -484,7 +484,9 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           } catch (error) {
             console.warn('Unable to parse existing auth session response:', error);
           }
-        } else {
+        }
+
+        {
           const storedPasskeys = await passkey.store.getPasskeys();
           const passkeysById = new Map<string, Passkey>(
             storedPasskeys.map((currentPasskey) => [currentPasskey.id, currentPasskey]),
