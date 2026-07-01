@@ -1,7 +1,7 @@
 // The crypto/buffer polyfills are installed by the custom entry point
 // (`index.js`) before any route module is evaluated. See that file for why.
-import { Drawer } from '@/components/navigation/Drawer';
 import { LoadingScreen } from '@/components/LoadingScreen';
+import { Drawer } from '@/components/navigation/Drawer';
 import '@/global.css';
 import { bootstrap } from '@/lib/keystore/bootstrap';
 import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
@@ -30,7 +30,7 @@ globalPolyfill();
 registerGlobals();
 
 const biometricOptions: ReactKeystoreOptions['keystore']['authentication'] = {
-  biometrics: true,
+  biometrics: false,
   prompt: 'Authenticate to access your wallet',
 };
 
