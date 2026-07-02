@@ -45,7 +45,7 @@ import { useStore } from '@tanstack/react-store';
 import { Buffer } from 'buffer';
 import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, NativeModules, Platform } from 'react-native';
+import { Alert, AppState, NativeModules, Platform } from 'react-native';
 
 /**
  * Re-encrypt a key record with the supplied master key and reflect the new
@@ -161,6 +161,12 @@ function passkeyMatchesConnection(
   );
 }
 
+// Bounded, rate-limited automatic reconnect budget. Attempts use exponential
+// backoff (1s, 2s, 4s) so we never hammer the agent/server.
+const MAX_AUTO_RECONNECT_ATTEMPTS = 3;
+const AUTO_RECONNECT_BASE_DELAY_MS = 1000;
+const AUTO_RECONNECT_MAX_DELAY_MS = 4000;
+
 interface UseConnectionResult {
   session: Session | undefined;
   address: string | null;
@@ -179,6 +185,12 @@ interface UseConnectionResult {
   isError: boolean;
   isLoading: boolean;
   isConnected: boolean;
+  /** True while an automatic (rate-limited) reconnect is in flight or pending. */
+  isReconnecting: boolean;
+  /** Current automatic reconnect attempt (1-based); 0 when none is in flight. */
+  reconnectAttempt: number;
+  /** Maximum number of automatic reconnect attempts before the manual fallback. */
+  maxReconnectAttempts: number;
   lastHeartbeat: number;
   reset: () => void;
   /** Tear down any stale transport and re-run the connection/auth flow. */
@@ -197,6 +209,10 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
   const { accounts, keys, key, passkey } = useProvider();
 
   const [isConnected, setIsConnected] = useState(false);
+  const isConnectedRef = useRef(false);
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
   const [address, setAddress] = useState<string | null>(null);
   const addressRef = useRef<string | null>(null);
 
@@ -207,8 +223,31 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
   const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  // Bumped by `reconnect()` to re-trigger the connection effect on demand.
+  // Bumped by `reconnect()` / the auto-retry timer to re-trigger the connection
+  // effect on demand.
   const [reconnectNonce, setReconnectNonce] = useState(0);
+
+  // --- Automatic reconnect state machine ---------------------------------
+  // True while an automatic reconnect is in flight or waiting on a backoff
+  // timer; drives the "Reconnecting…" UI and keeps `ReconnectBar` hidden until
+  // the retry budget is exhausted.
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  // 1-based attempt counter surfaced to the UI ("Reconnecting (2/3)").
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const reconnectAttemptRef = useRef(0);
+  // Pending backoff timer handle.
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Whether the setup currently in flight was kicked off automatically (vs. a
+  // manual `reconnect()` / initial mount). Auto attempts retry on failure and
+  // suppress the intrusive "Connection Failed" alert.
+  const isAutoAttemptRef = useRef(false);
+  // Set right before a transport we tear down ourselves (reset / inactivity),
+  // so the resulting `onClose` doesn't kick off an unwanted auto-reconnect.
+  const deliberateCloseRef = useRef(false);
+  // Set when the user explicitly disconnects; blocks foreground auto-reconnect
+  // until they manually reconnect. Inactivity shutdown does NOT set this so the
+  // app can resume when brought back to the foreground.
+  const userDisconnectedRef = useRef(false);
 
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const streamChannelRef = useRef<RTCDataChannel | null>(null);
@@ -291,7 +330,75 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     }
   }, []);
 
+  // Cancel any pending auto-reconnect backoff timer.
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
+  // Reset the automatic reconnect budget (after a successful connect or an
+  // explicit, user-initiated action).
+  const resetAutoReconnect = useCallback(() => {
+    clearRetryTimer();
+    reconnectAttemptRef.current = 0;
+    isAutoAttemptRef.current = false;
+    setReconnectAttempt(0);
+    setIsReconnecting(false);
+  }, [clearRetryTimer]);
+
+  // Schedule the next automatic reconnect attempt with exponential backoff,
+  // provided the budget isn't exhausted. When the budget runs out we drop back
+  // to the manual `ReconnectBar` (loading/reconnecting flags cleared).
+  const scheduleAutoReconnect = useCallback(() => {
+    if (reconnectAttemptRef.current >= MAX_AUTO_RECONNECT_ATTEMPTS) {
+      clearRetryTimer();
+      isAutoAttemptRef.current = false;
+      setIsReconnecting(false);
+      setIsLoading(false);
+      return;
+    }
+
+    const attempt = reconnectAttemptRef.current + 1;
+    reconnectAttemptRef.current = attempt;
+    const delay = Math.min(
+      AUTO_RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1),
+      AUTO_RECONNECT_MAX_DELAY_MS,
+    );
+
+    setReconnectAttempt(attempt);
+    setIsReconnecting(true);
+    setIsLoading(true);
+    setError(null);
+
+    clearRetryTimer();
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      clearTransport();
+      authFlowInProgressRef.current = false;
+      isAutoAttemptRef.current = true;
+      deliberateCloseRef.current = false;
+      lastUserActivityRef.current = Date.now();
+      setReconnectNonce((n) => n + 1);
+    }, delay);
+  }, [clearRetryTimer, clearTransport]);
+
+  // Keep a stable ref to the latest scheduler so long-lived transport callbacks
+  // (`onClose`) and the `AppState` listener can trigger it without capturing a
+  // stale closure.
+  const scheduleAutoReconnectRef = useRef(scheduleAutoReconnect);
+  scheduleAutoReconnectRef.current = scheduleAutoReconnect;
+
+  const resetAutoReconnectRef = useRef(resetAutoReconnect);
+  resetAutoReconnectRef.current = resetAutoReconnect;
+
   const reset = useCallback(() => {
+    // User-initiated teardown: suppress both the onClose auto-retry and the
+    // foreground auto-reconnect until they explicitly reconnect.
+    deliberateCloseRef.current = true;
+    userDisconnectedRef.current = true;
+    resetAutoReconnect();
     clearTransport();
     setActiveStreamText('');
     setAgentPresence(null);
@@ -300,12 +407,18 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     setIsLoading(false);
     setError(null);
     updateSessionStatus(requestId, origin, 'closed');
-  }, [requestId, origin, clearTransport]);
+  }, [requestId, origin, clearTransport, resetAutoReconnect]);
 
   // Manually re-establish a dropped connection. Tears down any stale transport
   // (so the connection effect's guard doesn't short-circuit), flips back into
   // the loading/connecting state, and bumps the nonce to re-run setup.
   const reconnect = useCallback(() => {
+    // A manual reconnect refreshes the auto-retry budget and clears the
+    // "user wants to stay disconnected" intent.
+    resetAutoReconnect();
+    userDisconnectedRef.current = false;
+    deliberateCloseRef.current = false;
+    isAutoAttemptRef.current = false;
     clearTransport();
     authFlowInProgressRef.current = false;
     lastUserActivityRef.current = Date.now();
@@ -313,7 +426,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     setIsConnected(false);
     setIsLoading(true);
     setReconnectNonce((n) => n + 1);
-  }, [clearTransport]);
+  }, [clearTransport, resetAutoReconnect]);
 
   const send = useCallback(
     (text: string) => {
@@ -425,6 +538,9 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           console.log('Closing connection due to inactivity (1 minute)');
           // Fully tear down so the connection effect's guard doesn't keep a
           // stale client around — otherwise a later reconnect is impossible.
+          // Flag the close as deliberate so its `onClose` doesn't spin up the
+          // auto-reconnect loop; foregrounding the app can still resume it.
+          deliberateCloseRef.current = true;
           clearTransport();
           updateSessionStatus(requestId, origin, 'closed');
           if (active) {
@@ -441,6 +557,37 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
       if (inactivityInterval) clearInterval(inactivityInterval);
     };
   }, [isConnected, clearTransport, origin, requestId]);
+
+  // Resume a dropped connection when the app returns to the foreground. An
+  // already-mounted hook otherwise has no trigger to retry after the OS tore
+  // the transport down while backgrounded.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      // Only resume if there's a session to restore, we're actually down, the
+      // user didn't deliberately disconnect, and no connect/retry is already
+      // underway.
+      const hasSession = sessionsStore.state.sessions.some(
+        (s) => s.id === requestId && s.origin === origin,
+      );
+      if (
+        !hasSession ||
+        userDisconnectedRef.current ||
+        isConnectedRef.current ||
+        clientRef.current ||
+        authFlowInProgressRef.current ||
+        retryTimerRef.current
+      ) {
+        return;
+      }
+      // Foreground gets a fresh retry budget.
+      resetAutoReconnect();
+      deliberateCloseRef.current = false;
+      scheduleAutoReconnectRef.current();
+    });
+
+    return () => subscription.remove();
+  }, [origin, requestId, resetAutoReconnect]);
 
   useEffect(() => {
     let active = true;
@@ -1135,8 +1282,13 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           onOpen: () => {
             console.log('Data channel opened');
             if (active) {
+              // A live connection clears the retry budget and any stale intent.
+              resetAutoReconnectRef.current();
+              deliberateCloseRef.current = false;
+              userDisconnectedRef.current = false;
               setIsConnected(true);
               setIsLoading(false);
+              setError(null);
               setAc2Client(ac2);
               updateSessionStatus(requestId, origin, 'active');
             }
@@ -1146,10 +1298,18 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
             updateSessionStatus(requestId, origin, 'closed');
             if (active) {
               setIsConnected(false);
-              setIsLoading(false);
               // Drop every stale transport ref so the next mount / reconnect
               // isn't blocked by the connection effect's guard.
               clearTransport();
+              if (deliberateCloseRef.current) {
+                // We tore this down on purpose (reset / inactivity) — don't
+                // spin up an auto-reconnect.
+                deliberateCloseRef.current = false;
+                setIsLoading(false);
+              } else {
+                // Unexpected drop: kick off a bounded, rate-limited retry.
+                scheduleAutoReconnectRef.current();
+              }
             }
           },
         });
@@ -1160,12 +1320,28 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         updateSessionStatus(requestId, origin, 'failed');
         if (active) {
           setError(err);
-          setIsLoading(false);
-          Alert.alert(
-            'Connection Failed',
-            err.message || 'Failed to setup connection to the peer',
-            [{ text: 'OK' }],
-          );
+          if (
+            isAutoAttemptRef.current &&
+            reconnectAttemptRef.current < MAX_AUTO_RECONNECT_ATTEMPTS
+          ) {
+            // Automatic attempt failed but the budget isn't spent — retry
+            // (with backoff) and suppress the intrusive alert.
+            scheduleAutoReconnectRef.current();
+          } else {
+            const wasAutoAttempt = isAutoAttemptRef.current;
+            isAutoAttemptRef.current = false;
+            setIsReconnecting(false);
+            setIsLoading(false);
+            // Only surface the blocking alert for user-initiated / initial
+            // attempts; exhausted auto-retries fall back to `ReconnectBar`.
+            if (!wasAutoAttempt) {
+              Alert.alert(
+                'Connection Failed',
+                err.message || 'Failed to setup connection to the peer',
+                [{ text: 'OK' }],
+              );
+            }
+          }
         }
       } finally {
         authFlowInProgressRef.current = false;
@@ -1195,6 +1371,9 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     };
   }, [origin, requestId, accounts.length > 0, keys.length > 0, reconnectNonce]);
 
+  // Cancel any pending backoff timer when the hook unmounts.
+  useEffect(() => clearRetryTimer, [clearRetryTimer]);
+
   return {
     session,
     address,
@@ -1208,6 +1387,9 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
     isError: !!error,
     isLoading,
     isConnected,
+    isReconnecting,
+    reconnectAttempt,
+    maxReconnectAttempts: MAX_AUTO_RECONNECT_ATTEMPTS,
     lastHeartbeat,
     reset,
     reconnect,

@@ -20,8 +20,8 @@ import {
 } from '@/stores/ac2Messages';
 import { clearAgentIdentitiesByConnection } from '@/stores/agentIdentities';
 import { clearMessages, clearMessagesByConnection, messagesStore } from '@/stores/messages';
-import { removeSession, renameSession } from '@/stores/sessions';
 import { localStorage } from '@/stores/mmkv-local';
+import { removeSession, renameSession } from '@/stores/sessions';
 import { clearCurrentConnection, setActiveThid } from '@/stores/ui';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
@@ -51,6 +51,9 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
     isConnected,
     isError,
     isLoading,
+    isReconnecting,
+    reconnectAttempt,
+    maxReconnectAttempts,
     send,
     sendAc2,
     lastHeartbeat,
@@ -308,6 +311,12 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
       </View>
       {isConnected ? (
         <ChatComposer onSend={send} enabled placeholder="Message" />
+      ) : isReconnecting ? (
+        <ChatComposer
+          onSend={send}
+          enabled={false}
+          placeholder={`Reconnecting (${reconnectAttempt}/${maxReconnectAttempts})…`}
+        />
       ) : isLoading ? (
         <ChatComposer onSend={send} enabled={false} placeholder="Connecting…" />
       ) : (
