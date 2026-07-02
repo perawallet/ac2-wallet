@@ -12,6 +12,7 @@ const ENV = process.env.APP_ENV || 'debug';
 // not needed here since AC2 is a fresh listing). The iOS Fastfile still runs
 // agvtool to propagate this to the PasskeyAutofill extension target.
 const buildNumber = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
+const cameraUsageDescription = 'AC2 uses the camera to scan QR codes to pair with AI agents.';
 
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
@@ -80,6 +81,7 @@ module.exports = {
         // enforcement, which is why the crash only shows up on TestFlight.
         NSFaceIDUsageDescription:
           'AC2 uses Face ID to unlock your wallet and authorize sensitive actions.',
+        NSCameraUsageDescription: cameraUsageDescription,
       },
       associatedDomains: ['webcredentials:debug.liquidauth.com'],
       entitlements: {
@@ -117,6 +119,12 @@ module.exports = {
           resizeMode: 'contain',
           backgroundColor: '#0052FF',
           imageWidth: 578,
+        },
+      ],
+      [
+        'expo-camera',
+        {
+          cameraPermission: cameraUsageDescription,
         },
       ],
       [
