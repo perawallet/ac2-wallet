@@ -25,8 +25,10 @@ import {
   Session,
   sessionsStore,
   updateSessionActivity,
+  updateSessionPasskeyCredentialId,
   updateSessionStatus,
 } from '@/stores/sessions';
+import { findWalletAccount, isWalletAccountKey } from '@/lib/keystore/wallet-account';
 import { decodeAddress } from '@/utils/algorand';
 import { toUrlSafe } from '@/utils/base64';
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
@@ -34,13 +36,15 @@ import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/s
 import type { Key, KeyData } from '@algorandfoundation/keystore';
 import { encodeAddress } from '@algorandfoundation/keystore';
 import { assertion, encoding, SignalClient } from '@algorandfoundation/liquid-client';
+import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
 import {
   encode,
   encryptData,
   fetchSecret,
-  getMasterKey,
+  readMasterKey,
   storage,
 } from '@algorandfoundation/react-native-keystore';
+import { bootstrap } from '@/lib/keystore/bootstrap';
 import { useStore } from '@tanstack/react-store';
 import { Buffer } from 'buffer';
 import { XHR as EngineIoXHR } from 'engine.io-client';
@@ -122,28 +126,182 @@ function sessionAddressFromData(sessionData: any): string | null {
         : null;
 }
 
+function credentialIdFromData(data: any): string | null {
+  if (!data) return null;
+  if (typeof data === 'string') return data;
+
+  const candidates = [
+    data.credId,
+    data.credentialId,
+    data.id,
+    data.rawId,
+    data.credential?.credId,
+    data.credential?.credentialId,
+    data.credential?.id,
+    data.passkey?.credId,
+    data.passkey?.credentialId,
+    data.passkey?.id,
+  ];
+
+  const id = candidates.find((value) => typeof value === 'string' && value.length > 0);
+  return id ?? null;
+}
+
+function credentialArraysFromSession(sessionData: any): any[][] {
+  return [
+    sessionData?.user?.credentials,
+    sessionData?.user?.passkeys,
+    sessionData?.session?.credentials,
+    sessionData?.session?.passkeys,
+    sessionData?.credentials,
+    sessionData?.passkeys,
+  ].filter(Array.isArray);
+}
+
+function credentialIdsFromSessionData(sessionData: any): string[] {
+  return credentialArraysFromSession(sessionData)
+    .flat()
+    .map(credentialIdFromData)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+function userHandleMatchesAddress(userHandle: unknown, address: string): boolean {
+  if (typeof userHandle !== 'string' || userHandle.length === 0) return false;
+  if (userHandle === address) return true;
+
+  try {
+    const publicKey = encoding.fromBase64Url(toUrlSafe(userHandle));
+    return encodeAddress(publicKey) === address;
+  } catch {
+    return false;
+  }
+}
+
 function passkeysFromSessionUser(sessionData: any, origin: string): Passkey[] {
   const wallet = sessionAddressFromData(sessionData) ?? undefined;
-  const credentials = Array.isArray(sessionData?.user?.credentials)
-    ? sessionData.user.credentials
-    : [];
+  const credentials = credentialArraysFromSession(sessionData).flat();
 
   return credentials
-    .filter((credential: any) => typeof credential?.credId === 'string')
-    .map((credential: any) => ({
-      id: credential.credId,
-      name: `${wallet ?? 'Liquid Auth'}@${normalizeOriginHost(origin)}`,
-      userHandle: wallet,
-      origin,
-      publicKey: new Uint8Array(),
-      algorithm: 'P256',
-      metadata: {
+    .map((credential: any) => ({ credential, id: credentialIdFromData(credential) }))
+    .filter((entry): entry is { credential: any; id: string } => typeof entry.id === 'string')
+    .map(({ credential, id }) => {
+      const userHandle =
+        credential.userHandle ??
+        credential.userId ??
+        credential.credential?.userHandle ??
+        credential.credential?.userId ??
+        credential.passkey?.userHandle ??
+        credential.passkey?.userId ??
+        wallet;
+
+      return {
+        id,
+        name: `${wallet ?? 'Liquid Auth'}@${normalizeOriginHost(origin)}`,
+        userHandle,
         origin,
-        userHandle: wallet,
-        registered: true,
-        source: 'liquid-auth-session',
-      },
-    }));
+        publicKey: new Uint8Array(),
+        algorithm: 'P256',
+        metadata: {
+          origin,
+          userHandle,
+          registered: true,
+          source: 'liquid-auth-session',
+        },
+      };
+    });
+}
+
+function normalizeCredentialId(value: string): string {
+  return toUrlSafe(value.trim());
+}
+
+function credentialIdCandidates(credential: any): Set<string> {
+  const ids = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === 'string' && value.length > 0) ids.add(normalizeCredentialId(value));
+  };
+  add(credential?.id);
+  add(credential?.rawId ? encoding.toBase64URL(new Uint8Array(credential.rawId)) : null);
+  add(credential?.rawId ? Buffer.from(new Uint8Array(credential.rawId)).toString('base64') : null);
+  return ids;
+}
+
+function keyMatchesCredential(key: Key, credentialIds: Set<string>): boolean {
+  return credentialIds.has(normalizeCredentialId(key.id));
+}
+
+function addressMatchesKey(address: string, key: Key): boolean {
+  try {
+    const publicKey = decodeAddress(address).publicKey;
+    return (
+      !!key.publicKey &&
+      key.publicKey.length === publicKey.length &&
+      key.publicKey.every((value, index) => value === publicKey[index])
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function findPasskeyKeyForCredential({
+  credential,
+  passkeys,
+  origin,
+  walletAddress,
+}: {
+  credential: any;
+  passkeys: Passkey[];
+  origin: string;
+  walletAddress: string;
+}): Promise<Key | undefined> {
+  const credentialIds = credentialIdCandidates(credential);
+  const findMatch = () => {
+    const matchedPasskey = passkeys.find((p) => credentialIds.has(normalizeCredentialId(p.id)));
+    return (
+      keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
+      keyStore.state.keys.find((k) => keyMatchesCredential(k, credentialIds)) ||
+      keyStore.state.keys.find(
+        (k) =>
+          (k.type === 'hd-derived-p256' || k.type === 'xhd-derived-p256') &&
+          originMatches(k.metadata?.origin, origin) &&
+          k.metadata?.userHandle === walletAddress,
+      )
+    );
+  };
+
+  let matchedKey = findMatch();
+  for (let attempt = 0; !matchedKey && attempt < 3; attempt += 1) {
+    await bootstrap(biometricOptions, false);
+    matchedKey = findMatch();
+    if (!matchedKey) await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return matchedKey;
+}
+
+async function nativeStoredPasskeys(): Promise<Passkey[]> {
+  const credentials = await ReactNativePasskeyAutofill.getStoredCredentials().catch(() => []);
+  return credentials
+    .filter((credential: any) => typeof credential?.credentialId === 'string')
+    .map((credential: any) => {
+      const id = credential.credentialId.trim();
+      const origin = credential.relyingPartyIdentifier || credential.rpId || credential.origin;
+      const userHandle = credential.userHandle;
+      return {
+        id,
+        name: `${userHandle || 'Liquid Auth'}@${origin || 'Unknown Origin'}`,
+        userHandle,
+        origin,
+        publicKey: new Uint8Array(),
+        algorithm: 'P256',
+        createdAt: credential.createdAt || Date.now(),
+        metadata: {
+          origin,
+          userHandle,
+          registered: true,
+          source: 'native-autofill-store',
+        },
+      };
+    });
 }
 
 function passkeyMatchesConnection(
@@ -155,10 +313,25 @@ function passkeyMatchesConnection(
   const userHandle = passkey.metadata?.userHandle ?? passkey.userHandle;
   return (
     typeof sessionAddress === 'string' &&
-    typeof userHandle === 'string' &&
-    userHandle === sessionAddress &&
+    userHandleMatchesAddress(userHandle, sessionAddress) &&
     passkey.metadata?.registered === true
   );
+}
+
+async function fetchAssertionOptions(
+  origin: string,
+  credentialId: string,
+): Promise<{ credentialId: string; options: any } | null> {
+  const response = await fetch(`${origin}/assertion/request/${encodeURIComponent(credentialId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userVerification: 'required',
+    }),
+  });
+
+  if (!response.ok) return null;
+  return { credentialId, options: await response.json() };
 }
 
 interface UseConnectionResult {
@@ -193,8 +366,17 @@ interface UseConnectionResult {
   remoteThreads: { thid: string; title?: string; updatedAt?: number }[];
 }
 
-export function useConnection(origin: string, requestId: string): UseConnectionResult {
+interface UseConnectionOptions {
+  allowPasskeyCreation?: boolean;
+}
+
+export function useConnection(
+  origin: string,
+  requestId: string,
+  options: UseConnectionOptions = {},
+): UseConnectionResult {
   const { accounts, keys, key, passkey } = useProvider();
+  const allowPasskeyCreation = options.allowPasskeyCreation ?? false;
 
   const [isConnected, setIsConnected] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
@@ -457,7 +639,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         return;
       }
 
-      if (accountsStore.state.accounts.length === 0 || keyStore.state.keys.length === 0) {
+      if (!findWalletAccount(accountsStore.state.accounts, keyStore.state.keys)) {
         console.log('Waiting for accounts and keys to load...');
         // If it's been loading for more than a few seconds, it might really be empty
         // but typically it's better to wait for them to be non-empty.
@@ -490,12 +672,8 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           updateSessionStatus(requestId, origin, 'active');
         }
 
-        // Try to find the key associated with the first account, but fall back to the first available key
-        let foundKey = currentKeys.find((k) => k.id === currentAccounts[0]?.metadata?.keyId);
-        if (!foundKey && currentKeys.length > 0) {
-          foundKey = currentKeys[0];
-          console.log('Falling back to the first available key for attestation');
-        }
+        const walletAccount = findWalletAccount(currentAccounts, currentKeys);
+        const foundKey = walletAccount?.key;
 
         if (!foundKey || !foundKey.publicKey) {
           console.error(
@@ -517,6 +695,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           throw new Error('No key found for attestation');
         }
 
+        const walletAddress = encodeAddress(foundKey.publicKey);
         console.log('Found key for attestation:', foundKey.id, foundKey.type);
 
         const sessionCheck = await fetch(`${origin}/auth/session`);
@@ -531,9 +710,11 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
             initialSessionData = sessionData;
             if (!active) return;
             initialSessionAddress = sessionAddressFromData(sessionData);
-            if (initialSessionAddress) {
+            if (initialSessionAddress && addressMatchesKey(initialSessionAddress, foundKey)) {
               setAddress(initialSessionAddress);
               addressRef.current = initialSessionAddress;
+            } else if (initialSessionAddress) {
+              console.warn('Ignoring session address that does not match the active wallet key');
             }
           } catch (error) {
             console.warn('Unable to parse existing auth session response:', error);
@@ -543,20 +724,25 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         {
           const storedPasskeys = await passkey.store.getPasskeys();
           const passkeysById = new Map<string, Passkey>(
-            storedPasskeys.map((currentPasskey) => [currentPasskey.id, currentPasskey]),
+            storedPasskeys.map((currentPasskey) => [
+              normalizeCredentialId(currentPasskey.id),
+              currentPasskey,
+            ]),
           );
-
-          passkeysFromSessionUser(initialSessionData, origin).forEach((sessionPasskey) => {
-            if (!passkeysById.has(sessionPasskey.id)) {
-              passkeysById.set(sessionPasskey.id, sessionPasskey);
+          const addPasskeyCandidate = (candidate: Passkey) => {
+            const normalizedId = normalizeCredentialId(candidate.id);
+            if (!passkeysById.has(normalizedId)) {
+              passkeysById.set(normalizedId, candidate);
             }
-          });
+          };
+
+          (await nativeStoredPasskeys()).forEach(addPasskeyCandidate);
+
+          passkeysFromSessionUser(initialSessionData, origin).forEach(addPasskeyCandidate);
 
           currentKeys.forEach((currentKey) => {
             const keyBackedPasskey = passkeyFromKey(currentKey);
-            if (keyBackedPasskey && !passkeysById.has(keyBackedPasskey.id)) {
-              passkeysById.set(keyBackedPasskey.id, keyBackedPasskey);
-            }
+            if (keyBackedPasskey) addPasskeyCandidate(keyBackedPasskey);
           });
 
           const currentPasskeys = [...passkeysById.values()];
@@ -564,32 +750,34 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
             passkeyMatchesConnection(p, origin, initialSessionAddress),
           );
 
-          if (relevantPasskeys.length > 0) {
-            const firstPasskey = relevantPasskeys[0];
+          const assertionCredentialIds = [
+            existingSession?.passkeyCredentialId,
+            ...credentialIdsFromSessionData(initialSessionData),
+            ...relevantPasskeys.map((p) => p.id),
+            walletAddress,
+          ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+          const seenAssertionCredentialIds = new Set<string>();
+          const uniqueAssertionCredentialIds = assertionCredentialIds.filter((id) => {
+            const normalized = normalizeCredentialId(id);
+            if (seenAssertionCredentialIds.has(normalized)) return false;
+            seenAssertionCredentialIds.add(normalized);
+            return true;
+          });
+
+          let assertionOptions: { credentialId: string; options: any } | null = null;
+          for (const credentialId of uniqueAssertionCredentialIds) {
+            assertionOptions = await fetchAssertionOptions(origin, credentialId);
+            if (!active) return;
+            if (assertionOptions) break;
+          }
+
+          if (assertionOptions) {
             console.log(
-              'Found existing passkeys for origin, using first one for options request:',
-              firstPasskey.id,
+              'Found existing passkey assertion options for credential:',
+              assertionOptions.credentialId,
             );
-            // TODO: move options upstream
-            const optionsResponse = await fetch(`${origin}/assertion/request/${firstPasskey.id}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userVerification: 'required',
-              }),
-            });
 
-            if (!active) return;
-
-            if (!optionsResponse.ok) {
-              throw new Error(
-                `Failed to get assertion request: ${optionsResponse.status} ${optionsResponse.statusText}`,
-              );
-            }
-
-            const options = await optionsResponse.json();
-            if (!active) return;
-            const decodedOptions = assertion.encoder.decodeOptions(options);
+            const decodedOptions = assertion.encoder.decodeOptions(assertionOptions.options);
 
             // Ensure all relevant passkeys are allowed in the options to allow user selection in the intent
             if (relevantPasskeys.length > 1) {
@@ -611,13 +799,13 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               });
             }
 
-            const challenge = encoding.fromBase64Url(options.challenge);
+            const challenge = encoding.fromBase64Url(assertionOptions.options.challenge);
 
             const liquidOptions = {
               requestId,
               origin,
               type: 'algorand',
-              address: encodeAddress(foundKey?.publicKey),
+              address: walletAddress,
               signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
               device: 'Demo Web Wallet',
             };
@@ -675,6 +863,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               const selectedPublicKey = decodeAddress(selectedAddress).publicKey;
               const selectedKey = keyStore.state.keys.find(
                 (k) =>
+                  isWalletAccountKey(k) &&
                   k.publicKey &&
                   k.publicKey.length === selectedPublicKey.length &&
                   k.publicKey.every((v, i) => v === selectedPublicKey[i]),
@@ -707,17 +896,20 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 `Failed to submit assertion response: ${submitResponse.status} ${submitResponse.statusText}`,
               );
             }
+            updateSessionPasskeyCredentialId(requestId, origin, credential.id);
 
-            const matchedPasskey = currentPasskeys.find((p) => p.id === credential.id);
-            const matchedKey =
-              keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
-              keyStore.state.keys.find((k) => toUrlSafe(k.id) === credential.id);
+            const matchedKey = await findPasskeyKeyForCredential({
+              credential,
+              passkeys: [...currentPasskeys, ...relevantPasskeys],
+              origin,
+              walletAddress: selectedAddress ?? liquidOptions.address,
+            });
 
             if (matchedKey) {
               try {
                 // Pass a defensive copy via `options.masterKey` so `fetchSecret`
                 // can zero its own buffer in `finally` without wiping ours.
-                const masterKey = await getMasterKey(biometricOptions);
+                const masterKey = await readMasterKey(biometricOptions);
                 const keyData = await fetchSecret<KeyData>({
                   keyId: matchedKey.id,
                   options: { masterKey: Buffer.from(masterKey) },
@@ -736,6 +928,12 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               }
             }
           } else {
+            if (!allowPasskeyCreation) {
+              throw new Error(
+                'No existing passkey was found for this connection. Scan the agent QR code again to create one.',
+              );
+            }
+
             console.log('No existing passkey for origin, using attestation');
 
             const optionsResponse = await fetch(`${origin}/attestation/request`, {
@@ -771,7 +969,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               requestId,
               origin: origin,
               type: 'algorand',
-              address: encodeAddress(foundKey?.publicKey),
+              address: walletAddress,
               signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
               device: 'Demo Web Wallet',
             };
@@ -837,18 +1035,21 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
                 `Failed to submit attestation response: ${submitResponse.status} ${submitResponse.statusText}`,
               );
             }
+            updateSessionPasskeyCredentialId(requestId, origin, credential.id);
 
             const currentPasskeys = await passkey.store.getPasskeys();
-            const matchedPasskey = currentPasskeys.find((p) => p.id === credential.id);
-            const matchedKey =
-              keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
-              keyStore.state.keys.find((k) => toUrlSafe(k.id) === credential.id);
+            const matchedKey = await findPasskeyKeyForCredential({
+              credential,
+              passkeys: currentPasskeys,
+              origin,
+              walletAddress: liquidOptions.address,
+            });
 
             if (matchedKey) {
               try {
                 // Pass a defensive copy via `options.masterKey` so `fetchSecret`
                 // can zero its own buffer in `finally` without wiping ours.
-                const masterKey = await getMasterKey(biometricOptions);
+                const masterKey = await readMasterKey(biometricOptions);
                 const keyData = await fetchSecret<KeyData>({
                   keyId: matchedKey.id,
                   options: { masterKey: Buffer.from(masterKey) },
@@ -880,9 +1081,13 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           if (!active) return;
 
           const sessionAddress = sessionAddressFromData(sessionData);
-          if (sessionAddress) {
+          if (sessionAddress && addressMatchesKey(sessionAddress, foundKey)) {
             setAddress(sessionAddress);
             addressRef.current = sessionAddress;
+          } else if (sessionAddress) {
+            console.warn(
+              'Ignoring final session address that does not match the active wallet key',
+            );
           }
         } else {
           console.log('Session validation failed (ignored for debugging)');
@@ -1193,7 +1398,14 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         clientRef.current = null;
       }
     };
-  }, [origin, requestId, accounts.length > 0, keys.length > 0, reconnectNonce]);
+  }, [
+    origin,
+    requestId,
+    accounts.length > 0,
+    keys.length > 0,
+    reconnectNonce,
+    allowPasskeyCreation,
+  ]);
 
   return {
     session,

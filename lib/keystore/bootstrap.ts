@@ -1,8 +1,9 @@
 import { Alert, Platform } from 'react-native';
 import {
+  createMasterKey,
   AuthenticationOptions,
   fetchSecret,
-  getMasterKey,
+  readMasterKey,
   storage,
 } from '@algorandfoundation/react-native-keystore';
 import {
@@ -55,9 +56,12 @@ export async function bootstrap(options?: AuthenticationOptions, showAlert = tru
 
     // Fetch the master key from the OS Keychain on every bootstrap. The
     // keystore library owns biometric-prompt frequency; the app no longer
-    // caches the key in memory.
-    logMsg('Fetching master key...');
-    const masterKey = await getMasterKey(options);
+    // caches the key in memory. Only create a master key when there are no
+    // encrypted key records yet; otherwise a missing/unreadable master key is
+    // an unlock failure, not a signal to rotate.
+    logMsg(keyIds.length === 0 ? 'Creating master key...' : 'Reading master key...');
+    const masterKey =
+      keyIds.length === 0 ? await createMasterKey(options) : await readMasterKey(options);
     logMsg('Master key retrieved');
 
     logMsg('Setting master key in native side...');

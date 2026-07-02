@@ -6,6 +6,8 @@ export interface Session {
   origin: string;
   /** Optional user-defined display name for this connection. */
   name?: string;
+  /** WebAuthn credential id registered for this connection, when known. */
+  passkeyCredentialId?: string;
   timestamp: number;
   status: 'active' | 'closed' | 'failed';
   lastActivity: number;
@@ -90,6 +92,17 @@ export function updateSessionActivity(id: string, origin: string) {
     ...state,
     sessions: state.sessions.map((s) =>
       s.id === id && s.origin === origin ? { ...s, lastActivity: Date.now() } : s,
+    ),
+  }));
+}
+
+export function updateSessionPasskeyCredentialId(id: string, origin: string, credentialId: string) {
+  sessionsStore.setState((state) => ({
+    ...state,
+    sessions: state.sessions.map((s) =>
+      s.id === id && s.origin === origin
+        ? { ...s, passkeyCredentialId: credentialId, lastActivity: Date.now() }
+        : s,
     ),
   }));
 }

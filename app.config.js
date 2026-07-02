@@ -69,7 +69,7 @@ module.exports = {
         // Declare export-compliance up front so TestFlight stops prompting for
         // "Missing Compliance" on every upload. The app's crypto is P256/ECDSA
         // signing + WebAuthn (auth, exempt), TLS/WebRTC transport (exempt), and
-        // AES-256-GCM keystore encryption (lib/keystore/crypto.ts) — all
+        // AES-256-GCM keystore encryption (@algorandfoundation/react-native-keystore) — all
         // standard published algorithms in a mass-market app, claimed exempt
         // under EAR License Exception ENC. Revisit if non-standard/proprietary
         // confidentiality crypto is added.
