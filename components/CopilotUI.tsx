@@ -59,6 +59,9 @@ export function ThemedCopilotProvider({ children }: { children: React.ReactNode 
     <CopilotProvider
       overlay="svg"
       animated
+      // Android defaults to treating the status bar as hidden and subtracting
+      // `StatusBar.currentHeight`, which shifts the spotlight/tooltip upward.
+      androidStatusBarVisible
       tooltipComponent={CopilotTooltip}
       stepNumberComponent={CopilotStepNumber}
       tooltipStyle={{
