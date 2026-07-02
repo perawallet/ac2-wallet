@@ -1,8 +1,9 @@
 // The crypto/buffer polyfills are installed by the custom entry point
 // (`index.js`) before any route module is evaluated. See that file for why.
-import { Drawer } from '@/components/navigation/Drawer';
 import { LoadingScreen } from '@/components/LoadingScreen';
+import { Drawer } from '@/components/navigation/Drawer';
 import '@/global.css';
+import { biometricOptions } from '@/lib/keystore/auth-options';
 import { bootstrap } from '@/lib/keystore/bootstrap';
 import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
 import { NAV_THEME } from '@/lib/theme';
@@ -13,7 +14,6 @@ import { keyStoreHooks } from '@/stores/before-after';
 import { identitiesStore } from '@/stores/identities';
 import { keyStore } from '@/stores/keystore';
 import { passkeysStore } from '@/stores/passkeys';
-import { ReactKeystoreOptions } from '@algorandfoundation/react-native-keystore';
 import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ThemeProvider } from '@react-navigation/native';
@@ -28,11 +28,6 @@ import { registerGlobals } from 'react-native-webrtc';
 
 globalPolyfill();
 registerGlobals();
-
-const biometricOptions: ReactKeystoreOptions['keystore']['authentication'] = {
-  biometrics: true,
-  prompt: 'Authenticate to access your wallet',
-};
 
 const provider = new ReactNativeProvider(
   {

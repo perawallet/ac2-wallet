@@ -1,3 +1,4 @@
+import type { Passkey } from '@/extensions/passkeys';
 import { useProvider } from '@/hooks/useProvider';
 import {
   attachHeartbeatChannel,
@@ -9,6 +10,7 @@ import {
   sendConversationClose,
   sendConversationOpen,
 } from '@/lib/ac2';
+import { biometricOptions } from '@/lib/keystore/auth-options';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
 import { accountsStore } from '@/stores/accounts';
 import { keyStore } from '@/stores/keystore';
@@ -27,7 +29,6 @@ import {
 } from '@/stores/sessions';
 import { decodeAddress } from '@/utils/algorand';
 import { toUrlSafe } from '@/utils/base64';
-import type { Passkey } from '@/extensions/passkeys';
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
 import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
 import type { Key, KeyData } from '@algorandfoundation/keystore';
@@ -716,7 +717,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               try {
                 // Pass a defensive copy via `options.masterKey` so `fetchSecret`
                 // can zero its own buffer in `finally` without wiping ours.
-                const masterKey = await getMasterKey();
+                const masterKey = await getMasterKey(biometricOptions);
                 const keyData = await fetchSecret<KeyData>({
                   keyId: matchedKey.id,
                   options: { masterKey: Buffer.from(masterKey) },
@@ -847,7 +848,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
               try {
                 // Pass a defensive copy via `options.masterKey` so `fetchSecret`
                 // can zero its own buffer in `finally` without wiping ours.
-                const masterKey = await getMasterKey();
+                const masterKey = await getMasterKey(biometricOptions);
                 const keyData = await fetchSecret<KeyData>({
                   keyId: matchedKey.id,
                   options: { masterKey: Buffer.from(masterKey) },
