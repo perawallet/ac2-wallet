@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { RawContentViewer } from '@/components/ui/RawContentViewer';
 import { Text } from '@/components/ui/text';
 import { DEFAULT_THID } from '@/lib/ac2';
+import { directionLabel } from '@/lib/ac2/messageDisplay';
 import { THEME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
@@ -24,55 +25,64 @@ function getSignature(entry: Ac2MessageEntry): string | null {
   return (entry.envelope as AC2SigningResponse).body.signature ?? null;
 }
 
+function MetaRow({
+  label,
+  value,
+  mono,
+  ellipsis,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  ellipsis?: 'middle' | 'tail';
+}) {
+  return (
+    <View className="flex-row items-center gap-3 px-3 py-2">
+      <Text className="w-16 text-xs font-medium text-slate-500 dark:text-slate-400">{label}</Text>
+      <Text
+        className={cn('flex-1 text-right text-xs text-foreground', mono && 'font-mono')}
+        numberOfLines={1}
+        ellipsizeMode={ellipsis ?? 'tail'}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
-  const isOutbound = entry.direction === 'outbound';
   const { envelope } = entry;
   const signature = getSignature(entry);
+  const threadLabel = !entry.thid || entry.thid === DEFAULT_THID ? 'Main' : entry.thid;
 
   return (
     <View
       className={cn(
         'mb-3 self-stretch rounded-xl border border-border bg-white p-3 dark:bg-slate-800',
-        isOutbound ? 'border-r-4 border-r-primary' : 'border-l-4 border-l-primary',
+        entry.direction === 'outbound'
+          ? 'border-r-4 border-r-primary'
+          : 'border-l-4 border-l-primary',
       )}
     >
-      {/* Header — matches Ac2MessageCard layout */}
+      {/* Header */}
       <View className="flex-row items-center gap-1.5">
-        <MaterialIcons name="vpn-key" size={14} color="#6366F1" />
+        <MaterialIcons name="vpn-key" size={18} color="#6366F1" />
         <Text className="flex-1 font-mono text-xs font-bold text-primary" numberOfLines={1}>
           {envelope.type}
         </Text>
-        <Text className="text-[11px] font-semibold text-primary">
-          {isOutbound ? '→ peer' : 'peer →'}
-        </Text>
       </View>
 
-      {/* Metadata rows */}
-      <Text
-        className="mt-1.5 font-mono text-xs text-muted-foreground"
-        numberOfLines={1}
-        ellipsizeMode="middle"
-      >
-        From: {envelope.from}
-      </Text>
-      {entry.thid && (
-        <Text
-          className="mt-0.5 font-mono text-xs text-muted-foreground"
-          numberOfLines={1}
-          ellipsizeMode="middle"
-        >
-          Thread: {entry.thid}
-        </Text>
-      )}
-      {envelope.id && (
-        <Text className="mb-1.5 mt-0.5 font-mono text-xs font-bold text-emerald-500">
-          ID: {envelope.id.slice(0, 16)}...
-        </Text>
-      )}
+      {/* Metadata table — matches TechnicalDetails DetailRow style */}
+      <View className="mt-2 divide-y divide-border rounded-lg border border-border">
+        <MetaRow label="Direction" value={directionLabel(entry.direction)} />
+        <MetaRow label="From" value={envelope.from ?? ''} mono ellipsis="middle" />
+        <MetaRow label="Thread" value={threadLabel} />
+        {envelope.id && <MetaRow label="ID" value={envelope.id} mono ellipsis="middle" />}
+      </View>
 
       {signature && (
         <RawContentViewer
-          className="mb-2"
+          className="mb-2 mt-2"
           contentType="signature"
           content={signature}
           collapsedLines={2}
