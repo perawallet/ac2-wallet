@@ -81,6 +81,16 @@ function ChatTimeline({
     userScrollingRef.current = false;
   };
 
+  // Smoothly scroll to the latest message whenever the connection is
+  // established (or re-established after a drop). Also pins the bottom flag so
+  // subsequent streaming messages keep auto-scrolling.
+  React.useEffect(() => {
+    if (isConnected) {
+      isAtBottomRef.current = true;
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [isConnected]);
+
   // Scroll to the bottom without animation (animated scrolls fight rapid
   // streaming updates and feel janky), but only when already pinned there.
   const maybeScrollToEnd = () => {
