@@ -12,6 +12,7 @@ const ENV = process.env.APP_ENV || 'debug';
 // not needed here since AC2 is a fresh listing). The iOS Fastfile still runs
 // agvtool to propagate this to the PasskeyAutofill extension target.
 const buildNumber = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
+const cameraUsageDescription = 'AC2 uses the camera to scan QR codes to pair with AI agents.';
 
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
@@ -80,6 +81,7 @@ module.exports = {
         // enforcement, which is why the crash only shows up on TestFlight.
         NSFaceIDUsageDescription:
           'AC2 uses Face ID to unlock your wallet and authorize sensitive actions.',
+        NSCameraUsageDescription: cameraUsageDescription,
       },
       associatedDomains: ['webcredentials:debug.liquidauth.com'],
       entitlements: {
@@ -120,6 +122,12 @@ module.exports = {
         },
       ],
       [
+        'expo-camera',
+        {
+          cameraPermission: cameraUsageDescription,
+        },
+      ],
+      [
         'expo-build-properties',
         {
           android: {
@@ -136,7 +144,7 @@ module.exports = {
         '@algorandfoundation/react-native-passkey-autofill',
         {
           site: 'https://debug.liquidauth.com',
-          label: 'AC2-Controller',
+          label: 'AC2 Wallet',
           // Override the plugin default (group.<bundleId>.passkey-autofill) to
           // match the App Group registered under the new account.
           appGroup: 'group.app.perawallet.ac2-wallet',
@@ -167,8 +175,11 @@ module.exports = {
       termsOfServiceUrl:
         process.env.TERMS_OF_SERVICE_URL || 'https://ac2protocol.org/terms-of-service/',
       privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || 'https://perawallet.app/privacy-policy/',
+      ac2OpenClawPluginUrl:
+        process.env.AC2OPEN_CLAW_PLUGIN_URL ||
+        'https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference',
       provider: {
-        name: 'AC2-Controller',
+        name: 'AC2 Wallet',
         primaryColor: '#3B82F6',
         secondaryColor: '#E1EFFF',
         accentColor: '#10B981',

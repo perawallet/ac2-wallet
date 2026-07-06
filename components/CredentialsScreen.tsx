@@ -428,7 +428,7 @@ export function CredentialsScreen() {
 
   if (isEmpty) {
     return (
-      <Screen className="items-center justify-center gap-3 p-8">
+      <Screen edges={[]} className="items-center justify-center gap-3 p-8">
         <View className="h-16 w-16 items-center justify-center rounded-2xl bg-muted">
           <MaterialIcons name="fingerprint" size={32} color={palette.mutedForeground} />
         </View>

@@ -1,8 +1,10 @@
 import { QRCode } from '@/components/ui/QRCode';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
+import { IconButton } from '@/components/ui/IconButton';
 import { useAccountBalance } from '@/hooks/useAccountBalance';
 import { useActiveAccount } from '@/hooks/useActiveAccount';
+import { useUsdcOptIn } from '@/hooks/useUsdcOptIn';
 import { THEME } from '@/lib/theme';
 import { networkStore } from '@/stores/network';
 import { formatMicroAmount, truncateAddress } from '@/utils/format';
@@ -19,10 +21,11 @@ export default function WalletTab() {
   const { colorScheme } = useColorScheme();
   const iconColor = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
   const { address } = useActiveAccount();
-  const { algoMicro, usdcMicro, isRefreshing, error, refetch } = useAccountBalance(
+  const { algoMicro, usdcMicro, usdcOptedIn, isRefreshing, error, refetch } = useAccountBalance(
     address,
     network,
   );
+  const { isOptingIn, optInToUsdc } = useUsdcOptIn(address, network, refetch);
   const [copied, setCopied] = React.useState(false);
   const copyResetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -43,7 +46,7 @@ export default function WalletTab() {
   }, [address]);
 
   return (
-    <Screen className="px-5">
+    <Screen edges={[]} className="px-5 pt-4">
       <ScrollView
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refetch} />}
         showsVerticalScrollIndicator={false}
@@ -52,9 +55,19 @@ export default function WalletTab() {
           <Text className="mb-2 text-sm font-medium uppercase tracking-wide text-muted-foreground">
             Wallet Balance
           </Text>
-          <Text className="text-5xl font-bold text-foreground">
-            {formatMicroAmount(usdcMicro, 6)} USDC
-          </Text>
+          <View className="flex-row items-center justify-between gap-4">
+            <Text className="flex-1 text-5xl font-bold text-foreground">
+              {formatMicroAmount(usdcMicro, 6)} USDC
+            </Text>
+            <IconButton
+              name={isOptingIn ? 'hourglass-empty' : 'add'}
+              onPress={optInToUsdc}
+              tint="primary"
+              accessibilityLabel="Opt in to USDC"
+              disabled={!address || usdcOptedIn || isOptingIn}
+              className="bg-secondary"
+            />
+          </View>
           <Text className="mt-3 text-base text-muted-foreground">
             {formatMicroAmount(algoMicro, 6)} ALGO
           </Text>

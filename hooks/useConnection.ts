@@ -1,3 +1,4 @@
+import type { Passkey } from '@/extensions/passkeys';
 import { useProvider } from '@/hooks/useProvider';
 import {
   attachHeartbeatChannel,
@@ -9,6 +10,7 @@ import {
   sendConversationClose,
   sendConversationOpen,
 } from '@/lib/ac2';
+import { biometricOptions } from '@/lib/keystore/auth-options';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
 import { accountsStore } from '@/stores/accounts';
 import { keyStore } from '@/stores/keystore';
@@ -29,7 +31,7 @@ import { decodeAddress } from '@/utils/algorand';
 import { toUrlSafe } from '@/utils/base64';
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
 import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
-import type { KeyData } from '@algorandfoundation/keystore';
+import type { Key, KeyData } from '@algorandfoundation/keystore';
 import { encodeAddress } from '@algorandfoundation/keystore';
 import { assertion, encoding, SignalClient } from '@algorandfoundation/liquid-client';
 import {
@@ -41,8 +43,9 @@ import {
 } from '@algorandfoundation/react-native-keystore';
 import { useStore } from '@tanstack/react-store';
 import { Buffer } from 'buffer';
+import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, NativeModules } from 'react-native';
+import { Alert, NativeModules, Platform } from 'react-native';
 
 /**
  * Re-encrypt a key record with the supplied master key and reflect the new
@@ -61,6 +64,101 @@ function persistKeyMetadata(keyData: KeyData, masterKey: Buffer): void {
     ...state,
     keys: [{ ...keyState }, ...state.keys.filter((k) => k.id !== keyState.id)],
   }));
+}
+
+function normalizeOriginHost(value: string): string {
+  const trimmed = value.trim().replace(/\/$/, '');
+  try {
+    return new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).host.toLowerCase();
+  } catch {
+    return trimmed.toLowerCase();
+  }
+}
+
+function originMatches(storedOrigin: unknown, currentOrigin: string): boolean {
+  return (
+    typeof storedOrigin === 'string' &&
+    storedOrigin.length > 0 &&
+    normalizeOriginHost(storedOrigin) === normalizeOriginHost(currentOrigin)
+  );
+}
+
+function passkeyFromKey(keyData: Key): Passkey | null {
+  if (
+    (keyData.type !== 'xhd-derived-p256' && keyData.type !== 'hd-derived-p256') ||
+    !keyData.publicKey
+  ) {
+    return null;
+  }
+
+  const metadata = (keyData.metadata ?? {}) as Record<string, any>;
+  const username = metadata.userHandle || 'Unnamed User';
+  const origin = metadata.origin || 'Unnamed Origin';
+
+  return {
+    id: toUrlSafe(keyData.id),
+    name: `${username}@${origin}`,
+    userHandle: metadata.userHandle,
+    origin: metadata.origin,
+    publicKey: keyData.publicKey,
+    algorithm: keyData.algorithm || 'P256',
+    createdAt: metadata.createdAt || Date.now(),
+    metadata: {
+      ...metadata,
+      keyId: keyData.id,
+      type: keyData.type,
+      registered: metadata.registered ?? false,
+    },
+  };
+}
+
+function sessionAddressFromData(sessionData: any): string | null {
+  return typeof sessionData?.address === 'string'
+    ? sessionData.address
+    : typeof sessionData?.user?.wallet === 'string'
+      ? sessionData.user.wallet
+      : typeof sessionData?.session?.wallet === 'string'
+        ? sessionData.session.wallet
+        : null;
+}
+
+function passkeysFromSessionUser(sessionData: any, origin: string): Passkey[] {
+  const wallet = sessionAddressFromData(sessionData) ?? undefined;
+  const credentials = Array.isArray(sessionData?.user?.credentials)
+    ? sessionData.user.credentials
+    : [];
+
+  return credentials
+    .filter((credential: any) => typeof credential?.credId === 'string')
+    .map((credential: any) => ({
+      id: credential.credId,
+      name: `${wallet ?? 'Liquid Auth'}@${normalizeOriginHost(origin)}`,
+      userHandle: wallet,
+      origin,
+      publicKey: new Uint8Array(),
+      algorithm: 'P256',
+      metadata: {
+        origin,
+        userHandle: wallet,
+        registered: true,
+        source: 'liquid-auth-session',
+      },
+    }));
+}
+
+function passkeyMatchesConnection(
+  passkey: Passkey,
+  origin: string,
+  sessionAddress: string | null,
+): boolean {
+  if (originMatches(passkey.metadata?.origin ?? passkey.origin, origin)) return true;
+  const userHandle = passkey.metadata?.userHandle ?? passkey.userHandle;
+  return (
+    typeof sessionAddress === 'string' &&
+    typeof userHandle === 'string' &&
+    userHandle === sessionAddress &&
+    passkey.metadata?.registered === true
+  );
 }
 
 interface UseConnectionResult {
@@ -96,7 +194,7 @@ interface UseConnectionResult {
 }
 
 export function useConnection(origin: string, requestId: string): UseConnectionResult {
-  const { accounts, keys, key, passkey, sessions } = useProvider();
+  const { accounts, keys, key, passkey } = useProvider();
 
   const [isConnected, setIsConnected] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
@@ -423,311 +521,350 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
 
         const sessionCheck = await fetch(`${origin}/auth/session`);
         if (!active) return;
+        let initialSessionData: any = null;
+        let initialSessionAddress: string | null = null;
         console.log('Initial session status:', sessionCheck.ok);
 
-        const currentPasskeys = await passkey.store.getPasskeys();
-        const relevantPasskeys = currentPasskeys.filter((p) => {
-          const storedOrigin = p.metadata?.origin;
-          if (!storedOrigin) return false;
+        if (sessionCheck.ok) {
           try {
-            const storedHost = storedOrigin.includes('://')
-              ? new URL(storedOrigin).host
-              : storedOrigin;
-            const currentHost = origin.includes('://') ? new URL(origin).host : origin;
-            return storedHost === currentHost;
-          } catch {
-            return storedOrigin === origin;
+            const sessionData = await sessionCheck.json();
+            initialSessionData = sessionData;
+            if (!active) return;
+            initialSessionAddress = sessionAddressFromData(sessionData);
+            if (initialSessionAddress) {
+              setAddress(initialSessionAddress);
+              addressRef.current = initialSessionAddress;
+            }
+          } catch (error) {
+            console.warn('Unable to parse existing auth session response:', error);
           }
-        });
+        }
 
-        if (relevantPasskeys.length > 0) {
-          const firstPasskey = relevantPasskeys[0];
-          console.log(
-            'Found existing passkeys for origin, using first one for options request:',
-            firstPasskey.id,
+        {
+          const storedPasskeys = await passkey.store.getPasskeys();
+          const passkeysById = new Map<string, Passkey>(
+            storedPasskeys.map((currentPasskey) => [currentPasskey.id, currentPasskey]),
           );
-          // TODO: move options upstream
-          const optionsResponse = await fetch(`${origin}/assertion/request/${firstPasskey.id}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userVerification: 'required',
-            }),
+
+          passkeysFromSessionUser(initialSessionData, origin).forEach((sessionPasskey) => {
+            if (!passkeysById.has(sessionPasskey.id)) {
+              passkeysById.set(sessionPasskey.id, sessionPasskey);
+            }
           });
 
-          if (!active) return;
-
-          if (!optionsResponse.ok) {
-            throw new Error(
-              `Failed to get assertion request: ${optionsResponse.status} ${optionsResponse.statusText}`,
-            );
-          }
-
-          const options = await optionsResponse.json();
-          if (!active) return;
-          const decodedOptions = assertion.encoder.decodeOptions(options);
-
-          // Ensure all relevant passkeys are allowed in the options to allow user selection in the intent
-          if (relevantPasskeys.length > 1) {
-            if (!decodedOptions.allowCredentials) {
-              decodedOptions.allowCredentials = [];
+          currentKeys.forEach((currentKey) => {
+            const keyBackedPasskey = passkeyFromKey(currentKey);
+            if (keyBackedPasskey && !passkeysById.has(keyBackedPasskey.id)) {
+              passkeysById.set(keyBackedPasskey.id, keyBackedPasskey);
             }
-            const existingIds = new Set(
-              decodedOptions.allowCredentials.map((c) =>
-                encoding.toBase64URL(new Uint8Array(c.id as ArrayBuffer)),
-              ),
-            );
-            relevantPasskeys.forEach((p) => {
-              if (!existingIds.has(p.id)) {
-                decodedOptions.allowCredentials!.push({
-                  id: encoding.fromBase64Url(p.id),
-                  type: 'public-key',
-                });
-              }
-            });
-          }
-
-          const challenge = encoding.fromBase64Url(options.challenge);
-
-          const liquidOptions = {
-            requestId,
-            origin,
-            type: 'algorand',
-            address: encodeAddress(foundKey?.publicKey),
-            signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
-            device: 'Demo Web Wallet',
-          };
-
-          const credential = (await navigator.credentials.get({
-            publicKey: decodedOptions,
-          })) as any;
-          if (!active) return;
-          authFlowInProgressRef.current = false;
-
-          if (!credential) {
-            throw new Error('Credential creation failed');
-          }
-
-          const currentPasskeys = await passkey.store.getPasskeys();
-          let selectedAddress: string | null = null;
-          if (credential.response?.userHandle) {
-            try {
-              selectedAddress = encodeAddress(new Uint8Array(credential.response.userHandle));
-            } catch (e) {
-              console.error('Failed to encode address from userHandle', e);
-            }
-          }
-
-          if (!selectedAddress) {
-            const matchedPasskey =
-              relevantPasskeys.find((p) => p.id === credential.id) ||
-              currentPasskeys.find((p) => p.id === credential.id);
-            const userHandle = matchedPasskey?.metadata?.userHandle;
-            if (userHandle) {
-              try {
-                // Handle different possible formats of userHandle in store (Uint8Array or serialized object)
-                const handleArray =
-                  userHandle instanceof Uint8Array
-                    ? userHandle
-                    : typeof userHandle === 'object'
-                      ? new Uint8Array(Object.values(userHandle))
-                      : null;
-                if (handleArray) {
-                  selectedAddress = encodeAddress(handleArray);
-                }
-              } catch (e) {
-                console.error('Failed to encode address from stored userHandle', e);
-              }
-            }
-          }
-
-          if (selectedAddress) {
-            console.log('Selected address from passkey:', selectedAddress);
-            setAddress(selectedAddress);
-            addressRef.current = selectedAddress;
-            liquidOptions.address = selectedAddress;
-
-            // Re-sign the challenge if the address changed to match the selected passkey
-            const selectedPublicKey = decodeAddress(selectedAddress).publicKey;
-            const selectedKey = keyStore.state.keys.find(
-              (k) =>
-                k.publicKey &&
-                k.publicKey.length === selectedPublicKey.length &&
-                k.publicKey.every((v, i) => v === selectedPublicKey[i]),
-            );
-
-            if (selectedKey) {
-              console.log('Found key for selected address, re-signing challenge');
-              liquidOptions.signature = encoding.toBase64URL(
-                await key.store.sign(selectedKey.id, challenge),
-              );
-            } else {
-              console.warn('Could not find key for selected address', selectedAddress);
-            }
-          }
-
-          const encodedCredential = assertion.encoder.encodeCredential(credential);
-          encodedCredential.clientExtensionResults = {
-            ...encodedCredential.clientExtensionResults,
-            liquid: liquidOptions,
-          } as any;
-
-          const submitResponse = await fetch(`${origin}/assertion/response`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(encodedCredential),
           });
 
-          if (!submitResponse.ok) {
-            throw new Error(
-              `Failed to submit assertion response: ${submitResponse.status} ${submitResponse.statusText}`,
+          const currentPasskeys = [...passkeysById.values()];
+          const relevantPasskeys = currentPasskeys.filter((p) =>
+            passkeyMatchesConnection(p, origin, initialSessionAddress),
+          );
+
+          if (relevantPasskeys.length > 0) {
+            const firstPasskey = relevantPasskeys[0];
+            console.log(
+              'Found existing passkeys for origin, using first one for options request:',
+              firstPasskey.id,
             );
-          }
-
-          const matchedPasskey = currentPasskeys.find((p) => p.id === credential.id);
-          const matchedKey =
-            keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
-            keyStore.state.keys.find((k) => toUrlSafe(k.id) === credential.id);
-
-          if (matchedKey) {
-            try {
-              // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-              // can zero its own buffer in `finally` without wiping ours.
-              const masterKey = await getMasterKey();
-              const keyData = await fetchSecret<KeyData>({
-                keyId: matchedKey.id,
-                options: { masterKey: Buffer.from(masterKey) },
-              });
-              if (keyData) {
-                keyData.metadata = { ...keyData.metadata, registered: true };
-                persistKeyMetadata(keyData, masterKey);
-              }
-            } catch (error) {
-              console.error('Failed to update key metadata after assertion:', error);
-            }
-          }
-        } else {
-          console.log('No existing passkey for origin, using attestation');
-
-          const optionsResponse = await fetch(`${origin}/attestation/request`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              attestationType: 'none',
-              authenticatorSelection: {
-                authenticatorAttachment: 'platform',
+            // TODO: move options upstream
+            const optionsResponse = await fetch(`${origin}/assertion/request/${firstPasskey.id}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
                 userVerification: 'required',
-                residentKey: 'required',
-                requireResidentKey: true,
-              },
-              extensions: {
-                liquid: true,
-              },
-            }),
-          });
+              }),
+            });
 
-          if (!active) return;
+            if (!active) return;
 
-          if (!optionsResponse.ok) {
-            throw new Error(
-              `Failed to get attestation request: ${optionsResponse.status} ${optionsResponse.statusText}`,
-            );
-          }
+            if (!optionsResponse.ok) {
+              throw new Error(
+                `Failed to get assertion request: ${optionsResponse.status} ${optionsResponse.statusText}`,
+              );
+            }
 
-          const encodedAttestationOptions = await optionsResponse.json();
-          if (!active) return;
-          const challenge = encoding.fromBase64Url(encodedAttestationOptions.challenge);
+            const options = await optionsResponse.json();
+            if (!active) return;
+            const decodedOptions = assertion.encoder.decodeOptions(options);
 
-          const liquidOptions = {
-            requestId,
-            origin: origin,
-            type: 'algorand',
-            address: encodeAddress(foundKey?.publicKey),
-            signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
-            device: 'Demo Web Wallet',
-          };
-
-          const decodedPublicKey = {
-            ...encodedAttestationOptions,
-            user: {
-              ...encodedAttestationOptions.user,
-              id: decodeAddress(liquidOptions.address).publicKey,
-              name: liquidOptions.address,
-              displayName: liquidOptions.address,
-            },
-            challenge: encoding.fromBase64Url(encodedAttestationOptions.challenge),
-            excludeCredentials: encodedAttestationOptions.excludeCredentials?.map((cred: any) => ({
-              ...cred,
-              id: encoding.fromBase64Url(cred.id),
-            })),
-          };
-
-          const credential = (await navigator.credentials.create({
-            publicKey: decodedPublicKey,
-          })) as any;
-          if (!active) return;
-          authFlowInProgressRef.current = false;
-
-          if (!credential) {
-            throw new Error('Credential creation failed');
-          }
-
-          setAddress(liquidOptions.address);
-          addressRef.current = liquidOptions.address;
-
-          const response = credential.response;
-          const encodedCredential = {
-            id: credential.id,
-            rawId: encoding.toBase64URL(credential.rawId),
-            type: credential.type,
-            response: {
-              clientDataJSON: encoding.toBase64URL(response.clientDataJSON),
-              attestationObject: encoding.toBase64URL(response.attestationObject),
-              clientExtensionResults: response.clientExtensionResults || {},
-            },
-            clientExtensionResults: {
-              ...(credential.getClientExtensionResults
-                ? credential.getClientExtensionResults()
-                : credential.clientExtensionResults || {}),
-              liquid: liquidOptions,
-            },
-          };
-
-          const submitResponse = await fetch(`${origin}/attestation/response`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(encodedCredential),
-          });
-
-          if (!active) return;
-
-          if (!submitResponse.ok) {
-            throw new Error(
-              `Failed to submit attestation response: ${submitResponse.status} ${submitResponse.statusText}`,
-            );
-          }
-
-          const currentPasskeys = await passkey.store.getPasskeys();
-          const matchedPasskey = currentPasskeys.find((p) => p.id === credential.id);
-          const matchedKey =
-            keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
-            keyStore.state.keys.find((k) => toUrlSafe(k.id) === credential.id);
-
-          if (matchedKey) {
-            try {
-              // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-              // can zero its own buffer in `finally` without wiping ours.
-              const masterKey = await getMasterKey();
-              const keyData = await fetchSecret<KeyData>({
-                keyId: matchedKey.id,
-                options: { masterKey: Buffer.from(masterKey) },
-              });
-              if (keyData) {
-                keyData.metadata = { ...keyData.metadata, registered: true };
-                persistKeyMetadata(keyData, masterKey);
+            // Ensure all relevant passkeys are allowed in the options to allow user selection in the intent
+            if (relevantPasskeys.length > 1) {
+              if (!decodedOptions.allowCredentials) {
+                decodedOptions.allowCredentials = [];
               }
-            } catch (error) {
-              console.error('Failed to update key metadata after attestation:', error);
+              const existingIds = new Set(
+                decodedOptions.allowCredentials.map((c: { id: ArrayBuffer }) =>
+                  encoding.toBase64URL(new Uint8Array(c.id as ArrayBuffer)),
+                ),
+              );
+              relevantPasskeys.forEach((p) => {
+                if (!existingIds.has(p.id)) {
+                  decodedOptions.allowCredentials!.push({
+                    id: encoding.fromBase64Url(p.id),
+                    type: 'public-key',
+                  });
+                }
+              });
+            }
+
+            const challenge = encoding.fromBase64Url(options.challenge);
+
+            const liquidOptions = {
+              requestId,
+              origin,
+              type: 'algorand',
+              address: encodeAddress(foundKey?.publicKey),
+              signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
+              device: 'Demo Web Wallet',
+            };
+
+            const credential = (await navigator.credentials.get({
+              publicKey: decodedOptions,
+            })) as any;
+            if (!active) return;
+            authFlowInProgressRef.current = false;
+
+            if (!credential) {
+              throw new Error('Credential creation failed');
+            }
+
+            const currentPasskeys = await passkey.store.getPasskeys();
+            let selectedAddress: string | null = null;
+            if (credential.response?.userHandle) {
+              try {
+                selectedAddress = encodeAddress(new Uint8Array(credential.response.userHandle));
+              } catch (e) {
+                console.error('Failed to encode address from userHandle', e);
+              }
+            }
+
+            if (!selectedAddress) {
+              const matchedPasskey =
+                relevantPasskeys.find((p) => p.id === credential.id) ||
+                currentPasskeys.find((p) => p.id === credential.id);
+              const userHandle = matchedPasskey?.metadata?.userHandle;
+              if (userHandle) {
+                try {
+                  // Handle different possible formats of userHandle in store (Uint8Array or serialized object)
+                  const handleArray =
+                    userHandle instanceof Uint8Array
+                      ? userHandle
+                      : typeof userHandle === 'object'
+                        ? new Uint8Array(Object.values(userHandle))
+                        : null;
+                  if (handleArray) {
+                    selectedAddress = encodeAddress(handleArray);
+                  }
+                } catch (e) {
+                  console.error('Failed to encode address from stored userHandle', e);
+                }
+              }
+            }
+
+            if (selectedAddress) {
+              console.log('Selected address from passkey:', selectedAddress);
+              setAddress(selectedAddress);
+              addressRef.current = selectedAddress;
+              liquidOptions.address = selectedAddress;
+
+              // Re-sign the challenge if the address changed to match the selected passkey
+              const selectedPublicKey = decodeAddress(selectedAddress).publicKey;
+              const selectedKey = keyStore.state.keys.find(
+                (k) =>
+                  k.publicKey &&
+                  k.publicKey.length === selectedPublicKey.length &&
+                  k.publicKey.every((v, i) => v === selectedPublicKey[i]),
+              );
+
+              if (selectedKey) {
+                console.log('Found key for selected address, re-signing challenge');
+                liquidOptions.signature = encoding.toBase64URL(
+                  await key.store.sign(selectedKey.id, challenge),
+                );
+              } else {
+                console.warn('Could not find key for selected address', selectedAddress);
+              }
+            }
+
+            const encodedCredential = assertion.encoder.encodeCredential(credential);
+            encodedCredential.clientExtensionResults = {
+              ...encodedCredential.clientExtensionResults,
+              liquid: liquidOptions,
+            } as any;
+
+            const submitResponse = await fetch(`${origin}/assertion/response`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(encodedCredential),
+            });
+
+            if (!submitResponse.ok) {
+              throw new Error(
+                `Failed to submit assertion response: ${submitResponse.status} ${submitResponse.statusText}`,
+              );
+            }
+
+            const matchedPasskey = currentPasskeys.find((p) => p.id === credential.id);
+            const matchedKey =
+              keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
+              keyStore.state.keys.find((k) => toUrlSafe(k.id) === credential.id);
+
+            if (matchedKey) {
+              try {
+                // Pass a defensive copy via `options.masterKey` so `fetchSecret`
+                // can zero its own buffer in `finally` without wiping ours.
+                const masterKey = await getMasterKey(biometricOptions);
+                const keyData = await fetchSecret<KeyData>({
+                  keyId: matchedKey.id,
+                  options: { masterKey: Buffer.from(masterKey) },
+                });
+                if (keyData) {
+                  keyData.metadata = {
+                    ...keyData.metadata,
+                    origin,
+                    ...(selectedAddress ? { userHandle: selectedAddress } : {}),
+                    registered: true,
+                  };
+                  persistKeyMetadata(keyData, masterKey);
+                }
+              } catch (error) {
+                console.error('Failed to update key metadata after assertion:', error);
+              }
+            }
+          } else {
+            console.log('No existing passkey for origin, using attestation');
+
+            const optionsResponse = await fetch(`${origin}/attestation/request`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                attestationType: 'none',
+                authenticatorSelection: {
+                  authenticatorAttachment: 'platform',
+                  userVerification: 'required',
+                  residentKey: 'required',
+                  requireResidentKey: true,
+                },
+                extensions: {
+                  liquid: true,
+                },
+              }),
+            });
+
+            if (!active) return;
+
+            if (!optionsResponse.ok) {
+              throw new Error(
+                `Failed to get attestation request: ${optionsResponse.status} ${optionsResponse.statusText}`,
+              );
+            }
+
+            const encodedAttestationOptions = await optionsResponse.json();
+            if (!active) return;
+            const challenge = encoding.fromBase64Url(encodedAttestationOptions.challenge);
+
+            const liquidOptions = {
+              requestId,
+              origin: origin,
+              type: 'algorand',
+              address: encodeAddress(foundKey?.publicKey),
+              signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
+              device: 'Demo Web Wallet',
+            };
+
+            const decodedPublicKey = {
+              ...encodedAttestationOptions,
+              user: {
+                ...encodedAttestationOptions.user,
+                id: decodeAddress(liquidOptions.address).publicKey,
+                name: liquidOptions.address,
+                displayName: liquidOptions.address,
+              },
+              challenge: encoding.fromBase64Url(encodedAttestationOptions.challenge),
+              excludeCredentials: encodedAttestationOptions.excludeCredentials?.map(
+                (cred: any) => ({
+                  ...cred,
+                  id: encoding.fromBase64Url(cred.id),
+                }),
+              ),
+            };
+
+            const credential = (await navigator.credentials.create({
+              publicKey: decodedPublicKey,
+            })) as any;
+            if (!active) return;
+            authFlowInProgressRef.current = false;
+
+            if (!credential) {
+              throw new Error('Credential creation failed');
+            }
+
+            setAddress(liquidOptions.address);
+            addressRef.current = liquidOptions.address;
+
+            const response = credential.response;
+            const encodedCredential = {
+              id: credential.id,
+              rawId: encoding.toBase64URL(credential.rawId),
+              type: credential.type,
+              response: {
+                clientDataJSON: encoding.toBase64URL(response.clientDataJSON),
+                attestationObject: encoding.toBase64URL(response.attestationObject),
+                clientExtensionResults: response.clientExtensionResults || {},
+              },
+              clientExtensionResults: {
+                ...(credential.getClientExtensionResults
+                  ? credential.getClientExtensionResults()
+                  : credential.clientExtensionResults || {}),
+                liquid: liquidOptions,
+              },
+            };
+
+            const submitResponse = await fetch(`${origin}/attestation/response`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(encodedCredential),
+            });
+
+            if (!active) return;
+
+            if (!submitResponse.ok) {
+              throw new Error(
+                `Failed to submit attestation response: ${submitResponse.status} ${submitResponse.statusText}`,
+              );
+            }
+
+            const currentPasskeys = await passkey.store.getPasskeys();
+            const matchedPasskey = currentPasskeys.find((p) => p.id === credential.id);
+            const matchedKey =
+              keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
+              keyStore.state.keys.find((k) => toUrlSafe(k.id) === credential.id);
+
+            if (matchedKey) {
+              try {
+                // Pass a defensive copy via `options.masterKey` so `fetchSecret`
+                // can zero its own buffer in `finally` without wiping ours.
+                const masterKey = await getMasterKey(biometricOptions);
+                const keyData = await fetchSecret<KeyData>({
+                  keyId: matchedKey.id,
+                  options: { masterKey: Buffer.from(masterKey) },
+                });
+                if (keyData) {
+                  keyData.metadata = {
+                    ...keyData.metadata,
+                    origin,
+                    userHandle: liquidOptions.address,
+                    registered: true,
+                  };
+                  persistKeyMetadata(keyData, masterKey);
+                }
+              } catch (error) {
+                console.error('Failed to update key metadata after attestation:', error);
+              }
             }
           }
         }
@@ -742,22 +879,34 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
 
           if (!active) return;
 
-          if (sessionData.address) {
-            setAddress(sessionData.address);
-            addressRef.current = sessionData.address;
+          const sessionAddress = sessionAddressFromData(sessionData);
+          if (sessionAddress) {
+            setAddress(sessionAddress);
+            addressRef.current = sessionAddress;
           }
         } else {
           console.log('Session validation failed (ignored for debugging)');
         }
 
-        let options: any = { autoConnect: true };
-        if (NativeModules.CookieModule) {
+        let options: any = {
+          autoConnect: true,
+          transportOptions: {},
+          withCredentials: true,
+        };
+
+        if (Platform.OS === 'ios') {
+          options.transports = [EngineIoXHR];
+        } else if (NativeModules.CookieModule) {
           const cookie = await NativeModules.CookieModule.getCookie(origin);
 
           if (!active) return;
 
           if (cookie) {
             options.extraHeaders = { Cookie: cookie };
+            options.transports = ['polling'];
+            options.transportOptions = {
+              polling: { extraHeaders: { Cookie: cookie } },
+            };
           }
         }
 

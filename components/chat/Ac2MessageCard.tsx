@@ -1,9 +1,18 @@
 import { formatTime } from '@/components/chat/format';
-import { OutcomeRow, TechnicalDetails, ValueSummary } from '@/components/chat/Ac2MessageCard.parts';
+import {
+  OutcomeRow,
+  TechnicalDetails,
+  TransactionGroupOverview,
+} from '@/components/chat/Ac2MessageCard.parts';
 import { Modal } from '@/components/Modal';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { formatValueSummary, isFundMovingRequest, type Outcome } from '@/lib/ac2/messageDisplay';
+import {
+  getTransactionRequestContext,
+  isFundMovingRequest,
+  transactionTypeLabel,
+  type Outcome,
+} from '@/lib/ac2/messageDisplay';
 import { getTransactionSummary, type TransactionSummary } from '@/lib/algorand/transactions';
 import { cn } from '@/lib/utils';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
@@ -31,6 +40,20 @@ function tryGetSummary(payload: string): TransactionSummary | null {
   } catch {
     return null;
   }
+}
+
+function TransactionWarning({ isAppCall = false }: { isAppCall?: boolean }) {
+  return (
+    <View className="flex-row items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+      <MaterialIcons name="warning-amber" size={16} color="#D97706" />
+      <Text className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
+        {isAppCall
+          ? "Smart contract call. Reject if you don't understand what you're signing."
+          : 'You are about to sign a transaction. Only approve if you trust this request.'}
+      </Text>
+      {isAppCall && <MaterialIcons name="info-outline" size={14} color="#D97706" />}
+    </View>
+  );
 }
 
 interface Ac2MessageCardProps {
@@ -94,8 +117,9 @@ function Ac2MessageCard({
 
   const fundMoving = req ? isFundMovingRequest(entry.envelope) : false;
   const txnSummary = fundMoving && req ? tryGetSummary(req.body.payload) : null;
-  const valueSummary = txnSummary ? formatValueSummary(txnSummary) : null;
   const isAppCall = txnSummary ? 'appId' in txnSummary : false;
+  const requestContext =
+    fundMoving && req ? getTransactionRequestContext(req.body.description, entry.origin) : null;
   const [appCallInfoVisible, setAppCallInfoVisible] = React.useState(false);
 
   const cardClass = cn(
@@ -117,6 +141,16 @@ function Ac2MessageCard({
   }
 
   const description = req ? req.body.description : keyReq!.body.for_operation;
+  const displayDescription =
+    fundMoving && requestContext
+      ? requestContext.resourceName
+        ? `Review ${
+            txnSummary
+              ? transactionTypeLabel(txnSummary.type).toLowerCase()
+              : 'Algorand transaction'
+          } for ${requestContext.resourceName}`
+        : (requestContext.purpose ?? 'Review Algorand transaction')
+      : description;
   const kind: 'signing' | 'key' = req ? 'signing' : 'key';
   const onApprove = req ? () => approveSigning(req) : () => approveKey(keyReq!);
   const onReject = req ? () => rejectSigning(req) : () => rejectKey(keyReq!);
@@ -131,33 +165,35 @@ function Ac2MessageCard({
           color="#6366F1"
         />
         <Text className="flex-1 text-sm font-medium leading-snug text-foreground">
-          {description}
+          {displayDescription}
         </Text>
       </View>
 
       {/* ── Transaction warning (legal-approved copy; fund-moving only) ─── */}
-      {fundMoving && (
-        <Pressable
-          onPress={isAppCall ? () => setAppCallInfoVisible(true) : undefined}
-          className="mt-2 rounded-lg"
-        >
-          <View className="flex-row items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
-            <MaterialIcons name="warning-amber" size={16} color="#D97706" />
-            <Text className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
-              {isAppCall
-                ? "Smart contract call — reject if you don't understand what you're signing."
-                : 'You are about to sign a transaction. Only approve if you trust this request.'}
-            </Text>
-            {isAppCall && <MaterialIcons name="info-outline" size={14} color="#D97706" />}
+      {fundMoving &&
+        (isAppCall ? (
+          <Pressable
+            onPress={() => setAppCallInfoVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Smart contract call warning"
+            accessibilityHint="Shows more information about smart contract signing risk"
+            className="mt-2 rounded-lg"
+          >
+            <TransactionWarning isAppCall />
+          </Pressable>
+        ) : (
+          <View
+            accessibilityRole="text"
+            accessibilityLabel="Transaction warning. You are about to sign a transaction. Only approve if you trust this request."
+            className="mt-2"
+          >
+            <TransactionWarning />
           </View>
-        </Pressable>
-      )}
+        ))}
 
       {/* ── Value summary (fund-moving) ────────────────────── */}
-      {fundMoving && valueSummary && (
-        <View className="mt-2">
-          <ValueSummary summary={valueSummary} />
-        </View>
+      {fundMoving && requestContext && txnSummary && (
+        <TransactionGroupOverview context={requestContext} txn={txnSummary} />
       )}
 
       {/* ── Expiry countdown ───────────────────────────────── */}

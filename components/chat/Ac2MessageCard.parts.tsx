@@ -1,9 +1,14 @@
 import { RawContentViewer } from '@/components/ui/RawContentViewer';
 import { Text } from '@/components/ui/text';
+import { THEME } from '@/lib/theme';
 import {
   directionLabel,
   displayHintLabel,
+  formatAlgo,
+  getTransactionWarnings,
   signatureLabel,
+  transactionTypeLabel,
+  type TransactionRequestContext,
   type Outcome,
   type ValueSummaryData,
 } from '@/lib/ac2/messageDisplay';
@@ -11,13 +16,14 @@ import type { TransactionSummary } from '@/lib/algorand/transactions';
 import { cn } from '@/lib/utils';
 import type { Ac2Direction, Ac2MessageEntry } from '@/stores/ac2Messages';
 import { truncateAddress } from '@/utils/format';
+import { TransactionType } from '@algorandfoundation/algokit-utils/transact';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, useColorScheme, View } from 'react-native';
 
 /** Decoded transaction field rows (From / To / Amount / Asset / App). */
 export function TxnDetails({ txn }: { txn: TransactionSummary }) {
-  const from = 'from' in txn ? txn.from.toString() : undefined;
+  const from = 'from' in txn && txn.from ? txn.from.toString() : undefined;
   const to = 'to' in txn ? txn.to.toString() : undefined;
   const amount = 'amount' in txn ? txn.amount : undefined;
   const assetId = 'assetId' in txn ? txn.assetId : undefined;
@@ -26,9 +32,20 @@ export function TxnDetails({ txn }: { txn: TransactionSummary }) {
     <View className="gap-1">
       {from && <Row label="From:" value={truncateAddress(from, 8, 8)} mono />}
       {to && <Row label="To:" value={truncateAddress(to, 8, 8)} mono />}
-      {amount !== undefined && <Row label="Amount:" value={amount.toLocaleString()} mono />}
+      {txn.type === TransactionType.Payment && amount !== undefined ? (
+        <Row label="Amount:" value={formatAlgo(amount)} mono />
+      ) : (
+        amount !== undefined && <Row label="Amount:" value={amount.toLocaleString()} mono />
+      )}
       {assetId !== undefined && <Row label="Asset:" value={assetId.toString()} mono />}
       {appId !== undefined && <Row label="App:" value={appId.toString()} mono />}
+      {'fields' in txn &&
+        txn.fields &&
+        Object.entries(txn.fields)
+          .filter(([, value]) => value)
+          .map(([label, value]) => (
+            <Row key={label} label={`${label}:`} value={truncateAddress(value, 8, 8)} mono />
+          ))}
     </View>
   );
 }
@@ -60,6 +77,176 @@ export function ValueSummary({ summary }: { summary: ValueSummaryData }) {
           </Text>
         </View>
       )}
+    </View>
+  );
+}
+
+function SmallLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text className="text-[10px] font-semibold uppercase text-muted-foreground">{children}</Text>
+  );
+}
+
+function InfoLine({
+  icon,
+  label,
+  value,
+  mono,
+  iconColor,
+}: {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  value: string;
+  mono?: boolean;
+  iconColor: string;
+}) {
+  return (
+    <View className="flex-row items-start gap-2">
+      <MaterialIcons name={icon} size={15} color={iconColor} />
+      <View className="flex-1">
+        <SmallLabel>{label}</SmallLabel>
+        <Text className={cn('text-xs leading-snug text-foreground', mono && 'font-mono')}>
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+export function TransactionGroupOverview({
+  context,
+  txn,
+}: {
+  context: TransactionRequestContext;
+  txn: TransactionSummary;
+}) {
+  const colorScheme = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
+  const groupTotal = context.signingTotal;
+  const groupIndex = context.signingIndex;
+  const warnings = getTransactionWarnings(txn);
+  const isGrouped = Boolean(txn.group || (context.signingTotal && context.signingTotal > 1));
+  const groupTitle = isGrouped
+    ? groupTotal
+      ? `${groupTotal} transaction atomic group`
+      : 'Atomic transaction group'
+    : 'Single Algorand transaction';
+  const walletAddress =
+    context.signingAddress ?? ('from' in txn && txn.from ? txn.from.toString() : undefined);
+
+  return (
+    <View className="mt-2 gap-2 rounded-lg border border-border bg-muted p-2.5">
+      <View className="flex-row items-start gap-2">
+        <MaterialIcons name="account-tree" size={17} color={palette.primary} />
+        <View className="flex-1">
+          <Text className="text-sm font-semibold text-foreground">{groupTitle}</Text>
+          <Text className="mt-0.5 text-xs leading-snug text-muted-foreground">
+            {isGrouped
+              ? 'Grouped transactions execute together or fail together.'
+              : 'Only this transaction is included in the request.'}
+          </Text>
+        </View>
+      </View>
+
+      <View className="gap-2 rounded-md border border-border bg-card p-2">
+        <View className="flex-row items-start justify-between gap-2">
+          <View className="flex-1">
+            <SmallLabel>Decoded by wallet</SmallLabel>
+            <Text className="mt-0.5 text-xs font-medium text-muted-foreground">
+              {groupIndex && groupTotal
+                ? `Wallet signs ${groupIndex} of ${groupTotal}`
+                : isGrouped
+                  ? 'Wallet signs grouped transaction'
+                  : 'Wallet signs'}
+            </Text>
+            <Text className="text-sm font-semibold text-foreground">
+              {transactionTypeLabel(txn.type)}
+            </Text>
+          </View>
+          <Text className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+            {txn.type}
+          </Text>
+        </View>
+        <TxnDetails txn={txn} />
+      </View>
+
+      {isGrouped && groupTotal !== undefined && groupTotal > 1 && (
+        <View className="flex-row items-start gap-2 rounded-md border border-border bg-card p-2">
+          <MaterialIcons name="info-outline" size={15} color={palette.primary} />
+          <Text className="flex-1 text-xs leading-snug text-foreground">
+            Review the full group on the requesting site. This card decodes the transaction this
+            wallet is being asked to sign.
+          </Text>
+        </View>
+      )}
+
+      <View className="gap-2">
+        <SmallLabel>Requester context</SmallLabel>
+        <InfoLine
+          icon="language"
+          label="Requesting site"
+          value={context.site}
+          iconColor={palette.mutedForeground}
+        />
+        {walletAddress && (
+          <InfoLine
+            icon="account-balance-wallet"
+            label="From your wallet"
+            value={truncateAddress(walletAddress, 8, 8)}
+            mono
+            iconColor={palette.mutedForeground}
+          />
+        )}
+        {context.purpose && (
+          <InfoLine
+            icon="assignment"
+            label="Purpose"
+            value={context.purpose}
+            iconColor={palette.mutedForeground}
+          />
+        )}
+        {context.resourceUrl ? (
+          <InfoLine
+            icon="link"
+            label={context.resourceName ? `Resource: ${context.resourceName}` : 'Resource'}
+            value={
+              context.contentType
+                ? `${context.resourceUrl} (${context.contentType})`
+                : context.resourceUrl
+            }
+            iconColor={palette.mutedForeground}
+          />
+        ) : (
+          context.resourceName && (
+            <InfoLine
+              icon="description"
+              label="Resource"
+              value={context.resourceName}
+              iconColor={palette.mutedForeground}
+            />
+          )
+        )}
+        {context.network && (
+          <InfoLine
+            icon="hub"
+            label="Network"
+            value={context.network}
+            iconColor={palette.mutedForeground}
+          />
+        )}
+      </View>
+
+      {warnings.map((warning) => (
+        <View
+          key={warning}
+          className="flex-row items-start gap-2 rounded-md border border-destructive bg-card p-2"
+        >
+          <MaterialIcons name="priority-high" size={15} color={palette.mutedForeground} />
+          <Text className="flex-1 text-xs font-semibold leading-snug text-destructive">
+            {warning}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -114,6 +301,10 @@ export function TechnicalDetails({
       <Pressable
         onPress={() => setOpen((v) => !v)}
         accessibilityRole="button"
+        accessibilityLabel={
+          open ? 'Hide technical transaction details' : 'View technical transaction details'
+        }
+        accessibilityHint="Toggles decoded protocol fields and raw request JSON"
         className="flex-row items-center gap-1.5 py-1"
       >
         <MaterialIcons name="info-outline" size={14} color="#94A3B8" />

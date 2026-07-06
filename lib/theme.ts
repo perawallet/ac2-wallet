@@ -8,6 +8,7 @@ export const THEME = {
   light: {
     background: '#F4F5FB',
     foreground: '#0F172A',
+    card: '#FFFFFF',
     primary: '#0052FF',
     mutedForeground: '#64748B',
     border: '#E2E8F0',
@@ -15,6 +16,7 @@ export const THEME = {
   dark: {
     background: '#0B111E',
     foreground: '#F8FAFC',
+    card: '#161D2C',
     primary: '#3B82F6',
     mutedForeground: '#94A3B8',
     border: '#283549',
