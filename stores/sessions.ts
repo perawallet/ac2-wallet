@@ -151,4 +151,12 @@ export function expireSessions() {
 }
 
 // Periodically expire sessions every minute
-setInterval(expireSessions, 60 * 1000);
+const sessionExpirationInterval = setInterval(expireSessions, 60 * 1000);
+
+if (
+  typeof sessionExpirationInterval === 'object' &&
+  sessionExpirationInterval !== null &&
+  'unref' in sessionExpirationInterval
+) {
+  (sessionExpirationInterval as { unref: () => void }).unref();
+}
