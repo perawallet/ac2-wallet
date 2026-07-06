@@ -37,7 +37,7 @@
     "@algorandfoundation/keystore": "npm:@wjbeau/keystore@1.0.0-canary.16",
     "@algorandfoundation/liquid-client": "^1.0.0-canary.9",
     "@algorandfoundation/log-store": "npm:@wjbeau/log-store@1.0.0-canary.3",
-    "@algorandfoundation/react-native-keystore": "link:../../algorand/wallet-provider-extensions/keystore/react-native",
+    "@algorandfoundation/react-native-keystore": "1.0.0-canary.13",
     "@algorandfoundation/react-native-passkey-autofill": "1.0.0-canary.21",
     "@algorandfoundation/wallet-provider": "1.0.0-canary.5",
     "@config-plugins/react-native-webrtc": "^13.0.0",
