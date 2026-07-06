@@ -118,7 +118,7 @@ export default function ScanScreen() {
         origin += pathname;
       }
 
-      setCurrentConnection(origin, requestId);
+      setCurrentConnection(origin, requestId, { allowPasskeyCreation: true });
       dismissScanner();
       return;
     }

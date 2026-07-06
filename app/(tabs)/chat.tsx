@@ -17,6 +17,7 @@ export default function ChatTab() {
   const sessions = useStore(sessionsStore, (s) => s.sessions);
   const currentId = useStore(uiStore, (s) => s.currentSessionId);
   const currentOrigin = useStore(uiStore, (s) => s.currentOrigin);
+  const allowPasskeyCreation = useStore(uiStore, (s) => s.allowPasskeyCreation);
   const [disclaimerAccepted, setDisclaimerAccepted] = React.useState(() =>
     Boolean(localStorage.getBoolean('ac2DisclaimerSeen')),
   );
@@ -32,9 +33,11 @@ export default function ChatTab() {
   // the row. Otherwise fall back to the most recently active stored session.
   let origin: string | null = null;
   let requestId: string | null = null;
+  let resolvedFromCurrentConnection = false;
   if (currentId && currentOrigin) {
     origin = currentOrigin;
     requestId = currentId;
+    resolvedFromCurrentConnection = true;
   } else {
     const ordered = [...sessions].sort((a, b) => b.lastActivity - a.lastActivity);
     const active = ordered.find((s) => s.id === currentId) ?? ordered[0] ?? null;
@@ -44,11 +47,14 @@ export default function ChatTab() {
     }
   }
 
-  // Keep uiStore in sync with the resolved connection (the fallback branch
-  // derives origin/requestId locally without writing them to the store).
+  // Keep uiStore in sync with the resolved fallback connection. Passive
+  // reconnects are assertion-only; only the QR scanner opts into passkey
+  // creation.
   React.useEffect(() => {
-    if (origin && requestId) setCurrentConnection(origin, requestId);
-  }, [origin, requestId]);
+    if (origin && requestId && !resolvedFromCurrentConnection) {
+      setCurrentConnection(origin, requestId);
+    }
+  }, [origin, requestId, resolvedFromCurrentConnection]);
 
   if (!origin || !requestId) {
     return (
@@ -91,7 +97,11 @@ export default function ChatTab() {
 
   return (
     <Screen edges={[]}>
-      <ChatScreen origin={origin} requestId={requestId} />
+      <ChatScreen
+        origin={origin}
+        requestId={requestId}
+        allowPasskeyCreation={allowPasskeyCreation}
+      />
     </Screen>
   );
 }

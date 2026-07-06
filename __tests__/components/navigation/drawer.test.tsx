@@ -35,6 +35,7 @@ describe('Drawer', () => {
       drawerOpen: true,
       currentSessionId: null,
       currentOrigin: null,
+      allowPasskeyCreation: false,
       activeThid: null,
     }));
     sessionsStore.setState(() => ({
