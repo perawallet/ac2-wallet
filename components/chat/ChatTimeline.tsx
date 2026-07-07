@@ -10,7 +10,7 @@ import type {
   AC2SigningRequest as SigningRequestMessage,
 } from '@algorandfoundation/ac2-sdk/schema';
 import * as React from 'react';
-import { FlatList } from 'react-native';
+import { FlatList, Keyboard } from 'react-native';
 
 // Unified timeline entry — keeps free-text chat and AC2 protocol messages in
 // the same scroll view while preserving their distinct typing/rendering.
@@ -93,11 +93,23 @@ function ChatTimeline({
 
   // Scroll to the bottom without animation (animated scrolls fight rapid
   // streaming updates and feel janky), but only when already pinned there.
-  const maybeScrollToEnd = () => {
+  const maybeScrollToEnd = React.useCallback(() => {
     if (isAtBottomRef.current) {
-      flatListRef.current?.scrollToEnd({ animated: false });
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      });
     }
-  };
+  }, []);
+
+  React.useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', maybeScrollToEnd);
+    const changeSubscription = Keyboard.addListener('keyboardDidChangeFrame', maybeScrollToEnd);
+
+    return () => {
+      showSubscription.remove();
+      changeSubscription.remove();
+    };
+  }, [maybeScrollToEnd]);
 
   const renderItem = ({ item }: { item: TimelineEntry }) => {
     if (item.kind === 'text') {
@@ -146,6 +158,7 @@ function ChatTimeline({
       onMomentumScrollEnd={handleMomentumScrollEnd}
       scrollEventThrottle={16}
       onContentSizeChange={maybeScrollToEnd}
+      onLayout={maybeScrollToEnd}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
     />
