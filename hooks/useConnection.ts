@@ -1,6 +1,3 @@
-import { authenticateLiquidAuth } from '@/hooks/liquidAuthFlow';
-import { sessionAddressFromData } from '@/hooks/liquidAuthHelpers';
-import { createControlFrameHandler } from '@/hooks/streamControlFrame';
 import { useProvider } from '@/hooks/useProvider';
 import {
   attachHeartbeatChannel,
@@ -11,6 +8,9 @@ import {
   sendConversationClose,
   sendConversationOpen,
 } from '@/lib/ac2';
+import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
+import { authenticateLiquidAuth } from '@/lib/liquid-auth/flow';
+import { sessionAddressFromData } from '@/lib/liquid-auth/helpers';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
 import { accountsStore } from '@/stores/accounts';
 import { keyStore } from '@/stores/keystore';
@@ -665,7 +665,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         client.authenticated = true;
 
         // Apply one STX-prefixed control frame from the agent's stream channel.
-        // See `hooks/streamControlFrame.ts` / `lib/ac2/stream.ts` for the frame
+        // See `lib/ac2/streamControlFrame.ts` / `lib/ac2/stream.ts` for the frame
         // shapes. Returns true when `raw` was a control frame (recognized or
         // malformed) — never render as chat.
         const applyControlFrame = createControlFrameHandler({

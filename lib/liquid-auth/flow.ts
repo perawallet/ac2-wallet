@@ -10,13 +10,13 @@
  * errors propagate to the caller's try/catch exactly as before.
  */
 import type { Passkey } from '@/extensions/passkeys';
+import { biometricOptions } from '@/lib/keystore/auth-options';
 import {
   passkeyFromKey,
   passkeyMatchesConnection,
   passkeysFromSessionUser,
   persistKeyMetadata,
-} from '@/hooks/liquidAuthHelpers';
-import { biometricOptions } from '@/lib/keystore/auth-options';
+} from '@/lib/liquid-auth/helpers';
 import type { ReactNativeProvider } from '@/providers/ReactNativeProvider';
 import { keyStore } from '@/stores/keystore';
 import { decodeAddress } from '@/utils/algorand';
