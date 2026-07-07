@@ -98,13 +98,14 @@ export function useAc2Responders(opts: Ac2RespondersOptions): Ac2Responders {
           algorithm: 'raw',
           extractable: true,
           keyUsages: ['deriveKey', 'deriveBits'],
+          params: { purpose: 'agent-identity' },
         });
         const identityKeyId = await key.store.generate({
           type: 'ed25519',
           algorithm: 'EdDSA',
           extractable: true,
           keyUsages: ['sign', 'verify'],
-          params: { parentKeyId: seedId },
+          params: { parentKeyId: seedId, purpose: 'agent-identity' },
         });
         const identityKey = await key.store.export(identityKeyId);
         if (!identityKey.publicKey || !identityKey.privateKey) {

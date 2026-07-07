@@ -9,8 +9,9 @@ import {
   sendConversationOpen,
 } from '@/lib/ac2';
 import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
+import { findWalletAccount } from '@/lib/keystore/wallet-account';
 import { authenticateLiquidAuth } from '@/lib/liquid-auth/flow';
-import { sessionAddressFromData } from '@/lib/liquid-auth/helpers';
+import { addressMatchesKey, sessionAddressFromData } from '@/lib/liquid-auth/helpers';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
 import { accountsStore } from '@/stores/accounts';
 import { keyStore } from '@/stores/keystore';
@@ -24,6 +25,7 @@ import {
 } from '@/stores/sessions';
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
 import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
+import { encodeAddress } from '@algorandfoundation/keystore';
 import { SignalClient } from '@algorandfoundation/liquid-client';
 import { useStore } from '@tanstack/react-store';
 import { XHR as EngineIoXHR } from 'engine.io-client';
@@ -79,8 +81,22 @@ interface UseConnectionResult {
   remoteThreads: { thid: string; title?: string; updatedAt?: number }[];
 }
 
-export function useConnection(origin: string, requestId: string): UseConnectionResult {
+interface UseConnectionOptions {
+  /**
+   * Allow creating a brand-new passkey via attestation when none exists for
+   * the origin. Only the initial scan flow opts in; reconnects require an
+   * existing passkey and otherwise surface an error.
+   */
+  allowPasskeyCreation?: boolean;
+}
+
+export function useConnection(
+  origin: string,
+  requestId: string,
+  options: UseConnectionOptions = {},
+): UseConnectionResult {
   const { accounts, keys, key, passkey } = useProvider();
+  const allowPasskeyCreation = options.allowPasskeyCreation ?? false;
 
   const [isConnected, setIsConnected] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
@@ -515,7 +531,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
         return;
       }
 
-      if (accountsStore.state.accounts.length === 0 || keyStore.state.keys.length === 0) {
+      if (!findWalletAccount(accountsStore.state.accounts, keyStore.state.keys)) {
         console.log('Waiting for accounts and keys to load...');
         // If it's been loading for more than a few seconds, it might really be empty
         // but typically it's better to wait for them to be non-empty.
@@ -548,12 +564,8 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           updateSessionStatus(requestId, origin, 'active');
         }
 
-        // Try to find the key associated with the first account, but fall back to the first available key
-        let foundKey = currentKeys.find((k) => k.id === currentAccounts[0]?.metadata?.keyId);
-        if (!foundKey && currentKeys.length > 0) {
-          foundKey = currentKeys[0];
-          console.log('Falling back to the first available key for attestation');
-        }
+        const walletAccount = findWalletAccount(currentAccounts, currentKeys);
+        const foundKey = walletAccount?.key;
 
         if (!foundKey || !foundKey.publicKey) {
           console.error(
@@ -575,6 +587,7 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           throw new Error('No key found for attestation');
         }
 
+        const walletAddress = encodeAddress(foundKey.publicKey);
         console.log('Found key for attestation:', foundKey.id, foundKey.type);
 
         const sessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
@@ -589,9 +602,11 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
             initialSessionData = sessionData;
             if (!active) return;
             initialSessionAddress = sessionAddressFromData(sessionData);
-            if (initialSessionAddress) {
+            if (initialSessionAddress && addressMatchesKey(initialSessionAddress, foundKey)) {
               setAddress(initialSessionAddress);
               addressRef.current = initialSessionAddress;
+            } else if (initialSessionAddress) {
+              console.warn('Ignoring session address that does not match the active wallet key');
             }
           } catch (error) {
             console.warn('Unable to parse existing auth session response:', error);
@@ -602,9 +617,12 @@ export function useConnection(origin: string, requestId: string): UseConnectionR
           origin,
           requestId,
           foundKey,
+          walletAddress,
           currentKeys,
           initialSessionData,
           initialSessionAddress,
+          existingSessionPasskeyCredentialId: existingSession?.passkeyCredentialId,
+          allowPasskeyCreation,
           key,
           passkey,
           setAddress,

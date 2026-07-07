@@ -21,6 +21,7 @@ describe('AppHeader', () => {
       drawerOpen: false,
       currentSessionId: null,
       currentOrigin: null,
+      allowPasskeyCreation: false,
       activeThid: null,
     }));
   });

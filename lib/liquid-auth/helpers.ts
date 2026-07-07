@@ -5,8 +5,11 @@
  */
 import type { Passkey } from '@/extensions/passkeys';
 import { keyStore } from '@/stores/keystore';
+import { decodeAddress } from '@/utils/algorand';
 import { toUrlSafe } from '@/utils/base64';
 import type { Key, KeyData } from '@algorandfoundation/keystore';
+import { encodeAddress } from '@algorandfoundation/keystore';
+import { encoding } from '@algorandfoundation/liquid-client';
 import { encode, encryptData, storage } from '@algorandfoundation/react-native-keystore';
 import { Buffer } from 'buffer';
 
@@ -85,28 +88,121 @@ export function sessionAddressFromData(sessionData: any): string | null {
         : null;
 }
 
+export function credentialIdFromData(data: any): string | null {
+  if (!data) return null;
+  if (typeof data === 'string') return data;
+
+  const candidates = [
+    data.credId,
+    data.credentialId,
+    data.id,
+    data.rawId,
+    data.credential?.credId,
+    data.credential?.credentialId,
+    data.credential?.id,
+    data.passkey?.credId,
+    data.passkey?.credentialId,
+    data.passkey?.id,
+  ];
+
+  const id = candidates.find((value) => typeof value === 'string' && value.length > 0);
+  return id ?? null;
+}
+
+export function credentialArraysFromSession(sessionData: any): any[][] {
+  return [
+    sessionData?.user?.credentials,
+    sessionData?.user?.passkeys,
+    sessionData?.session?.credentials,
+    sessionData?.session?.passkeys,
+    sessionData?.credentials,
+    sessionData?.passkeys,
+  ].filter(Array.isArray);
+}
+
+export function credentialIdsFromSessionData(sessionData: any): string[] {
+  return credentialArraysFromSession(sessionData)
+    .flat()
+    .map(credentialIdFromData)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+export function userHandleMatchesAddress(userHandle: unknown, address: string): boolean {
+  if (typeof userHandle !== 'string' || userHandle.length === 0) return false;
+  if (userHandle === address) return true;
+
+  try {
+    const publicKey = encoding.fromBase64Url(toUrlSafe(userHandle));
+    return encodeAddress(publicKey) === address;
+  } catch {
+    return false;
+  }
+}
+
 export function passkeysFromSessionUser(sessionData: any, origin: string): Passkey[] {
   const wallet = sessionAddressFromData(sessionData) ?? undefined;
-  const credentials = Array.isArray(sessionData?.user?.credentials)
-    ? sessionData.user.credentials
-    : [];
+  const credentials = credentialArraysFromSession(sessionData).flat();
 
   return credentials
-    .filter((credential: any) => typeof credential?.credId === 'string')
-    .map((credential: any) => ({
-      id: credential.credId,
-      name: `${wallet ?? 'Liquid Auth'}@${normalizeOriginHost(origin)}`,
-      userHandle: wallet,
-      origin,
-      publicKey: new Uint8Array(),
-      algorithm: 'P256',
-      metadata: {
+    .map((credential: any) => ({ credential, id: credentialIdFromData(credential) }))
+    .filter((entry): entry is { credential: any; id: string } => typeof entry.id === 'string')
+    .map(({ credential, id }) => {
+      const userHandle =
+        credential.userHandle ??
+        credential.userId ??
+        credential.credential?.userHandle ??
+        credential.credential?.userId ??
+        credential.passkey?.userHandle ??
+        credential.passkey?.userId ??
+        wallet;
+
+      return {
+        id,
+        name: `${wallet ?? 'Liquid Auth'}@${normalizeOriginHost(origin)}`,
+        userHandle,
         origin,
-        userHandle: wallet,
-        registered: true,
-        source: 'liquid-auth-session',
-      },
-    }));
+        publicKey: new Uint8Array(),
+        algorithm: 'P256',
+        metadata: {
+          origin,
+          userHandle,
+          registered: true,
+          source: 'liquid-auth-session',
+        },
+      };
+    });
+}
+
+export function normalizeCredentialId(value: string): string {
+  return toUrlSafe(value.trim());
+}
+
+export function credentialIdCandidates(credential: any): Set<string> {
+  const ids = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === 'string' && value.length > 0) ids.add(normalizeCredentialId(value));
+  };
+  add(credential?.id);
+  add(credential?.rawId ? encoding.toBase64URL(new Uint8Array(credential.rawId)) : null);
+  add(credential?.rawId ? Buffer.from(new Uint8Array(credential.rawId)).toString('base64') : null);
+  return ids;
+}
+
+export function keyMatchesCredential(key: Key, credentialIds: Set<string>): boolean {
+  return credentialIds.has(normalizeCredentialId(key.id));
+}
+
+export function addressMatchesKey(address: string, key: Key): boolean {
+  try {
+    const publicKey = decodeAddress(address).publicKey;
+    return (
+      !!key.publicKey &&
+      key.publicKey.length === publicKey.length &&
+      key.publicKey.every((value, index) => value === publicKey[index])
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function passkeyMatchesConnection(
@@ -118,8 +214,7 @@ export function passkeyMatchesConnection(
   const userHandle = passkey.metadata?.userHandle ?? passkey.userHandle;
   return (
     typeof sessionAddress === 'string' &&
-    typeof userHandle === 'string' &&
-    userHandle === sessionAddress &&
+    userHandleMatchesAddress(userHandle, sessionAddress) &&
     passkey.metadata?.registered === true
   );
 }

@@ -1,8 +1,7 @@
 /**
  * Wallet keystore surface. Owns master-key bootstrap, credential-provider
- * autofill wiring, and crypto helpers for the AC2 controller app.
+ * autofill wiring, and the AC2 controller app's keystore initialization.
  */
 
 export { bootstrap } from './bootstrap';
 export { CredentialProviderService } from './credential-provider';
-export { encryptData, decryptData } from './crypto';

@@ -13,6 +13,7 @@ describe('uiStore', () => {
       drawerOpen: false,
       currentSessionId: null,
       currentOrigin: null,
+      allowPasskeyCreation: false,
       activeThid: null,
     })),
   );
@@ -35,5 +36,13 @@ describe('uiStore', () => {
     setCurrentConnection('https://a.example', 'req-456');
     expect(uiStore.state.currentOrigin).toBe('https://a.example');
     expect(uiStore.state.currentSessionId).toBe('req-456');
+    expect(uiStore.state.allowPasskeyCreation).toBe(false);
+  });
+
+  it('marks explicitly created connections as allowed to create a passkey', () => {
+    setCurrentConnection('https://a.example', 'req-456', { allowPasskeyCreation: true });
+    expect(uiStore.state.currentOrigin).toBe('https://a.example');
+    expect(uiStore.state.currentSessionId).toBe('req-456');
+    expect(uiStore.state.allowPasskeyCreation).toBe(true);
   });
 });

@@ -39,9 +39,10 @@ const HEADER_HEIGHT = 56;
 interface ChatScreenProps {
   origin: string;
   requestId: string;
+  allowPasskeyCreation?: boolean;
 }
 
-function ChatScreen({ origin, requestId }: ChatScreenProps) {
+function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [bannerDismissed, setBannerDismissed] = React.useState(() =>
@@ -68,7 +69,7 @@ function ChatScreen({ origin, requestId }: ChatScreenProps) {
     openConversation,
     closeConversation,
     remoteThreads,
-  } = useConnection(origin, requestId);
+  } = useConnection(origin, requestId, { allowPasskeyCreation });
 
   const { approveSigning, rejectSigning, approveKey, rejectKey } = useAc2Responders({
     address,
