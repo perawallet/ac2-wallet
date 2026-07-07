@@ -441,7 +441,7 @@ export function CredentialsScreen() {
   }
 
   return (
-    <Screen>
+    <Screen edges={[]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
