@@ -13,8 +13,8 @@ const DEFAULT_ICE_SERVERS = [
   },
   {
     urls: [
-      'turn:geo.turn.algonode.xyz:80?transport=tcp',
-      'turns:global.turn.nodely.io:443?transport=tcp',
+      'turn:geo.turn.algonode.xyz:80?transport=udp',
+      'turns:global.turn.nodely.io:443?transport=udp',
     ],
     username: 'liquid-auth',
     credential: 'sqmcP4MiTKMT4TGEDSk9jgHY',
