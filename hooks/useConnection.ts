@@ -1,4 +1,3 @@
-import type { Passkey } from '@/extensions/passkeys';
 import { useProvider } from '@/hooks/useProvider';
 import {
   attachHeartbeatChannel,
@@ -6,333 +5,43 @@ import {
   createAc2Transport,
   DEFAULT_THID,
   generateThid,
-  parseStreamControlFrame,
   sendConversationClose,
   sendConversationOpen,
 } from '@/lib/ac2';
-import { biometricOptions } from '@/lib/keystore/auth-options';
+import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
+import { findWalletAccount } from '@/lib/keystore/wallet-account';
+import { authenticateLiquidAuth } from '@/lib/liquid-auth/flow';
+import { addressMatchesKey, sessionAddressFromData } from '@/lib/liquid-auth/helpers';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
 import { accountsStore } from '@/stores/accounts';
 import { keyStore } from '@/stores/keystore';
-import {
-  addMessage,
-  addToolActivity,
-  clearMessagesByThread,
-  setThreadHistory,
-} from '@/stores/messages';
+import { addMessage, clearMessagesByThread } from '@/stores/messages';
 import {
   addSession,
   Session,
   sessionsStore,
   updateSessionActivity,
-  updateSessionPasskeyCredentialId,
   updateSessionStatus,
 } from '@/stores/sessions';
-import { findWalletAccount, isWalletAccountKey } from '@/lib/keystore/wallet-account';
-import { decodeAddress } from '@/utils/algorand';
-import { toUrlSafe } from '@/utils/base64';
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
 import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
-import type { Key, KeyData } from '@algorandfoundation/keystore';
 import { encodeAddress } from '@algorandfoundation/keystore';
-import { assertion, encoding, SignalClient } from '@algorandfoundation/liquid-client';
-import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
-import {
-  encode,
-  encryptData,
-  fetchSecret,
-  readMasterKey,
-  storage,
-} from '@algorandfoundation/react-native-keystore';
-import { bootstrap } from '@/lib/keystore/bootstrap';
+import { SignalClient } from '@algorandfoundation/liquid-client';
 import { useStore } from '@tanstack/react-store';
-import { Buffer } from 'buffer';
 import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, NativeModules, Platform } from 'react-native';
+import { Alert, AppState, type AppStateStatus, NativeModules, Platform } from 'react-native';
 
-/**
- * Re-encrypt a key record with the supplied master key and reflect the new
- * metadata in the reactive key store, bypassing the keystore library's
- * `commit()` (which would re-fetch the master key and prompt again).
- */
-function persistKeyMetadata(keyData: KeyData, masterKey: Buffer): void {
-  // Re-encrypt the full key record (incl. private material) and store it.
-  storage.set(keyData.id, encryptData(Buffer.from(masterKey), encode(keyData)));
-  // Reflect the metadata change in the reactive store without leaking the
-  // private key/seed, de-duplicating by id so we don't append a stale copy.
-  const { privateKey, seed, ...keyState } = keyData as any;
-  void privateKey;
-  void seed;
-  keyStore.setState((state) => ({
-    ...state,
-    keys: [{ ...keyState }, ...state.keys.filter((k) => k.id !== keyState.id)],
-  }));
-}
-
-function normalizeOriginHost(value: string): string {
-  const trimmed = value.trim().replace(/\/$/, '');
-  try {
-    return new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).host.toLowerCase();
-  } catch {
-    return trimmed.toLowerCase();
-  }
-}
-
-function originMatches(storedOrigin: unknown, currentOrigin: string): boolean {
-  return (
-    typeof storedOrigin === 'string' &&
-    storedOrigin.length > 0 &&
-    normalizeOriginHost(storedOrigin) === normalizeOriginHost(currentOrigin)
-  );
-}
-
-function passkeyFromKey(keyData: Key): Passkey | null {
-  if (
-    (keyData.type !== 'xhd-derived-p256' && keyData.type !== 'hd-derived-p256') ||
-    !keyData.publicKey
-  ) {
-    return null;
-  }
-
-  const metadata = (keyData.metadata ?? {}) as Record<string, any>;
-  const username = metadata.userHandle || 'Unnamed User';
-  const origin = metadata.origin || 'Unnamed Origin';
-
-  return {
-    id: toUrlSafe(keyData.id),
-    name: `${username}@${origin}`,
-    userHandle: metadata.userHandle,
-    origin: metadata.origin,
-    publicKey: keyData.publicKey,
-    algorithm: keyData.algorithm || 'P256',
-    createdAt: metadata.createdAt || Date.now(),
-    metadata: {
-      ...metadata,
-      keyId: keyData.id,
-      type: keyData.type,
-      registered: metadata.registered ?? false,
-    },
-  };
-}
-
-function sessionAddressFromData(sessionData: any): string | null {
-  return typeof sessionData?.address === 'string'
-    ? sessionData.address
-    : typeof sessionData?.user?.wallet === 'string'
-      ? sessionData.user.wallet
-      : typeof sessionData?.session?.wallet === 'string'
-        ? sessionData.session.wallet
-        : null;
-}
-
-function credentialIdFromData(data: any): string | null {
-  if (!data) return null;
-  if (typeof data === 'string') return data;
-
-  const candidates = [
-    data.credId,
-    data.credentialId,
-    data.id,
-    data.rawId,
-    data.credential?.credId,
-    data.credential?.credentialId,
-    data.credential?.id,
-    data.passkey?.credId,
-    data.passkey?.credentialId,
-    data.passkey?.id,
-  ];
-
-  const id = candidates.find((value) => typeof value === 'string' && value.length > 0);
-  return id ?? null;
-}
-
-function credentialArraysFromSession(sessionData: any): any[][] {
-  return [
-    sessionData?.user?.credentials,
-    sessionData?.user?.passkeys,
-    sessionData?.session?.credentials,
-    sessionData?.session?.passkeys,
-    sessionData?.credentials,
-    sessionData?.passkeys,
-  ].filter(Array.isArray);
-}
-
-function credentialIdsFromSessionData(sessionData: any): string[] {
-  return credentialArraysFromSession(sessionData)
-    .flat()
-    .map(credentialIdFromData)
-    .filter((id): id is string => typeof id === 'string' && id.length > 0);
-}
-
-function userHandleMatchesAddress(userHandle: unknown, address: string): boolean {
-  if (typeof userHandle !== 'string' || userHandle.length === 0) return false;
-  if (userHandle === address) return true;
-
-  try {
-    const publicKey = encoding.fromBase64Url(toUrlSafe(userHandle));
-    return encodeAddress(publicKey) === address;
-  } catch {
-    return false;
-  }
-}
-
-function passkeysFromSessionUser(sessionData: any, origin: string): Passkey[] {
-  const wallet = sessionAddressFromData(sessionData) ?? undefined;
-  const credentials = credentialArraysFromSession(sessionData).flat();
-
-  return credentials
-    .map((credential: any) => ({ credential, id: credentialIdFromData(credential) }))
-    .filter((entry): entry is { credential: any; id: string } => typeof entry.id === 'string')
-    .map(({ credential, id }) => {
-      const userHandle =
-        credential.userHandle ??
-        credential.userId ??
-        credential.credential?.userHandle ??
-        credential.credential?.userId ??
-        credential.passkey?.userHandle ??
-        credential.passkey?.userId ??
-        wallet;
-
-      return {
-        id,
-        name: `${wallet ?? 'Liquid Auth'}@${normalizeOriginHost(origin)}`,
-        userHandle,
-        origin,
-        publicKey: new Uint8Array(),
-        algorithm: 'P256',
-        metadata: {
-          origin,
-          userHandle,
-          registered: true,
-          source: 'liquid-auth-session',
-        },
-      };
-    });
-}
-
-function normalizeCredentialId(value: string): string {
-  return toUrlSafe(value.trim());
-}
-
-function credentialIdCandidates(credential: any): Set<string> {
-  const ids = new Set<string>();
-  const add = (value: unknown) => {
-    if (typeof value === 'string' && value.length > 0) ids.add(normalizeCredentialId(value));
-  };
-  add(credential?.id);
-  add(credential?.rawId ? encoding.toBase64URL(new Uint8Array(credential.rawId)) : null);
-  add(credential?.rawId ? Buffer.from(new Uint8Array(credential.rawId)).toString('base64') : null);
-  return ids;
-}
-
-function keyMatchesCredential(key: Key, credentialIds: Set<string>): boolean {
-  return credentialIds.has(normalizeCredentialId(key.id));
-}
-
-function addressMatchesKey(address: string, key: Key): boolean {
-  try {
-    const publicKey = decodeAddress(address).publicKey;
-    return (
-      !!key.publicKey &&
-      key.publicKey.length === publicKey.length &&
-      key.publicKey.every((value, index) => value === publicKey[index])
-    );
-  } catch {
-    return false;
-  }
-}
-
-async function findPasskeyKeyForCredential({
-  credential,
-  passkeys,
-  origin,
-  walletAddress,
-}: {
-  credential: any;
-  passkeys: Passkey[];
-  origin: string;
-  walletAddress: string;
-}): Promise<Key | undefined> {
-  const credentialIds = credentialIdCandidates(credential);
-  const findMatch = () => {
-    const matchedPasskey = passkeys.find((p) => credentialIds.has(normalizeCredentialId(p.id)));
-    return (
-      keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
-      keyStore.state.keys.find((k) => keyMatchesCredential(k, credentialIds)) ||
-      keyStore.state.keys.find(
-        (k) =>
-          (k.type === 'hd-derived-p256' || k.type === 'xhd-derived-p256') &&
-          originMatches(k.metadata?.origin, origin) &&
-          k.metadata?.userHandle === walletAddress,
-      )
-    );
-  };
-
-  let matchedKey = findMatch();
-  for (let attempt = 0; !matchedKey && attempt < 3; attempt += 1) {
-    await bootstrap(biometricOptions, false);
-    matchedKey = findMatch();
-    if (!matchedKey) await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return matchedKey;
-}
-
-async function nativeStoredPasskeys(): Promise<Passkey[]> {
-  const credentials = await ReactNativePasskeyAutofill.getStoredCredentials().catch(() => []);
-  return credentials
-    .filter((credential: any) => typeof credential?.credentialId === 'string')
-    .map((credential: any) => {
-      const id = credential.credentialId.trim();
-      const origin = credential.relyingPartyIdentifier || credential.rpId || credential.origin;
-      const userHandle = credential.userHandle;
-      return {
-        id,
-        name: `${userHandle || 'Liquid Auth'}@${origin || 'Unknown Origin'}`,
-        userHandle,
-        origin,
-        publicKey: new Uint8Array(),
-        algorithm: 'P256',
-        createdAt: credential.createdAt || Date.now(),
-        metadata: {
-          origin,
-          userHandle,
-          registered: true,
-          source: 'native-autofill-store',
-        },
-      };
-    });
-}
-
-function passkeyMatchesConnection(
-  passkey: Passkey,
-  origin: string,
-  sessionAddress: string | null,
-): boolean {
-  if (originMatches(passkey.metadata?.origin ?? passkey.origin, origin)) return true;
-  const userHandle = passkey.metadata?.userHandle ?? passkey.userHandle;
-  return (
-    typeof sessionAddress === 'string' &&
-    userHandleMatchesAddress(userHandle, sessionAddress) &&
-    passkey.metadata?.registered === true
-  );
-}
-
-async function fetchAssertionOptions(
-  origin: string,
-  credentialId: string,
-): Promise<{ credentialId: string; options: any } | null> {
-  const response = await fetch(`${origin}/assertion/request/${encodeURIComponent(credentialId)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userVerification: 'required',
-    }),
-  });
-
-  if (!response.ok) return null;
-  return { credentialId, options: await response.json() };
-}
+const AUTO_RECONNECT_DELAY_MS = 3000;
+// Bounded auto-reconnect budget. After this many failed automatic attempts we
+// stop retrying and fall back to the manual "Reconnect" button.
+const MAX_RECONNECT_ATTEMPTS = 3;
+// Hard ceiling on any auth/session HTTP request during setup. React Native's
+// `fetch` has NO default timeout, so a request issued while the network is
+// still recovering from a drop (exactly when auto-reconnect fires) can stall
+// forever. Bounding it turns a silent hang into a rejection that flows into the
+// retry state machine instead.
+const REQUEST_TIMEOUT_MS = 15000;
 
 interface UseConnectionResult {
   session: Session | undefined;
@@ -352,6 +61,12 @@ interface UseConnectionResult {
   isError: boolean;
   isLoading: boolean;
   isConnected: boolean;
+  /** True while bounded automatic reconnect attempts are in flight. */
+  isReconnecting: boolean;
+  /** Current automatic reconnect attempt (1-based); `0` when not retrying. */
+  reconnectAttempt: number;
+  /** Total automatic reconnect attempts before falling back to manual. */
+  maxReconnectAttempts: number;
   lastHeartbeat: number;
   reset: () => void;
   /** Tear down any stale transport and re-run the connection/auth flow. */
@@ -367,6 +82,11 @@ interface UseConnectionResult {
 }
 
 interface UseConnectionOptions {
+  /**
+   * Allow creating a brand-new passkey via attestation when none exists for
+   * the origin. Only the initial scan flow opts in; reconnects require an
+   * existing passkey and otherwise surface an error.
+   */
   allowPasskeyCreation?: boolean;
 }
 
@@ -389,6 +109,14 @@ export function useConnection(
   const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // Auto-reconnect progress surfaced to the UI so it can show a "Reconnecting
+  // (n/max)…" state while bounded retries are in flight, and only fall back to
+  // the manual Reconnect button once the budget is exhausted.
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  // Ref mirror of the attempt counter so the retry scheduler can read/increment
+  // it synchronously without racing React state batching.
+  const reconnectAttemptRef = useRef(0);
   // Bumped by `reconnect()` to re-trigger the connection effect on demand.
   const [reconnectNonce, setReconnectNonce] = useState(0);
 
@@ -399,6 +127,21 @@ export function useConnection(
   const clientRef = useRef<SignalClient | null>(null);
   const lastUserActivityRef = useRef<number>(Date.now());
   const authFlowInProgressRef = useRef<boolean>(false);
+  // Ignore one `onClose` when the transport was intentionally torn down.
+  const deliberateCloseRef = useRef(false);
+  // Set when the user explicitly disconnects (`reset()`); blocks the
+  // foreground auto-reconnect from resurrecting a session they chose to stop.
+  const userStoppedRef = useRef(false);
+  // One-shot delayed reconnect that mirrors pressing the Reconnect button.
+  const autoReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Last observed `AppState`, so the foreground listener only reacts to a real
+  // background/inactive -> active transition (not active -> active repeats).
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  // True once the app has been backgrounded/inactive and no inbound frame has
+  // since proven the connection still alive. Lets the inactivity close tell a
+  // stale-from-background drop (auto-reconnect when foregrounded) apart from a
+  // genuine foreground idle close (stays manual, so we don't churn/re-prompt).
+  const wasBackgroundedRef = useRef(false);
 
   // Active conversation thread; the ref mirror lets DataChannel handlers see the live value.
   const [activeThid, setActiveThid] = useState<string>(DEFAULT_THID);
@@ -465,7 +208,21 @@ export function useConnection(
     }
     if (clientRef.current) {
       try {
-        clientRef.current.close();
+        // `SignalClient.close()` never tears down the WebRTC peer connection, so
+        // close it explicitly. A leaked `RTCPeerConnection` keeps the ICE
+        // session to the agent alive, so the agent still treats the old peer as
+        // active for this requestId and ignores the fresh offer a reconnect
+        // sends — leaving negotiation hung after `setLocalDescription`.
+        clientRef.current.peerClient?.close();
+      } catch {
+        /* noop */
+      }
+      try {
+        // `close(true)` also disconnects the underlying signaling socket. The
+        // default `close()` only detaches listeners and leaves the socket.io
+        // connection alive, which would then collide with the socket a
+        // subsequent (re)connect opens to the same origin — wedging signaling.
+        clientRef.current.close(true);
       } catch {
         /* noop */
       }
@@ -474,20 +231,35 @@ export function useConnection(
   }, []);
 
   const reset = useCallback(() => {
+    deliberateCloseRef.current = true;
+    userStoppedRef.current = true;
+    reconnectAttemptRef.current = 0;
+    if (autoReconnectTimerRef.current) {
+      clearTimeout(autoReconnectTimerRef.current);
+      autoReconnectTimerRef.current = null;
+    }
     clearTransport();
     setActiveStreamText('');
     setAgentPresence(null);
     setAgentPresenceDetail(null);
     setIsConnected(false);
     setIsLoading(false);
+    setIsReconnecting(false);
+    setReconnectAttempt(0);
     setError(null);
     updateSessionStatus(requestId, origin, 'closed');
   }, [requestId, origin, clearTransport]);
 
-  // Manually re-establish a dropped connection. Tears down any stale transport
-  // (so the connection effect's guard doesn't short-circuit), flips back into
-  // the loading/connecting state, and bumps the nonce to re-run setup.
-  const reconnect = useCallback(() => {
+  // Core reconnect primitive: tear down any stale transport (so the connection
+  // effect's guard doesn't short-circuit), flip into the loading/connecting
+  // state, and bump the nonce to re-run setup. Deliberately does NOT touch the
+  // retry budget so it can back both manual and automatic reconnects.
+  const performReconnect = useCallback(() => {
+    deliberateCloseRef.current = true;
+    if (autoReconnectTimerRef.current) {
+      clearTimeout(autoReconnectTimerRef.current);
+      autoReconnectTimerRef.current = null;
+    }
     clearTransport();
     authFlowInProgressRef.current = false;
     lastUserActivityRef.current = Date.now();
@@ -496,6 +268,114 @@ export function useConnection(
     setIsLoading(true);
     setReconnectNonce((n) => n + 1);
   }, [clearTransport]);
+  const performReconnectRef = useRef(performReconnect);
+  performReconnectRef.current = performReconnect;
+
+  // Manually re-establish a dropped connection (user pressed "Reconnect").
+  // Resets the automatic-retry budget so the user always gets a fresh set of
+  // attempts, and clears any exhausted/failed reconnecting state.
+  const reconnect = useCallback(() => {
+    userStoppedRef.current = false;
+    reconnectAttemptRef.current = 0;
+    setReconnectAttempt(0);
+    setIsReconnecting(false);
+    performReconnect();
+  }, [performReconnect]);
+  const reconnectRef = useRef(reconnect);
+  reconnectRef.current = reconnect;
+
+  // Schedule the next bounded, serialized automatic reconnect attempt. Returns
+  // false when we've exhausted the budget (or the user stopped the session), so
+  // callers can fall back to the manual Reconnect button. Retries never
+  // overlap: a new attempt is only ever scheduled from a prior attempt's
+  // terminal event (transport `onClose` or a setup failure), and the pending
+  // timer/in-flight guards below make double-scheduling impossible — which also
+  // guarantees we never launch two connection attempts (and two blocking
+  // biometric prompts) at once.
+  const scheduleAutoReconnect = useCallback((): boolean => {
+    if (userStoppedRef.current) return false;
+    // A retry is already pending or an attempt is mid-flight — don't stack.
+    if (autoReconnectTimerRef.current) return true;
+    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) return false;
+
+    const attempt = reconnectAttemptRef.current + 1;
+    reconnectAttemptRef.current = attempt;
+    setReconnectAttempt(attempt);
+    setIsReconnecting(true);
+    setIsLoading(false);
+    autoReconnectTimerRef.current = setTimeout(() => {
+      autoReconnectTimerRef.current = null;
+      performReconnectRef.current();
+    }, AUTO_RECONNECT_DELAY_MS);
+    return true;
+  }, []);
+  const scheduleAutoReconnectRef = useRef(scheduleAutoReconnect);
+  scheduleAutoReconnectRef.current = scheduleAutoReconnect;
+
+  // Live mirrors of the connection state so the AppState listener can read the
+  // current values without being torn down/re-subscribed on every change (and
+  // without capturing a stale closure).
+  const isConnectedRef = useRef(isConnected);
+  isConnectedRef.current = isConnected;
+  const isLoadingRef = useRef(isLoading);
+  isLoadingRef.current = isLoading;
+  const isReconnectingRef = useRef(isReconnecting);
+  isReconnectingRef.current = isReconnecting;
+
+  // Automatically resume a dropped connection when the app returns to the
+  // foreground. Subscribed once per session (keyed on origin/requestId); all
+  // decision state is read from refs so there is no stale-closure risk. The
+  // in-progress guards below are what prevent a second connection attempt from
+  // launching a duplicate — and therefore a duplicate blocking biometric
+  // prompt, since the passkey assertion/attestation step is what triggers it.
+  useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      const prevState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      // Remember that we left the foreground. Timers are suspended while
+      // backgrounded, so a connection can silently go stale; this flag lets the
+      // inactivity close distinguish that from a genuine foreground idle.
+      if (nextState === 'background' || nextState === 'inactive') {
+        wasBackgroundedRef.current = true;
+      }
+
+      // Only react to a genuine (background|inactive) -> active transition.
+      if (nextState !== 'active' || prevState === 'active') return;
+
+      // Respect an explicit user disconnect; don't resurrect a stopped session.
+      if (userStoppedRef.current) return;
+
+      // A healthy connection needs nothing.
+      if (isConnectedRef.current) return;
+
+      // Never start a second connection while one is already in flight. Any of
+      // these means "busy": an auth flow (blocking biometric prompt) is open,
+      // a SignalClient is already set up, we're in the loading/connecting
+      // state, an auto-reconnect sequence is running, or a retry timer is
+      // already pending.
+      if (
+        authFlowInProgressRef.current ||
+        clientRef.current ||
+        isLoadingRef.current ||
+        isReconnectingRef.current ||
+        autoReconnectTimerRef.current
+      ) {
+        return;
+      }
+
+      // Only resume sessions we still track (not forgotten by the user).
+      const existingSession = sessionsStore.state.sessions.find(
+        (s) => s.id === requestId && s.origin === origin,
+      );
+      if (!existingSession) return;
+
+      reconnectRef.current();
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [origin, requestId]);
 
   const send = useCallback(
     (text: string) => {
@@ -604,14 +484,33 @@ export function useConnection(
         const now = Date.now();
         const inactiveTime = now - lastUserActivityRef.current;
         if (inactiveTime >= 60000) {
-          console.log('Closing connection due to inactivity (1 minute)');
+          // A stale connection whose idleness is explained by the app having
+          // been backgrounded (timers suspended, no heartbeats) should recover
+          // automatically; a genuine foreground idle should not (avoids churn /
+          // repeated biometric prompts). An intentional disconnect never
+          // resumes.
+          const resumeAfterBackground = !userStoppedRef.current && wasBackgroundedRef.current;
+          console.log(
+            resumeAfterBackground
+              ? 'Closing stale connection after background; will reconnect'
+              : 'Closing connection due to inactivity (1 minute)',
+          );
           // Fully tear down so the connection effect's guard doesn't keep a
           // stale client around — otherwise a later reconnect is impossible.
+          deliberateCloseRef.current = true;
           clearTransport();
           updateSessionStatus(requestId, origin, 'closed');
           if (active) {
             setIsConnected(false);
             setIsLoading(false);
+          }
+          // If we're already back in the foreground, reconnect now (the
+          // foreground AppState handler already ran while we still looked
+          // connected, so it won't fire again). If the close happened while
+          // still backgrounded, that handler resumes us on the next activation.
+          if (resumeAfterBackground && AppState.currentState === 'active') {
+            wasBackgroundedRef.current = false;
+            reconnectRef.current();
           }
         }
       }, 5000);
@@ -626,6 +525,29 @@ export function useConnection(
 
   useEffect(() => {
     let active = true;
+    // Aborts every in-flight setup request when this run is superseded (a newer
+    // reconnect/nonce bump) or unmounted, so a stalled request from an obsolete
+    // attempt can't linger and race a fresh one.
+    const runAbort = new AbortController();
+
+    // `fetch` with a per-request timeout, also wired to this run's abort signal.
+    // A timeout or supersession rejects the request so the outer catch can hand
+    // off to the bounded auto-reconnect scheduler instead of hanging.
+    const fetchWithTimeout = (
+      input: string,
+      init: RequestInit = {},
+      timeoutMs: number = REQUEST_TIMEOUT_MS,
+    ): Promise<Response> => {
+      const controller = new AbortController();
+      const onRunAbort = () => controller.abort();
+      if (runAbort.signal.aborted) controller.abort();
+      else runAbort.signal.addEventListener('abort', onRunAbort);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+        clearTimeout(timer);
+        runAbort.signal.removeEventListener('abort', onRunAbort);
+      });
+    };
 
     async function setupConnection() {
       if (!origin || !requestId) {
@@ -698,7 +620,7 @@ export function useConnection(
         const walletAddress = encodeAddress(foundKey.publicKey);
         console.log('Found key for attestation:', foundKey.id, foundKey.type);
 
-        const sessionCheck = await fetch(`${origin}/auth/session`);
+        const sessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
         if (!active) return;
         let initialSessionData: any = null;
         let initialSessionAddress: string | null = null;
@@ -721,357 +643,28 @@ export function useConnection(
           }
         }
 
-        {
-          const storedPasskeys = await passkey.store.getPasskeys();
-          const passkeysById = new Map<string, Passkey>(
-            storedPasskeys.map((currentPasskey) => [
-              normalizeCredentialId(currentPasskey.id),
-              currentPasskey,
-            ]),
-          );
-          const addPasskeyCandidate = (candidate: Passkey) => {
-            const normalizedId = normalizeCredentialId(candidate.id);
-            if (!passkeysById.has(normalizedId)) {
-              passkeysById.set(normalizedId, candidate);
-            }
-          };
-
-          (await nativeStoredPasskeys()).forEach(addPasskeyCandidate);
-
-          passkeysFromSessionUser(initialSessionData, origin).forEach(addPasskeyCandidate);
-
-          currentKeys.forEach((currentKey) => {
-            const keyBackedPasskey = passkeyFromKey(currentKey);
-            if (keyBackedPasskey) addPasskeyCandidate(keyBackedPasskey);
-          });
-
-          const currentPasskeys = [...passkeysById.values()];
-          const relevantPasskeys = currentPasskeys.filter((p) =>
-            passkeyMatchesConnection(p, origin, initialSessionAddress),
-          );
-
-          const assertionCredentialIds = [
-            existingSession?.passkeyCredentialId,
-            ...credentialIdsFromSessionData(initialSessionData),
-            ...relevantPasskeys.map((p) => p.id),
-            walletAddress,
-          ].filter((id): id is string => typeof id === 'string' && id.length > 0);
-          const seenAssertionCredentialIds = new Set<string>();
-          const uniqueAssertionCredentialIds = assertionCredentialIds.filter((id) => {
-            const normalized = normalizeCredentialId(id);
-            if (seenAssertionCredentialIds.has(normalized)) return false;
-            seenAssertionCredentialIds.add(normalized);
-            return true;
-          });
-
-          let assertionOptions: { credentialId: string; options: any } | null = null;
-          for (const credentialId of uniqueAssertionCredentialIds) {
-            assertionOptions = await fetchAssertionOptions(origin, credentialId);
-            if (!active) return;
-            if (assertionOptions) break;
-          }
-
-          if (assertionOptions) {
-            console.log(
-              'Found existing passkey assertion options for credential:',
-              assertionOptions.credentialId,
-            );
-
-            const decodedOptions = assertion.encoder.decodeOptions(assertionOptions.options);
-
-            // Ensure all relevant passkeys are allowed in the options to allow user selection in the intent
-            if (relevantPasskeys.length > 1) {
-              if (!decodedOptions.allowCredentials) {
-                decodedOptions.allowCredentials = [];
-              }
-              const existingIds = new Set(
-                decodedOptions.allowCredentials.map((c: { id: ArrayBuffer }) =>
-                  encoding.toBase64URL(new Uint8Array(c.id as ArrayBuffer)),
-                ),
-              );
-              relevantPasskeys.forEach((p) => {
-                if (!existingIds.has(p.id)) {
-                  decodedOptions.allowCredentials!.push({
-                    id: encoding.fromBase64Url(p.id),
-                    type: 'public-key',
-                  });
-                }
-              });
-            }
-
-            const challenge = encoding.fromBase64Url(assertionOptions.options.challenge);
-
-            const liquidOptions = {
-              requestId,
-              origin,
-              type: 'algorand',
-              address: walletAddress,
-              signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
-              device: 'Demo Web Wallet',
-            };
-
-            const credential = (await navigator.credentials.get({
-              publicKey: decodedOptions,
-            })) as any;
-            if (!active) return;
-            authFlowInProgressRef.current = false;
-
-            if (!credential) {
-              throw new Error('Credential creation failed');
-            }
-
-            const currentPasskeys = await passkey.store.getPasskeys();
-            let selectedAddress: string | null = null;
-            if (credential.response?.userHandle) {
-              try {
-                selectedAddress = encodeAddress(new Uint8Array(credential.response.userHandle));
-              } catch (e) {
-                console.error('Failed to encode address from userHandle', e);
-              }
-            }
-
-            if (!selectedAddress) {
-              const matchedPasskey =
-                relevantPasskeys.find((p) => p.id === credential.id) ||
-                currentPasskeys.find((p) => p.id === credential.id);
-              const userHandle = matchedPasskey?.metadata?.userHandle;
-              if (userHandle) {
-                try {
-                  // Handle different possible formats of userHandle in store (Uint8Array or serialized object)
-                  const handleArray =
-                    userHandle instanceof Uint8Array
-                      ? userHandle
-                      : typeof userHandle === 'object'
-                        ? new Uint8Array(Object.values(userHandle))
-                        : null;
-                  if (handleArray) {
-                    selectedAddress = encodeAddress(handleArray);
-                  }
-                } catch (e) {
-                  console.error('Failed to encode address from stored userHandle', e);
-                }
-              }
-            }
-
-            if (selectedAddress) {
-              console.log('Selected address from passkey:', selectedAddress);
-              setAddress(selectedAddress);
-              addressRef.current = selectedAddress;
-              liquidOptions.address = selectedAddress;
-
-              // Re-sign the challenge if the address changed to match the selected passkey
-              const selectedPublicKey = decodeAddress(selectedAddress).publicKey;
-              const selectedKey = keyStore.state.keys.find(
-                (k) =>
-                  isWalletAccountKey(k) &&
-                  k.publicKey &&
-                  k.publicKey.length === selectedPublicKey.length &&
-                  k.publicKey.every((v, i) => v === selectedPublicKey[i]),
-              );
-
-              if (selectedKey) {
-                console.log('Found key for selected address, re-signing challenge');
-                liquidOptions.signature = encoding.toBase64URL(
-                  await key.store.sign(selectedKey.id, challenge),
-                );
-              } else {
-                console.warn('Could not find key for selected address', selectedAddress);
-              }
-            }
-
-            const encodedCredential = assertion.encoder.encodeCredential(credential);
-            encodedCredential.clientExtensionResults = {
-              ...encodedCredential.clientExtensionResults,
-              liquid: liquidOptions,
-            } as any;
-
-            const submitResponse = await fetch(`${origin}/assertion/response`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(encodedCredential),
-            });
-
-            if (!submitResponse.ok) {
-              throw new Error(
-                `Failed to submit assertion response: ${submitResponse.status} ${submitResponse.statusText}`,
-              );
-            }
-            updateSessionPasskeyCredentialId(requestId, origin, credential.id);
-
-            const matchedKey = await findPasskeyKeyForCredential({
-              credential,
-              passkeys: [...currentPasskeys, ...relevantPasskeys],
-              origin,
-              walletAddress: selectedAddress ?? liquidOptions.address,
-            });
-
-            if (matchedKey) {
-              try {
-                // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-                // can zero its own buffer in `finally` without wiping ours.
-                const masterKey = await readMasterKey(biometricOptions);
-                const keyData = await fetchSecret<KeyData>({
-                  keyId: matchedKey.id,
-                  options: { masterKey: Buffer.from(masterKey) },
-                });
-                if (keyData) {
-                  keyData.metadata = {
-                    ...keyData.metadata,
-                    origin,
-                    ...(selectedAddress ? { userHandle: selectedAddress } : {}),
-                    registered: true,
-                  };
-                  persistKeyMetadata(keyData, masterKey);
-                }
-              } catch (error) {
-                console.error('Failed to update key metadata after assertion:', error);
-              }
-            }
-          } else {
-            if (!allowPasskeyCreation) {
-              throw new Error(
-                'No existing passkey was found for this connection. Scan the agent QR code again to create one.',
-              );
-            }
-
-            console.log('No existing passkey for origin, using attestation');
-
-            const optionsResponse = await fetch(`${origin}/attestation/request`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                attestationType: 'none',
-                authenticatorSelection: {
-                  authenticatorAttachment: 'platform',
-                  userVerification: 'required',
-                  residentKey: 'required',
-                  requireResidentKey: true,
-                },
-                extensions: {
-                  liquid: true,
-                },
-              }),
-            });
-
-            if (!active) return;
-
-            if (!optionsResponse.ok) {
-              throw new Error(
-                `Failed to get attestation request: ${optionsResponse.status} ${optionsResponse.statusText}`,
-              );
-            }
-
-            const encodedAttestationOptions = await optionsResponse.json();
-            if (!active) return;
-            const challenge = encoding.fromBase64Url(encodedAttestationOptions.challenge);
-
-            const liquidOptions = {
-              requestId,
-              origin: origin,
-              type: 'algorand',
-              address: walletAddress,
-              signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
-              device: 'Demo Web Wallet',
-            };
-
-            const decodedPublicKey = {
-              ...encodedAttestationOptions,
-              user: {
-                ...encodedAttestationOptions.user,
-                id: decodeAddress(liquidOptions.address).publicKey,
-                name: liquidOptions.address,
-                displayName: liquidOptions.address,
-              },
-              challenge: encoding.fromBase64Url(encodedAttestationOptions.challenge),
-              excludeCredentials: encodedAttestationOptions.excludeCredentials?.map(
-                (cred: any) => ({
-                  ...cred,
-                  id: encoding.fromBase64Url(cred.id),
-                }),
-              ),
-            };
-
-            const credential = (await navigator.credentials.create({
-              publicKey: decodedPublicKey,
-            })) as any;
-            if (!active) return;
-            authFlowInProgressRef.current = false;
-
-            if (!credential) {
-              throw new Error('Credential creation failed');
-            }
-
-            setAddress(liquidOptions.address);
-            addressRef.current = liquidOptions.address;
-
-            const response = credential.response;
-            const encodedCredential = {
-              id: credential.id,
-              rawId: encoding.toBase64URL(credential.rawId),
-              type: credential.type,
-              response: {
-                clientDataJSON: encoding.toBase64URL(response.clientDataJSON),
-                attestationObject: encoding.toBase64URL(response.attestationObject),
-                clientExtensionResults: response.clientExtensionResults || {},
-              },
-              clientExtensionResults: {
-                ...(credential.getClientExtensionResults
-                  ? credential.getClientExtensionResults()
-                  : credential.clientExtensionResults || {}),
-                liquid: liquidOptions,
-              },
-            };
-
-            const submitResponse = await fetch(`${origin}/attestation/response`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(encodedCredential),
-            });
-
-            if (!active) return;
-
-            if (!submitResponse.ok) {
-              throw new Error(
-                `Failed to submit attestation response: ${submitResponse.status} ${submitResponse.statusText}`,
-              );
-            }
-            updateSessionPasskeyCredentialId(requestId, origin, credential.id);
-
-            const currentPasskeys = await passkey.store.getPasskeys();
-            const matchedKey = await findPasskeyKeyForCredential({
-              credential,
-              passkeys: currentPasskeys,
-              origin,
-              walletAddress: liquidOptions.address,
-            });
-
-            if (matchedKey) {
-              try {
-                // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-                // can zero its own buffer in `finally` without wiping ours.
-                const masterKey = await readMasterKey(biometricOptions);
-                const keyData = await fetchSecret<KeyData>({
-                  keyId: matchedKey.id,
-                  options: { masterKey: Buffer.from(masterKey) },
-                });
-                if (keyData) {
-                  keyData.metadata = {
-                    ...keyData.metadata,
-                    origin,
-                    userHandle: liquidOptions.address,
-                    registered: true,
-                  };
-                  persistKeyMetadata(keyData, masterKey);
-                }
-              } catch (error) {
-                console.error('Failed to update key metadata after attestation:', error);
-              }
-            }
-          }
-        }
+        const authResult = await authenticateLiquidAuth({
+          origin,
+          requestId,
+          foundKey,
+          walletAddress,
+          currentKeys,
+          initialSessionData,
+          initialSessionAddress,
+          existingSessionPasskeyCredentialId: existingSession?.passkeyCredentialId,
+          allowPasskeyCreation,
+          key,
+          passkey,
+          setAddress,
+          addressRef,
+          authFlowInProgressRef,
+          fetchWithTimeout,
+          isActive: () => active,
+        });
+        if (authResult.superseded || !active) return;
 
         // Final validation of the session before connecting
-        const finalSessionCheck = await fetch(`${origin}/auth/session`);
+        const finalSessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
 
         if (!active) return;
 
@@ -1081,13 +674,9 @@ export function useConnection(
           if (!active) return;
 
           const sessionAddress = sessionAddressFromData(sessionData);
-          if (sessionAddress && addressMatchesKey(sessionAddress, foundKey)) {
+          if (sessionAddress) {
             setAddress(sessionAddress);
             addressRef.current = sessionAddress;
-          } else if (sessionAddress) {
-            console.warn(
-              'Ignoring final session address that does not match the active wallet key',
-            );
           }
         } else {
           console.log('Session validation failed (ignored for debugging)');
@@ -1124,164 +713,33 @@ export function useConnection(
         client.authenticated = true;
 
         // Apply one STX-prefixed control frame from the agent's stream channel.
-        // See `lib/ac2/stream.ts` for the frame shapes. Returns true when `raw`
-        // was a control frame (recognized or malformed) — never render as chat.
-        const applyControlFrame = (raw: string): boolean => {
-          const parsed = parseStreamControlFrame(raw);
-          if (parsed === null) return false;
-          // Any inbound control frame means the agent is alive — reset the
-          // inactivity watchdog so a long "thinking" turn is never torn down.
-          lastUserActivityRef.current = Date.now();
-          if (parsed === undefined) return true; // malformed payload, swallow
-          const frame: any = parsed;
-          const fthid: string =
-            typeof frame?.thid === 'string' && frame.thid.length > 0
-              ? frame.thid
-              : activeThidRef.current;
-          const isActiveThread = fthid === activeThidRef.current;
-          switch (frame?.t) {
-            case 'preview': {
-              // Live draft for `fthid`; only reflect it in the on-screen UI
-              // when it belongs to the conversation currently open.
-              if (isActiveThread) {
-                if (frame.phase === 'tool') {
-                  setAgentPresence('tool');
-                  setAgentPresenceDetail(typeof frame.detail === 'string' ? frame.detail : null);
-                } else if (frame.phase === 'typing') {
-                  setAgentPresence('typing');
-                  setAgentPresenceDetail(null);
-                } else {
-                  // `thinking` (and any unknown phase) → thinking indicator.
-                  setAgentPresence('thinking');
-                  setAgentPresenceDetail(null);
-                }
-                if (typeof frame.text === 'string') setActiveStreamText(frame.text);
-              }
-              break;
-            }
-            case 'finalize': {
-              // Commit the streamed draft in place as the agent's message for
-              // its thread; clear the live preview if it's the active thread.
-              const text = typeof frame.text === 'string' ? frame.text.trim() : '';
-              if (text && addressRef.current) {
-                addMessage({
-                  text,
-                  sender: 'peer',
-                  address: addressRef.current,
-                  origin,
-                  requestId,
-                  thid: fthid,
-                });
-                updateSessionActivity(requestId, origin);
-                setLastHeartbeat(Date.now());
-              }
-              if (isActiveThread) {
-                setActiveStreamText('');
-                setAgentPresence(null);
-                setAgentPresenceDetail(null);
-              }
-              break;
-            }
-            case 'discard': {
-              if (isActiveThread) {
-                setActiveStreamText('');
-                setAgentPresence(null);
-                setAgentPresenceDetail(null);
-              }
-              break;
-            }
-            case 'conversations': {
-              if (Array.isArray(frame.threads)) {
-                // The agent advertised the conversations it already holds for
-                // this connection. Surface them so the controller can show
-                // (and restore) threads it has no local copy of.
-                setRemoteThreads(
-                  frame.threads
-                    .filter((t: any) => typeof t?.thid === 'string' && t.thid.length > 0)
-                    .map((t: any) => ({
-                      thid: t.thid as string,
-                      ...(typeof t.title === 'string' ? { title: t.title } : {}),
-                      ...(typeof t.updatedAt === 'number' ? { updatedAt: t.updatedAt } : {}),
-                    })),
-                );
-              }
-              break;
-            }
-            case 'tool': {
-              // Durable tool-activity card: a record of one tool/exec step the
-              // agent ran. Persist it (de-duped by the agent-supplied id) so it
-              // renders as a distinct "tool card" in the thread's timeline,
-              // independent of the ephemeral `preview` (phase tool) indicator.
-              if (typeof frame.id === 'string' && addressRef.current) {
-                addToolActivity({
-                  toolId: frame.id,
-                  address: addressRef.current,
-                  origin,
-                  requestId,
-                  thid: fthid,
-                  ...(typeof frame.name === 'string' ? { tool: frame.name } : {}),
-                  ...(typeof frame.command === 'string' ? { command: frame.command } : {}),
-                  ...(typeof frame.output === 'string' ? { output: frame.output } : {}),
-                });
-                updateSessionActivity(requestId, origin);
-              }
-              break;
-            }
-            case 'history': {
-              if (
-                typeof frame.thid === 'string' &&
-                Array.isArray(frame.messages) &&
-                addressRef.current
-              ) {
-                // The agent replayed an existing conversation's history (e.g.
-                // after we opened/switched to it). Restore it into the local
-                // store, idempotently replacing our copy of that thread.
-                const history = frame.messages
-                  .filter(
-                    (m: any) =>
-                      (m?.role === 'user' || m?.role === 'assistant' || m?.role === 'tool') &&
-                      (typeof m?.text === 'string' || m?.role === 'tool'),
-                  )
-                  .map((m: any) => {
-                    if (m.role === 'tool') {
-                      // A persisted tool/exec card replayed by the agent — carry
-                      // through its id (so it coalesces with live frames) and
-                      // tool/command/output fields.
-                      return {
-                        role: 'tool' as const,
-                        text: '',
-                        ...(typeof m.id === 'string' ? { toolId: m.id } : {}),
-                        ...(typeof m.name === 'string' ? { tool: m.name } : {}),
-                        ...(typeof m.command === 'string' ? { command: m.command } : {}),
-                        ...(typeof m.output === 'string' ? { output: m.output } : {}),
-                        ...(typeof m.at === 'number' ? { at: m.at } : {}),
-                      };
-                    }
-                    return {
-                      role: m.role as 'user' | 'assistant',
-                      text: m.text as string,
-                      ...(typeof m.at === 'number' ? { at: m.at } : {}),
-                    };
-                  });
-                setThreadHistory(addressRef.current, origin, requestId, frame.thid, history);
-              }
-              break;
-            }
-            default:
-              break;
-          }
-          return true;
-        };
+        // See `lib/ac2/streamControlFrame.ts` / `lib/ac2/stream.ts` for the frame
+        // shapes. Returns true when `raw` was a control frame (recognized or
+        // malformed) — never render as chat.
+        const applyControlFrame = createControlFrameHandler({
+          origin,
+          requestId,
+          addressRef,
+          activeThidRef,
+          lastUserActivityRef,
+          setAgentPresence,
+          setAgentPresenceDetail,
+          setActiveStreamText,
+          setLastHeartbeat,
+          setRemoteThreads,
+        });
 
         const { datachannel } = await createAc2Transport({
           requestId,
           signalClient: client,
+          signal: runAbort.signal,
           onSideChannel: (channel) => {
             console.log(`[ac2] Discovered channel: ${channel.label}`);
             if (channel.label === 'ac2-heartbeat') {
               heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
                 onPing: () => {
                   if (!active) return;
+                  wasBackgroundedRef.current = false;
                   lastUserActivityRef.current = Date.now();
                   setLastHeartbeat(Date.now());
                 },
@@ -1301,7 +759,12 @@ export function useConnection(
         });
 
         if (!active) {
-          client.close();
+          // This setup run was superseded while negotiation was still winding
+          // down. Avoid hard-closing the native peer here: Android's WebRTC
+          // bridge may still be asynchronously applying the remote
+          // description, and tearing the peer down races that work and can
+          // crash with a null `PeerConnectionObserver`.
+          client.close(true);
           return;
         }
 
@@ -1319,6 +782,7 @@ export function useConnection(
           getActiveThid: () => activeThidRef.current,
           onInboundEnvelope: () => {
             updateSessionActivity(requestId, origin);
+            wasBackgroundedRef.current = false;
             lastUserActivityRef.current = Date.now();
             setLastHeartbeat(Date.now());
           },
@@ -1334,12 +798,24 @@ export function useConnection(
               thid: activeThidRef.current,
             });
             updateSessionActivity(requestId, origin);
+            wasBackgroundedRef.current = false;
             lastUserActivityRef.current = Date.now();
             setLastHeartbeat(Date.now());
           },
           onOpen: () => {
             console.log('Data channel opened');
             if (active) {
+              deliberateCloseRef.current = false;
+              wasBackgroundedRef.current = false;
+              if (autoReconnectTimerRef.current) {
+                clearTimeout(autoReconnectTimerRef.current);
+                autoReconnectTimerRef.current = null;
+              }
+              // Successful connection — clear the automatic-retry budget so a
+              // future drop starts a fresh set of attempts.
+              reconnectAttemptRef.current = 0;
+              setReconnectAttempt(0);
+              setIsReconnecting(false);
               setIsConnected(true);
               setIsLoading(false);
               setAc2Client(ac2);
@@ -1350,20 +826,51 @@ export function useConnection(
             console.log('Data channel closed');
             updateSessionStatus(requestId, origin, 'closed');
             if (active) {
+              if (deliberateCloseRef.current) {
+                deliberateCloseRef.current = false;
+                return;
+              }
               setIsConnected(false);
-              setIsLoading(false);
               // Drop every stale transport ref so the next mount / reconnect
               // isn't blocked by the connection effect's guard.
               clearTransport();
+              // Kick off (or continue) the bounded, serialized retry sequence.
+              // Once the budget is spent, fall back to the manual Reconnect bar.
+              if (!scheduleAutoReconnectRef.current()) {
+                setIsReconnecting(false);
+                setIsLoading(false);
+              }
             }
           },
         });
         ac2ClientRef.current = ac2;
       } catch (err: any) {
+        // A superseded run (cleanup/reconnect fired, or the transport was
+        // aborted) must do nothing: `clientRef` now points at the newer run's
+        // client, so tearing it down here would kill a healthy connection and
+        // clobber its session status. The newer run owns all recovery.
+        if (!active || err?.name === 'AbortError') return;
         console.error('Failed to setup connection:', err);
+        // Tear down the partially-established SignalClient before clearing the
+        // ref. The timeout handler only closes the peer connection — also close
+        // the socket so the server-side session doesn't stay open and confuse
+        // the next connection attempt.
+        try {
+          clientRef.current?.peerClient?.close();
+        } catch {
+          /* noop */
+        }
+        try {
+          clientRef.current?.close(true);
+        } catch {
+          /* noop */
+        }
         clientRef.current = null;
         updateSessionStatus(requestId, origin, 'failed');
-        if (active) {
+        // Retry recoverable setup failures within the bounded budget; only
+        // surface the terminal error + manual fallback once it's exhausted.
+        if (!scheduleAutoReconnectRef.current()) {
+          setIsReconnecting(false);
           setError(err);
           setIsLoading(false);
           Alert.alert(
@@ -1373,7 +880,11 @@ export function useConnection(
           );
         }
       } finally {
-        authFlowInProgressRef.current = false;
+        // Only release the auth lock if this run is still the active one.
+        // If cleanup already ran (`active = false`), it has already reset the
+        // lock and a new run may have acquired it — clearing it here would
+        // unblock a spurious third attempt.
+        if (active) authFlowInProgressRef.current = false;
       }
     }
 
@@ -1381,6 +892,16 @@ export function useConnection(
 
     return () => {
       active = false;
+      // Release the auth lock before the new run starts so it isn't blocked by
+      // the guard in `setupConnection`. The `finally` block is guarded by
+      // `active` and will not clobber the new run's lock once it acquires it.
+      authFlowInProgressRef.current = false;
+      const hadEstablishedTransport = !!(dataChannelRef.current || ac2ClientRef.current);
+      runAbort.abort();
+      if (autoReconnectTimerRef.current) {
+        clearTimeout(autoReconnectTimerRef.current);
+        autoReconnectTimerRef.current = null;
+      }
       if (ac2ClientRef.current) {
         try {
           ac2ClientRef.current.close();
@@ -1394,18 +915,22 @@ export function useConnection(
         dataChannelRef.current = null;
       }
       if (clientRef.current) {
-        clientRef.current.close();
+        // Only hard-close the peer once this effect still owns an established
+        // transport. For a superseded setup run, `runAbort.abort()` above has
+        // already cancelled the logical attempt; force-closing the native peer
+        // here can race Android's in-flight `setRemoteDescription` and crash.
+        if (hadEstablishedTransport) {
+          try {
+            clientRef.current.peerClient?.close();
+          } catch {
+            /* noop */
+          }
+        }
+        clientRef.current.close(true);
         clientRef.current = null;
       }
     };
-  }, [
-    origin,
-    requestId,
-    accounts.length > 0,
-    keys.length > 0,
-    reconnectNonce,
-    allowPasskeyCreation,
-  ]);
+  }, [origin, requestId, accounts.length > 0, keys.length > 0, reconnectNonce]);
 
   return {
     session,
@@ -1420,6 +945,9 @@ export function useConnection(
     isError: !!error,
     isLoading,
     isConnected,
+    isReconnecting,
+    reconnectAttempt,
+    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
     lastHeartbeat,
     reset,
     reconnect,

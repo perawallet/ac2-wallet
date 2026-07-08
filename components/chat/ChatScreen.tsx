@@ -45,6 +45,9 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     isConnected,
     isError,
     isLoading,
+    isReconnecting,
+    reconnectAttempt,
+    maxReconnectAttempts,
     send,
     sendAc2,
     lastHeartbeat,
@@ -288,6 +291,12 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
       </View>
       {isConnected ? (
         <ChatComposer onSend={send} enabled placeholder="Message" />
+      ) : isReconnecting ? (
+        <ChatComposer
+          onSend={send}
+          enabled={false}
+          placeholder={`Reconnecting (${reconnectAttempt}/${maxReconnectAttempts})…`}
+        />
       ) : isLoading ? (
         <ChatComposer onSend={send} enabled={false} placeholder="Connecting…" />
       ) : (

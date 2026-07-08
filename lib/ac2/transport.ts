@@ -45,6 +45,11 @@ export interface CreateAc2TransportOptions {
   signalClient: SignalClient;
   /** Called for each negotiated side-channel (`ac2-stream`, `ac2-heartbeat`). */
   onSideChannel: (channel: RTCDataChannel) => void;
+  /**
+   * Optional abort signal. When fired the pending negotiation is torn down
+   * immediately and the returned promise rejects with an `AbortError`.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -55,7 +60,13 @@ export interface CreateAc2TransportOptions {
 export async function createAc2Transport(
   opts: CreateAc2TransportOptions,
 ): Promise<Ac2TransportSetup> {
-  const { requestId, signalClient, onSideChannel } = opts;
+  const { requestId, signalClient, onSideChannel, signal } = opts;
+
+  if (signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    throw err;
+  }
 
   signalClient.on('data-channel', (channel: RTCDataChannel) => {
     if (channel.label === 'ac2-v1') return; // owned by datachannel below
@@ -88,8 +99,43 @@ export async function createAc2Transport(
     }, SIGNALING_TIMEOUT_MS);
   });
 
-  const datachannel = await Promise.race([peerPromise, timeoutPromise]).finally(() => {
-    if (timeoutId) clearTimeout(timeoutId);
+  const racers: Promise<RTCDataChannel>[] = [peerPromise, timeoutPromise];
+
+  // Track the abort listener so it can be removed in `finally` regardless of
+  // which racer wins — prevents a dangling listener from firing later and
+  // inadvertently closing a healthy peer connection.
+  let onAbort: (() => void) | undefined;
+
+  if (signal) {
+    const abortPromise = new Promise<RTCDataChannel>((_, reject) => {
+      const abort = () => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        // Do NOT hard-close the native peer on abort. On Android,
+        // `react-native-webrtc` can still be asynchronously applying the
+        // remote description when a superseded run is cancelled; tearing the
+        // peer down here races that in-flight work and can crash with
+        // `peerConnectionSetRemoteDescription(...getPeerConnection() == null)`.
+        // The caller's normal transport cleanup will detach the obsolete
+        // SignalClient/socket without forcing this unsafe native transition.
+        // Use a plain Error with name 'AbortError' rather than DOMException
+        // for broadest compatibility across Hermes versions.
+        const err = new Error('Aborted');
+        err.name = 'AbortError';
+        reject(err);
+      };
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      onAbort = abort;
+      signal.addEventListener('abort', onAbort);
+    });
+    racers.push(abortPromise);
+  }
+
+  const datachannel = await Promise.race(racers).finally(() => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort);
   });
 
   return { client: signalClient, datachannel };
