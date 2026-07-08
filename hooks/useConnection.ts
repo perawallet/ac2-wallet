@@ -137,6 +137,11 @@ export function useConnection(
   // Last observed `AppState`, so the foreground listener only reacts to a real
   // background/inactive -> active transition (not active -> active repeats).
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  // True once the app has been backgrounded/inactive and no inbound frame has
+  // since proven the connection still alive. Lets the inactivity close tell a
+  // stale-from-background drop (auto-reconnect when foregrounded) apart from a
+  // genuine foreground idle close (stays manual, so we don't churn/re-prompt).
+  const wasBackgroundedRef = useRef(false);
 
   // Active conversation thread; the ref mirror lets DataChannel handlers see the live value.
   const [activeThid, setActiveThid] = useState<string>(DEFAULT_THID);
@@ -328,6 +333,13 @@ export function useConnection(
       const prevState = appStateRef.current;
       appStateRef.current = nextState;
 
+      // Remember that we left the foreground. Timers are suspended while
+      // backgrounded, so a connection can silently go stale; this flag lets the
+      // inactivity close distinguish that from a genuine foreground idle.
+      if (nextState === 'background' || nextState === 'inactive') {
+        wasBackgroundedRef.current = true;
+      }
+
       // Only react to a genuine (background|inactive) -> active transition.
       if (nextState !== 'active' || prevState === 'active') return;
 
@@ -472,7 +484,17 @@ export function useConnection(
         const now = Date.now();
         const inactiveTime = now - lastUserActivityRef.current;
         if (inactiveTime >= 60000) {
-          console.log('Closing connection due to inactivity (1 minute)');
+          // A stale connection whose idleness is explained by the app having
+          // been backgrounded (timers suspended, no heartbeats) should recover
+          // automatically; a genuine foreground idle should not (avoids churn /
+          // repeated biometric prompts). An intentional disconnect never
+          // resumes.
+          const resumeAfterBackground = !userStoppedRef.current && wasBackgroundedRef.current;
+          console.log(
+            resumeAfterBackground
+              ? 'Closing stale connection after background; will reconnect'
+              : 'Closing connection due to inactivity (1 minute)',
+          );
           // Fully tear down so the connection effect's guard doesn't keep a
           // stale client around — otherwise a later reconnect is impossible.
           deliberateCloseRef.current = true;
@@ -481,6 +503,14 @@ export function useConnection(
           if (active) {
             setIsConnected(false);
             setIsLoading(false);
+          }
+          // If we're already back in the foreground, reconnect now (the
+          // foreground AppState handler already ran while we still looked
+          // connected, so it won't fire again). If the close happened while
+          // still backgrounded, that handler resumes us on the next activation.
+          if (resumeAfterBackground && AppState.currentState === 'active') {
+            wasBackgroundedRef.current = false;
+            reconnectRef.current();
           }
         }
       }, 5000);
@@ -709,6 +739,7 @@ export function useConnection(
               heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
                 onPing: () => {
                   if (!active) return;
+                  wasBackgroundedRef.current = false;
                   lastUserActivityRef.current = Date.now();
                   setLastHeartbeat(Date.now());
                 },
@@ -751,6 +782,7 @@ export function useConnection(
           getActiveThid: () => activeThidRef.current,
           onInboundEnvelope: () => {
             updateSessionActivity(requestId, origin);
+            wasBackgroundedRef.current = false;
             lastUserActivityRef.current = Date.now();
             setLastHeartbeat(Date.now());
           },
@@ -766,6 +798,7 @@ export function useConnection(
               thid: activeThidRef.current,
             });
             updateSessionActivity(requestId, origin);
+            wasBackgroundedRef.current = false;
             lastUserActivityRef.current = Date.now();
             setLastHeartbeat(Date.now());
           },
@@ -773,6 +806,7 @@ export function useConnection(
             console.log('Data channel opened');
             if (active) {
               deliberateCloseRef.current = false;
+              wasBackgroundedRef.current = false;
               if (autoReconnectTimerRef.current) {
                 clearTimeout(autoReconnectTimerRef.current);
                 autoReconnectTimerRef.current = null;
