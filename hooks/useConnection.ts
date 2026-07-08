@@ -1,3 +1,4 @@
+import { useForeground } from '@/hooks/useForeground';
 import { useProvider } from '@/hooks/useProvider';
 import {
   attachHeartbeatChannel,
@@ -8,6 +9,17 @@ import {
   sendConversationClose,
   sendConversationOpen,
 } from '@/lib/ac2';
+import {
+  computeReconnectDelay,
+  CONNECTION_MONITOR_INTERVAL_MS,
+  HEARTBEAT_INTERVAL_MS,
+  HEARTBEAT_STALE_MS,
+  ICE_DISCONNECT_GRACE_MS,
+  INACTIVITY_TIMEOUT_MS,
+  MAX_RECONNECT_ATTEMPTS,
+  REQUEST_TIMEOUT_MS,
+} from '@/lib/ac2/connectionConfig';
+import { attachPeerConnectionMonitor } from '@/lib/ac2/peerMonitor';
 import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
 import { findWalletAccount } from '@/lib/keystore/wallet-account';
 import { authenticateLiquidAuth } from '@/lib/liquid-auth/flow';
@@ -30,18 +42,17 @@ import { SignalClient } from '@algorandfoundation/liquid-client';
 import { useStore } from '@tanstack/react-store';
 import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, type AppStateStatus, NativeModules, Platform } from 'react-native';
+import { Alert, NativeModules, Platform } from 'react-native';
 
-const AUTO_RECONNECT_DELAY_MS = 3000;
-// Bounded auto-reconnect budget. After this many failed automatic attempts we
-// stop retrying and fall back to the manual "Reconnect" button.
-const MAX_RECONNECT_ATTEMPTS = 3;
-// Hard ceiling on any auth/session HTTP request during setup. React Native's
-// `fetch` has NO default timeout, so a request issued while the network is
-// still recovering from a drop (exactly when auto-reconnect fires) can stall
-// forever. Bounding it turns a silent hang into a rejection that flows into the
-// retry state machine instead.
-const REQUEST_TIMEOUT_MS = 15000;
+/** Close a resource, swallowing any error (teardown must never throw). */
+function closeQuietly(close: (() => void) | null | undefined): void {
+  if (!close) return;
+  try {
+    close();
+  } catch {
+    /* noop */
+  }
+}
 
 interface UseConnectionResult {
   session: Session | undefined;
@@ -126,17 +137,26 @@ export function useConnection(
   const heartbeatChannelRef = useRef<RTCDataChannel | null>(null);
   const clientRef = useRef<SignalClient | null>(null);
   const lastUserActivityRef = useRef<number>(Date.now());
+  // Last time ANY inbound frame was seen from the peer (heartbeat, envelope,
+  // chat, or stream control). Drives the liveness watchdog; updated only by
+  // genuinely inbound activity, never by our own outbound heartbeats — so it
+  // reflects peer liveness rather than local timer ticks.
+  const lastInboundRef = useRef<number>(Date.now());
   const authFlowInProgressRef = useRef<boolean>(false);
   // Ignore one `onClose` when the transport was intentionally torn down.
   const deliberateCloseRef = useRef(false);
+  // Guards `handleRecoverableDrop` so the several drop signals (DataChannel
+  // close, ICE failure, watchdog) that can fire near-simultaneously for a
+  // single drop only trigger one teardown + reconnect. Reset once a fresh
+  // attempt starts or a connection opens.
+  const recoveringRef = useRef(false);
+  // Detaches the ICE/connection-state listeners from the current peer.
+  const detachPeerMonitorRef = useRef<(() => void) | null>(null);
   // Set when the user explicitly disconnects (`reset()`); blocks the
   // foreground auto-reconnect from resurrecting a session they chose to stop.
   const userStoppedRef = useRef(false);
   // One-shot delayed reconnect that mirrors pressing the Reconnect button.
   const autoReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Last observed `AppState`, so the foreground listener only reacts to a real
-  // background/inactive -> active transition (not active -> active repeats).
-  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   // Active conversation thread; the ref mirror lets DataChannel handlers see the live value.
   const [activeThid, setActiveThid] = useState<string>(DEFAULT_THID);
@@ -168,59 +188,41 @@ export function useConnection(
   // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
   // "Connecting…" with no way to recover.
   const clearTransport = useCallback(() => {
+    // Detach the peer state monitor (also cancels any pending ICE-disconnect
+    // grace timer) before closing anything, so tearing the peer down doesn't
+    // re-enter the drop handler via a `closed` state-change event.
+    closeQuietly(detachPeerMonitorRef.current);
+    detachPeerMonitorRef.current = null;
+
     if (ac2ClientRef.current) {
-      try {
-        ac2ClientRef.current.close();
-      } catch {
-        /* noop */
-      }
+      closeQuietly(() => ac2ClientRef.current?.close());
       ac2ClientRef.current = null;
       setAc2Client(null);
     }
     if (dataChannelRef.current) {
-      try {
-        dataChannelRef.current.close();
-      } catch {
-        /* noop */
-      }
+      closeQuietly(() => dataChannelRef.current?.close());
       dataChannelRef.current = null;
     }
     if (streamChannelRef.current) {
-      try {
-        streamChannelRef.current.close();
-      } catch {
-        /* noop */
-      }
+      closeQuietly(() => streamChannelRef.current?.close());
       streamChannelRef.current = null;
     }
     if (heartbeatChannelRef.current) {
-      try {
-        heartbeatChannelRef.current.close();
-      } catch {
-        /* noop */
-      }
+      closeQuietly(() => heartbeatChannelRef.current?.close());
       heartbeatChannelRef.current = null;
     }
     if (clientRef.current) {
-      try {
-        // `SignalClient.close()` never tears down the WebRTC peer connection, so
-        // close it explicitly. A leaked `RTCPeerConnection` keeps the ICE
-        // session to the agent alive, so the agent still treats the old peer as
-        // active for this requestId and ignores the fresh offer a reconnect
-        // sends — leaving negotiation hung after `setLocalDescription`.
-        clientRef.current.peerClient?.close();
-      } catch {
-        /* noop */
-      }
-      try {
-        // `close(true)` also disconnects the underlying signaling socket. The
-        // default `close()` only detaches listeners and leaves the socket.io
-        // connection alive, which would then collide with the socket a
-        // subsequent (re)connect opens to the same origin — wedging signaling.
-        clientRef.current.close(true);
-      } catch {
-        /* noop */
-      }
+      // `SignalClient.close()` never tears down the WebRTC peer connection, so
+      // close it explicitly. A leaked `RTCPeerConnection` keeps the ICE session
+      // to the agent alive, so the agent still treats the old peer as active for
+      // this requestId and ignores the fresh offer a reconnect sends — leaving
+      // negotiation hung after `setLocalDescription`.
+      closeQuietly(() => clientRef.current?.peerClient?.close());
+      // `close(true)` also disconnects the underlying signaling socket. The
+      // default `close()` only detaches listeners and leaves the socket.io
+      // connection alive, which would then collide with the socket a subsequent
+      // (re)connect opens to the same origin — wedging signaling.
+      closeQuietly(() => clientRef.current?.close(true));
       clientRef.current = null;
     }
   }, []);
@@ -228,6 +230,7 @@ export function useConnection(
   const reset = useCallback(() => {
     deliberateCloseRef.current = true;
     userStoppedRef.current = true;
+    recoveringRef.current = false;
     reconnectAttemptRef.current = 0;
     if (autoReconnectTimerRef.current) {
       clearTimeout(autoReconnectTimerRef.current);
@@ -251,6 +254,7 @@ export function useConnection(
   // retry budget so it can back both manual and automatic reconnects.
   const performReconnect = useCallback(() => {
     deliberateCloseRef.current = true;
+    recoveringRef.current = false;
     if (autoReconnectTimerRef.current) {
       clearTimeout(autoReconnectTimerRef.current);
       autoReconnectTimerRef.current = null;
@@ -258,6 +262,7 @@ export function useConnection(
     clearTransport();
     authFlowInProgressRef.current = false;
     lastUserActivityRef.current = Date.now();
+    lastInboundRef.current = Date.now();
     setError(null);
     setIsConnected(false);
     setIsLoading(true);
@@ -298,18 +303,46 @@ export function useConnection(
     setReconnectAttempt(attempt);
     setIsReconnecting(true);
     setIsLoading(false);
+    const delay = computeReconnectDelay(attempt);
     autoReconnectTimerRef.current = setTimeout(() => {
       autoReconnectTimerRef.current = null;
       performReconnectRef.current();
-    }, AUTO_RECONNECT_DELAY_MS);
+    }, delay);
     return true;
   }, []);
   const scheduleAutoReconnectRef = useRef(scheduleAutoReconnect);
   scheduleAutoReconnectRef.current = scheduleAutoReconnect;
 
-  // Live mirrors of the connection state so the AppState listener can read the
-  // current values without being torn down/re-subscribed on every change (and
-  // without capturing a stale closure).
+  // Single entry point for an *unexpected* connection loss (DataChannel close,
+  // ICE failure, liveness watchdog, or a failed keepalive send). Collapses the
+  // several signals that can fire for one drop into a single teardown +
+  // bounded reconnect, and — unlike the deliberate idle close — actually tries
+  // to come back. Idempotent per drop via `recoveringRef`.
+  const handleRecoverableDrop = useCallback(
+    (reason: string) => {
+      if (recoveringRef.current) return;
+      if (userStoppedRef.current) return;
+      recoveringRef.current = true;
+      console.warn(`[ac2] recoverable drop: ${reason}`);
+      // Suppress the DataChannel `onClose` that `clearTransport` will trigger —
+      // we're already handling the drop here.
+      deliberateCloseRef.current = true;
+      setIsConnected(false);
+      clearTransport();
+      updateSessionStatus(requestId, origin, 'closed');
+      if (!scheduleAutoReconnectRef.current()) {
+        // Budget exhausted (or user stopped) — fall back to the manual bar.
+        setIsReconnecting(false);
+        setIsLoading(false);
+      }
+    },
+    [requestId, origin, clearTransport],
+  );
+  const handleRecoverableDropRef = useRef(handleRecoverableDrop);
+  handleRecoverableDropRef.current = handleRecoverableDrop;
+
+  // Live mirrors of the connection state so the foreground-resume callback can
+  // read the current values without capturing a stale closure.
   const isConnectedRef = useRef(isConnected);
   isConnectedRef.current = isConnected;
   const isLoadingRef = useRef(isLoading);
@@ -318,52 +351,40 @@ export function useConnection(
   isReconnectingRef.current = isReconnecting;
 
   // Automatically resume a dropped connection when the app returns to the
-  // foreground. Subscribed once per session (keyed on origin/requestId); all
-  // decision state is read from refs so there is no stale-closure risk. The
-  // in-progress guards below are what prevent a second connection attempt from
-  // launching a duplicate — and therefore a duplicate blocking biometric
-  // prompt, since the passkey assertion/attestation step is what triggers it.
-  useEffect(() => {
-    const handleAppStateChange = (nextState: AppStateStatus) => {
-      const prevState = appStateRef.current;
-      appStateRef.current = nextState;
+  // foreground. All decision state is read from refs so there is no
+  // stale-closure risk. The in-progress guards below are what prevent a second
+  // connection attempt from launching a duplicate — and therefore a duplicate
+  // blocking biometric prompt, since the passkey assertion/attestation step is
+  // what triggers it.
+  useForeground(() => {
+    // Respect an explicit user disconnect; don't resurrect a stopped session.
+    if (userStoppedRef.current) return;
 
-      // Only react to a genuine (background|inactive) -> active transition.
-      if (nextState !== 'active' || prevState === 'active') return;
+    // A healthy connection needs nothing.
+    if (isConnectedRef.current) return;
 
-      // Respect an explicit user disconnect; don't resurrect a stopped session.
-      if (userStoppedRef.current) return;
+    // Never start a second connection while one is already in flight. Any of
+    // these means "busy": an auth flow (blocking biometric prompt) is open, a
+    // SignalClient is already set up, we're in the loading/connecting state, an
+    // auto-reconnect sequence is running, or a retry timer is already pending.
+    if (
+      authFlowInProgressRef.current ||
+      clientRef.current ||
+      isLoadingRef.current ||
+      isReconnectingRef.current ||
+      autoReconnectTimerRef.current
+    ) {
+      return;
+    }
 
-      // A healthy connection needs nothing.
-      if (isConnectedRef.current) return;
+    // Only resume sessions we still track (not forgotten by the user).
+    const existingSession = sessionsStore.state.sessions.find(
+      (s) => s.id === requestId && s.origin === origin,
+    );
+    if (!existingSession) return;
 
-      // Never start a second connection while one is already in flight. Any of
-      // these means "busy": an auth flow (blocking biometric prompt) is open,
-      // a SignalClient is already set up, we're in the loading/connecting
-      // state, an auto-reconnect sequence is running, or a retry timer is
-      // already pending.
-      if (
-        authFlowInProgressRef.current ||
-        clientRef.current ||
-        isLoadingRef.current ||
-        isReconnectingRef.current ||
-        autoReconnectTimerRef.current
-      ) {
-        return;
-      }
-
-      // Only resume sessions we still track (not forgotten by the user).
-      const existingSession = sessionsStore.state.sessions.find(
-        (s) => s.id === requestId && s.origin === origin,
-      );
-      if (!existingSession) return;
-
-      reconnectRef.current();
-    };
-
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription.remove();
-  }, [origin, requestId]);
+    reconnectRef.current();
+  });
 
   const send = useCallback(
     (text: string) => {
@@ -450,46 +471,59 @@ export function useConnection(
   useEffect(() => {
     let active = true;
     let heartbeatInterval: any = null;
-    let inactivityInterval: any = null;
+    let monitorInterval: any = null;
 
     if (isConnected) {
       heartbeatInterval = setInterval(() => {
         // Prefer the `ac2-heartbeat` channel; fall back to the control channel
-        // (empty frame) if the peer didn't negotiate it.
-        const hb = heartbeatChannelRef.current;
-        if (hb && hb.readyState === 'open') {
-          console.log('Sending heartbeat ping');
-          hb.send('ping');
-          if (active) setLastHeartbeat(Date.now());
-        } else if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-          console.log('Sending heartbeat message');
-          dataChannelRef.current.send('');
-          if (active) setLastHeartbeat(Date.now());
+        // (empty frame) if the peer didn't negotiate it. A throw here means the
+        // channel is gone underneath us — treat it as a recoverable drop rather
+        // than letting the timer callback reject unhandled.
+        try {
+          const hb = heartbeatChannelRef.current;
+          if (hb && hb.readyState === 'open') {
+            hb.send('ping');
+            if (active) setLastHeartbeat(Date.now());
+          } else if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+            dataChannelRef.current.send('');
+            if (active) setLastHeartbeat(Date.now());
+          }
+        } catch (e) {
+          console.warn('[ac2] heartbeat send failed:', e);
+          handleRecoverableDropRef.current('heartbeat send failed');
         }
-      }, 20000);
+      }, HEARTBEAT_INTERVAL_MS);
 
-      inactivityInterval = setInterval(() => {
+      monitorInterval = setInterval(() => {
+        if (!active) return;
         const now = Date.now();
-        const inactiveTime = now - lastUserActivityRef.current;
-        if (inactiveTime >= 60000) {
-          console.log('Closing connection due to inactivity (1 minute)');
-          // Fully tear down so the connection effect's guard doesn't keep a
-          // stale client around — otherwise a later reconnect is impossible.
+        // Liveness watchdog (dead connection): the peer has sent nothing —
+        // not even a heartbeat — for the stale window, yet no close/ICE event
+        // fired. Treat it as a silently-dead connection and reconnect. This is
+        // the "dead" half of the dead-vs-idle split: it always tries to recover.
+        if (now - lastInboundRef.current >= HEARTBEAT_STALE_MS) {
+          handleRecoverableDropRef.current('liveness watchdog: no inbound frames');
+          return;
+        }
+        // Idle close (healthy but unused): the peer is still alive (inbound is
+        // fresh, so the branch above didn't fire) but there has been no user
+        // activity for the timeout. Close deliberately to free resources — this
+        // is intentional and does NOT auto-reconnect.
+        if (now - lastUserActivityRef.current >= INACTIVITY_TIMEOUT_MS) {
+          console.log('Closing connection due to inactivity');
           deliberateCloseRef.current = true;
           clearTransport();
           updateSessionStatus(requestId, origin, 'closed');
-          if (active) {
-            setIsConnected(false);
-            setIsLoading(false);
-          }
+          setIsConnected(false);
+          setIsLoading(false);
         }
-      }, 5000);
+      }, CONNECTION_MONITOR_INTERVAL_MS);
     }
 
     return () => {
       active = false;
       if (heartbeatInterval) clearInterval(heartbeatInterval);
-      if (inactivityInterval) clearInterval(inactivityInterval);
+      if (monitorInterval) clearInterval(monitorInterval);
     };
   }, [isConnected, clearTransport, origin, requestId]);
 
@@ -709,6 +743,7 @@ export function useConnection(
               heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
                 onPing: () => {
                   if (!active) return;
+                  lastInboundRef.current = Date.now();
                   lastUserActivityRef.current = Date.now();
                   setLastHeartbeat(Date.now());
                 },
@@ -719,6 +754,7 @@ export function useConnection(
               streamChannelRef.current = channel;
               channel.onmessage = (event) => {
                 if (!active) return;
+                lastInboundRef.current = Date.now();
                 if (typeof event.data === 'string') applyControlFrame(event.data);
               };
               channel.onopen = () => console.log('Stream channel opened');
@@ -739,6 +775,13 @@ export function useConnection(
 
         dataChannelRef.current = datachannel;
 
+        // Monitor the negotiated peer connection for ICE/connection-state drops
+        // that never surface as a DataChannel close.
+        detachPeerMonitorRef.current = attachPeerConnectionMonitor(client.peerClient, {
+          onDrop: (reason) => handleRecoverableDropRef.current(reason),
+          disconnectGraceMs: ICE_DISCONNECT_GRACE_MS,
+        });
+
         // Wallet-side responders (`onSigningRequest` / `onKeyRequest`) are
         // intentionally NOT installed: inbound envelopes are mirrored into
         // `ac2MessagesStore` by `createAc2Client` and `app/chat.tsx` handles
@@ -751,10 +794,12 @@ export function useConnection(
           getActiveThid: () => activeThidRef.current,
           onInboundEnvelope: () => {
             updateSessionActivity(requestId, origin);
+            lastInboundRef.current = Date.now();
             lastUserActivityRef.current = Date.now();
             setLastHeartbeat(Date.now());
           },
           onRawMessage: (raw: string) => {
+            lastInboundRef.current = Date.now();
             if (applyControlFrame(raw)) return;
             if (!raw.trim() || !addressRef.current) return;
             addMessage({
@@ -773,6 +818,8 @@ export function useConnection(
             console.log('Data channel opened');
             if (active) {
               deliberateCloseRef.current = false;
+              recoveringRef.current = false;
+              lastInboundRef.current = Date.now();
               if (autoReconnectTimerRef.current) {
                 clearTimeout(autoReconnectTimerRef.current);
                 autoReconnectTimerRef.current = null;
@@ -790,23 +837,15 @@ export function useConnection(
           },
           onClose: () => {
             console.log('Data channel closed');
-            updateSessionStatus(requestId, origin, 'closed');
-            if (active) {
-              if (deliberateCloseRef.current) {
-                deliberateCloseRef.current = false;
-                return;
-              }
-              setIsConnected(false);
-              // Drop every stale transport ref so the next mount / reconnect
-              // isn't blocked by the connection effect's guard.
-              clearTransport();
-              // Kick off (or continue) the bounded, serialized retry sequence.
-              // Once the budget is spent, fall back to the manual Reconnect bar.
-              if (!scheduleAutoReconnectRef.current()) {
-                setIsReconnecting(false);
-                setIsLoading(false);
-              }
+            if (!active) return;
+            if (deliberateCloseRef.current) {
+              deliberateCloseRef.current = false;
+              return;
             }
+            // Unexpected close — route through the shared drop handler so it is
+            // deduplicated with any ICE/watchdog signal and driven into the
+            // bounded, backed-off reconnect sequence.
+            handleRecoverableDropRef.current('datachannel closed');
           },
         });
         ac2ClientRef.current = ac2;
