@@ -1,6 +1,7 @@
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { useProvider } from '@/hooks/useProvider';
+import { clearStoredMnemonic } from '@/hooks/useWalletSetup';
 import { THEME } from '@/lib/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
@@ -88,6 +89,7 @@ export function MenuScreen() {
             await account.store.clear();
             await identity.store.clear();
             await passkey.store.clear();
+            await clearStoredMnemonic();
             router.replace('/onboarding');
           },
         },
@@ -143,6 +145,11 @@ export function MenuScreen() {
 
       <SectionHeader label="Wallet" />
       <View className="overflow-hidden rounded-xl">
+        <MenuRow
+          icon="visibility"
+          label="View Recovery Phrase"
+          onPress={() => router.push('/onboarding/backup')}
+        />
         <MenuRow icon="restart-alt" label="Reset Wallet" onPress={confirmResetWallet} isLast />
       </View>
 
