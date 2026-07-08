@@ -1,4 +1,5 @@
 import { ThemedCopilotProvider } from '@/components/CopilotUI';
+import { BackupMnemonicBanner } from '@/components/BackupMnemonicBanner';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { TabBar } from '@/components/navigation/TabBar';
 import { useGettingStartedGuide } from '@/hooks/useGettingStartedGuide';
@@ -50,7 +51,10 @@ export default function TabsLayout() {
         screenOptions={({ route }) => ({
           headerShown: true,
           header: () => (
-            <AppHeader title={TITLES[route.name] ?? 'AC2'} showActions={route.name === 'chat'} />
+            <>
+              <AppHeader title={TITLES[route.name] ?? 'AC2'} showActions={route.name === 'chat'} />
+              <BackupMnemonicBanner />
+            </>
           ),
         })}
       >

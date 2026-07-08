@@ -1,5 +1,6 @@
 import { useProvider } from '@/hooks/useProvider';
 import { bootstrap } from '@/lib/keystore/bootstrap';
+import { localStorage } from '@/stores/mmkv-local';
 import * as bip39 from '@scure/bip39';
 import { mnemonicToSeed } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
@@ -65,6 +66,7 @@ export function useWalletSetup() {
       await bootstrap(undefined, true);
 
       await Keychain.setGenericPassword('mnemonic', mnemonic, { service: MNEMONIC_SERVICE });
+      localStorage.set('mnemonicBackedUp', false);
     },
     [key, account, identity, passkey],
   );
@@ -92,4 +94,8 @@ export function useWalletSetup() {
 export async function getStoredMnemonic(): Promise<string | null> {
   const result = await Keychain.getGenericPassword({ service: MNEMONIC_SERVICE });
   return result ? result.password : null;
+}
+
+export async function clearStoredMnemonic(): Promise<void> {
+  await Keychain.resetGenericPassword({ service: MNEMONIC_SERVICE });
 }
