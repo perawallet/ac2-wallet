@@ -702,6 +702,7 @@ export function useConnection(
         const { datachannel } = await createAc2Transport({
           requestId,
           signalClient: client,
+          signal: runAbort.signal,
           onSideChannel: (channel) => {
             console.log(`[ac2] Discovered channel: ${channel.label}`);
             if (channel.label === 'ac2-heartbeat') {
@@ -810,25 +811,46 @@ export function useConnection(
         });
         ac2ClientRef.current = ac2;
       } catch (err: any) {
+        // A superseded run (cleanup/reconnect fired, or the transport was
+        // aborted) must do nothing: `clientRef` now points at the newer run's
+        // client, so tearing it down here would kill a healthy connection and
+        // clobber its session status. The newer run owns all recovery.
+        if (!active || err?.name === 'AbortError') return;
         console.error('Failed to setup connection:', err);
+        // Tear down the partially-established SignalClient before clearing the
+        // ref. The timeout handler only closes the peer connection — also close
+        // the socket so the server-side session doesn't stay open and confuse
+        // the next connection attempt.
+        try {
+          clientRef.current?.peerClient?.close();
+        } catch {
+          /* noop */
+        }
+        try {
+          clientRef.current?.close(true);
+        } catch {
+          /* noop */
+        }
         clientRef.current = null;
         updateSessionStatus(requestId, origin, 'failed');
-        if (active) {
-          // Retry recoverable setup failures within the bounded budget; only
-          // surface the terminal error + manual fallback once it's exhausted.
-          if (!scheduleAutoReconnectRef.current()) {
-            setIsReconnecting(false);
-            setError(err);
-            setIsLoading(false);
-            Alert.alert(
-              'Connection Failed',
-              err.message || 'Failed to setup connection to the peer',
-              [{ text: 'OK' }],
-            );
-          }
+        // Retry recoverable setup failures within the bounded budget; only
+        // surface the terminal error + manual fallback once it's exhausted.
+        if (!scheduleAutoReconnectRef.current()) {
+          setIsReconnecting(false);
+          setError(err);
+          setIsLoading(false);
+          Alert.alert(
+            'Connection Failed',
+            err.message || 'Failed to setup connection to the peer',
+            [{ text: 'OK' }],
+          );
         }
       } finally {
-        authFlowInProgressRef.current = false;
+        // Only release the auth lock if this run is still the active one.
+        // If cleanup already ran (`active = false`), it has already reset the
+        // lock and a new run may have acquired it — clearing it here would
+        // unblock a spurious third attempt.
+        if (active) authFlowInProgressRef.current = false;
       }
     }
 
@@ -836,6 +858,10 @@ export function useConnection(
 
     return () => {
       active = false;
+      // Release the auth lock before the new run starts so it isn't blocked by
+      // the guard in `setupConnection`. The `finally` block is guarded by
+      // `active` and will not clobber the new run's lock once it acquires it.
+      authFlowInProgressRef.current = false;
       runAbort.abort();
       if (autoReconnectTimerRef.current) {
         clearTimeout(autoReconnectTimerRef.current);
