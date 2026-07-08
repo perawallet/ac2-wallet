@@ -110,7 +110,13 @@ export async function createAc2Transport(
     const abortPromise = new Promise<RTCDataChannel>((_, reject) => {
       const abort = () => {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
-        signalClient.peerClient?.close();
+        // Do NOT hard-close the native peer on abort. On Android,
+        // `react-native-webrtc` can still be asynchronously applying the
+        // remote description when a superseded run is cancelled; tearing the
+        // peer down here races that in-flight work and can crash with
+        // `peerConnectionSetRemoteDescription(...getPeerConnection() == null)`.
+        // The caller's normal transport cleanup will detach the obsolete
+        // SignalClient/socket without forcing this unsafe native transition.
         // Use a plain Error with name 'AbortError' rather than DOMException
         // for broadest compatibility across Hermes versions.
         const err = new Error('Aborted');

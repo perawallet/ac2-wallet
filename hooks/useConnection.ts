@@ -759,11 +759,11 @@ export function useConnection(
         });
 
         if (!active) {
-          try {
-            client.peerClient?.close();
-          } catch {
-            /* noop */
-          }
+          // This setup run was superseded while negotiation was still winding
+          // down. Avoid hard-closing the native peer here: Android's WebRTC
+          // bridge may still be asynchronously applying the remote
+          // description, and tearing the peer down races that work and can
+          // crash with a null `PeerConnectionObserver`.
           client.close(true);
           return;
         }
@@ -896,6 +896,7 @@ export function useConnection(
       // the guard in `setupConnection`. The `finally` block is guarded by
       // `active` and will not clobber the new run's lock once it acquires it.
       authFlowInProgressRef.current = false;
+      const hadEstablishedTransport = !!(dataChannelRef.current || ac2ClientRef.current);
       runAbort.abort();
       if (autoReconnectTimerRef.current) {
         clearTimeout(autoReconnectTimerRef.current);
@@ -914,10 +915,16 @@ export function useConnection(
         dataChannelRef.current = null;
       }
       if (clientRef.current) {
-        try {
-          clientRef.current.peerClient?.close();
-        } catch {
-          /* noop */
+        // Only hard-close the peer once this effect still owns an established
+        // transport. For a superseded setup run, `runAbort.abort()` above has
+        // already cancelled the logical attempt; force-closing the native peer
+        // here can race Android's in-flight `setRemoteDescription` and crash.
+        if (hadEstablishedTransport) {
+          try {
+            clientRef.current.peerClient?.close();
+          } catch {
+            /* noop */
+          }
         }
         clientRef.current.close(true);
         clientRef.current = null;
