@@ -1,12 +1,12 @@
-import { useCallback, useState } from 'react';
-import { Alert } from 'react-native';
+import { useProvider } from '@/hooks/useProvider';
 import { getAlgorandClient } from '@/lib/algorand/client';
 import { NETWORK_CONFIG } from '@/lib/algorand/config';
 import { keyStore } from '@/stores/keystore';
 import type { Network } from '@/stores/network';
 import { decodeAddress } from '@/utils/algorand';
-import { useProvider } from '@/hooks/useProvider';
 import { generateAddressWithSigners } from '@algorandfoundation/algokit-utils/transact';
+import { useCallback, useState } from 'react';
+import { Alert } from 'react-native';
 
 export interface UsdcOptIn {
   isOptingIn: boolean;
@@ -67,7 +67,31 @@ export function useUsdcOptIn(
         address,
         error: err,
       });
-      Alert.alert('USDC opt-in failed', err instanceof Error ? err.message : String(err));
+
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const isInsufficientFunds = errorMessage.toLowerCase().includes('overspend');
+
+      let alertMessage = errorMessage;
+      if (isInsufficientFunds) {
+        try {
+          const suggestedParams = await getAlgorandClient(network).client.algod.suggestedParams();
+
+          // 0.1 ALGO = 100_000 microalgos, minFee is already in microalgos
+          const minFee = suggestedParams.minFee;
+          const optInCost = 100_000n;
+          const totalMicroAlgo = minFee + optInCost;
+          // Convert to ALGO and remove trailing zeros for cleaner display
+          const totalAlgo = Number(totalMicroAlgo) / 1_000_000;
+          const displayCost = parseFloat(totalAlgo.toFixed(6)).toString();
+          alertMessage = `You need at least ${displayCost} ALGO in your account to opt into USDC.`;
+        } catch (feeErr) {
+          console.error('[useUsdcOptIn] failed to query minimum fee', { error: feeErr });
+          alertMessage =
+            "You don't have enough ALGO in your account to opt into USDC. Please fund your wallet.";
+        }
+      }
+
+      Alert.alert('USDC opt-in failed', alertMessage);
     } finally {
       setIsOptingIn(false);
     }
