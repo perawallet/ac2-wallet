@@ -21,17 +21,11 @@ import {
 import { clearAgentIdentitiesByConnection } from '@/stores/agentIdentities';
 import { clearMessages, clearMessagesByConnection, messagesStore } from '@/stores/messages';
 import { removeSession, renameSession } from '@/stores/sessions';
-import { clearCurrentConnection, setActiveThid } from '@/stores/ui';
+import { clearCurrentConnection, setActiveThid, uiStore } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
 import * as React from 'react';
 import { Alert, KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// Height of the header sitting above the chat content in both consumers: the
-// tab's `AppHeader` and the `/session` route's custom header are each an `h-14`
-// (56px) row. Combined with the top safe-area inset it gives the offset the
-// keyboard-avoiding view needs to position the composer correctly.
-const HEADER_HEIGHT = 56;
 
 interface ChatScreenProps {
   origin: string;
@@ -41,6 +35,7 @@ interface ChatScreenProps {
 
 function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScreenProps) {
   const insets = useSafeAreaInsets();
+  const tabsHeaderHeight = useStore(uiStore, (s) => s.tabsHeaderHeight);
   const {
     isConnected,
     isError,
@@ -257,7 +252,7 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     <KeyboardAvoidingView
       className="flex-1 bg-background"
       behavior="padding"
-      keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
+      keyboardVerticalOffset={insets.top + tabsHeaderHeight}
     >
       <ConnectionStatusBar
         isConnected={isConnected}

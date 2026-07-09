@@ -1,10 +1,12 @@
-import { ThemedCopilotProvider } from '@/components/CopilotUI';
 import { BackupMnemonicBanner } from '@/components/BackupMnemonicBanner';
+import { ThemedCopilotProvider } from '@/components/CopilotUI';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { TabBar } from '@/components/navigation/TabBar';
 import { useGettingStartedGuide } from '@/hooks/useGettingStartedGuide';
+import { setTabsHeaderHeight } from '@/stores/ui';
 import { Tabs } from 'expo-router';
 import * as React from 'react';
+import { View } from 'react-native';
 import { useCopilot } from 'react-native-copilot';
 
 const TITLES: Record<string, string> = {
@@ -51,10 +53,10 @@ export default function TabsLayout() {
         screenOptions={({ route }) => ({
           headerShown: true,
           header: () => (
-            <>
+            <View onLayout={(e) => setTabsHeaderHeight(e.nativeEvent.layout.height)}>
               <AppHeader title={TITLES[route.name] ?? 'AC2'} showActions={route.name === 'chat'} />
               <BackupMnemonicBanner />
-            </>
+            </View>
           ),
         })}
       >

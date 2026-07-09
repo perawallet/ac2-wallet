@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react-native';
+import { act, render, screen } from '@testing-library/react-native';
 import * as React from 'react';
+import { KeyboardAvoidingView } from 'react-native';
 
 jest.mock('react-native-mmkv', () => ({
   createMMKV: () => ({ getString: () => undefined, getBoolean: () => false, set: () => {} }),
@@ -20,9 +21,6 @@ jest.mock('@/stores/messages', () => {
     messagesStore: new Store({ messages: [] }),
     clearMessages: jest.fn(),
     clearMessagesByConnection: jest.fn(),
-    addMessage: jest.fn(),
-    addToolActivity: jest.fn(),
-    setThreadHistory: jest.fn(),
   };
 });
 jest.mock('@/stores/ac2Messages', () => {
@@ -31,7 +29,6 @@ jest.mock('@/stores/ac2Messages', () => {
     ac2MessagesStore: new Store({ messages: [] }),
     clearAc2Messages: jest.fn(),
     clearAc2MessagesByConnection: jest.fn(),
-    addAc2Message: jest.fn(),
   };
 });
 jest.mock('@/stores/agentIdentities', () => ({ clearAgentIdentitiesByConnection: jest.fn() }));
@@ -54,13 +51,8 @@ jest.mock('@/hooks/useAc2Responders', () => ({
     rejectKey: jest.fn(),
   }),
 }));
-
-type ConnectionState = ReturnType<typeof baseConnection>;
-
-const reconnect = jest.fn();
-
-function baseConnection() {
-  return {
+jest.mock('@/hooks/useConnection', () => ({
+  useConnection: () => ({
     isConnected: false,
     isError: false,
     isLoading: false,
@@ -71,8 +63,8 @@ function baseConnection() {
     sendAc2: jest.fn(),
     lastHeartbeat: Date.now(),
     reset: jest.fn(),
-    reconnect,
-    session: { id: 'req-1', origin: 'https://agent.example', status: 'active', name: 'Agent' },
+    reconnect: jest.fn(),
+    session: null,
     address: 'TESTADDRESS',
     activeStreamText: '',
     agentPresence: null,
@@ -81,46 +73,52 @@ function baseConnection() {
     openConversation: jest.fn(),
     closeConversation: jest.fn(),
     remoteThreads: [],
-  };
-}
-
-let mockConnectionState: ConnectionState = baseConnection();
-
-jest.mock('@/hooks/useConnection', () => ({
-  useConnection: () => mockConnectionState,
+  }),
 }));
 
 import { ChatScreen } from '@/components/chat/ChatScreen';
+import { uiStore } from '@/stores/ui';
 
 const renderChat = () => render(<ChatScreen origin="https://agent.example" requestId="req-1" />);
 
-describe('ChatScreen reconnect footer', () => {
+describe('ChatScreen keyboard vertical offset', () => {
   beforeEach(() => {
-    mockConnectionState = baseConnection();
-    reconnect.mockClear();
+    act(() => {
+      uiStore.setState((s) => ({ ...s, tabsHeaderHeight: 0 }));
+    });
   });
 
-  it('shows a reconnecting composer (not the manual bar) while auto-retries are in flight', () => {
-    mockConnectionState = { ...baseConnection(), isReconnecting: true, reconnectAttempt: 2 };
+  it('uses tabsHeaderHeight from the store as the keyboard vertical offset', () => {
+    act(() => {
+      uiStore.setState((s) => ({ ...s, tabsHeaderHeight: 90 }));
+    });
     renderChat();
-
-    expect(screen.getByPlaceholderText('Reconnecting (2/3)…')).toBeTruthy();
-    expect(screen.queryByLabelText('Reconnect')).toBeNull();
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.keyboardVerticalOffset).toBe(90);
   });
 
-  it('falls back to the manual Reconnect bar once retries are exhausted', () => {
-    mockConnectionState = { ...baseConnection(), isReconnecting: false, isLoading: false };
+  it('increases the offset when the backup banner becomes visible', () => {
+    act(() => {
+      uiStore.setState((s) => ({ ...s, tabsHeaderHeight: 56 }));
+    });
     renderChat();
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.keyboardVerticalOffset).toBe(56);
 
-    expect(screen.getByLabelText('Reconnect')).toBeTruthy();
-    expect(screen.queryByPlaceholderText(/Reconnecting/)).toBeNull();
+    act(() => {
+      uiStore.setState((s) => ({ ...s, tabsHeaderHeight: 93 }));
+    });
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.keyboardVerticalOffset).toBe(93);
   });
 
-  it('shows the live composer when connected', () => {
-    mockConnectionState = { ...baseConnection(), isConnected: true };
+  it('decreases the offset when the backup banner is dismissed', () => {
+    act(() => {
+      uiStore.setState((s) => ({ ...s, tabsHeaderHeight: 93 }));
+    });
     renderChat();
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.keyboardVerticalOffset).toBe(93);
 
-    expect(screen.getByPlaceholderText('Message')).toBeTruthy();
-    expect(screen.queryByLabelText('Reconnect')).toBeNull();
+    act(() => {
+      uiStore.setState((s) => ({ ...s, tabsHeaderHeight: 56 }));
+    });
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.keyboardVerticalOffset).toBe(56);
   });
 });

@@ -20,6 +20,12 @@ export interface UiState {
    * `ChatScreen` so the History modal can filter to the right thread.
    */
   activeThid: string | null;
+  /**
+   * Measured height of the tabs header (AppHeader + any banners). Used by
+   * `ChatScreen` to set the correct `keyboardVerticalOffset` so the composer
+   * is never obscured by the OS keyboard.
+   */
+  tabsHeaderHeight: number;
 }
 
 // Ephemeral UI state (not persisted): which connection the Chat tab is showing
@@ -30,6 +36,7 @@ export const uiStore = new Store<UiState>({
   currentOrigin: null,
   allowPasskeyCreation: false,
   activeThid: null,
+  tabsHeaderHeight: 0,
 });
 
 export function openDrawer() {
@@ -69,4 +76,8 @@ export function clearCurrentConnection() {
 /** Sync the active conversation thread from `ChatScreen` so History can filter to it. */
 export function setActiveThid(thid: string | null) {
   uiStore.setState((s) => ({ ...s, activeThid: thid }));
+}
+/** Record the measured pixel height of the tabs header so ChatScreen can set the correct keyboardVerticalOffset. */
+export function setTabsHeaderHeight(height: number) {
+  uiStore.setState((s) => ({ ...s, tabsHeaderHeight: height }));
 }
