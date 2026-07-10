@@ -53,7 +53,7 @@ export function TxnDetails({ txn }: { txn: TransactionSummary }) {
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <View className="flex-row items-start gap-2">
-      <Text className="w-12 text-xs font-medium text-slate-500 dark:text-slate-400">{label}</Text>
+      <Text className="w-12 text-xs font-medium text-muted-foreground">{label}</Text>
       <Text className={cn('flex-1 text-xs text-foreground', mono && 'font-mono')}>{value}</Text>
     </View>
   );
@@ -62,16 +62,14 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 /** Plain-language "what moves" block for fund-moving transactions. */
 export function ValueSummary({ summary }: { summary: ValueSummaryData }) {
   return (
-    <View className="gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-900/30">
+    <View className="gap-1 rounded-lg border border-border bg-muted p-2.5">
       <View className="flex-row items-center gap-2">
-        <Text className="w-14 text-xs font-medium text-slate-500 dark:text-slate-400">
-          {summary.lead}
-        </Text>
+        <Text className="w-14 text-xs font-medium text-muted-foreground">{summary.lead}</Text>
         <Text className="flex-1 text-sm font-semibold text-foreground">{summary.amount}</Text>
       </View>
       {summary.to && (
         <View className="flex-row items-center gap-2">
-          <Text className="w-14 text-xs font-medium text-slate-500 dark:text-slate-400">To</Text>
+          <Text className="w-14 text-xs font-medium text-muted-foreground">To</Text>
           <Text className="flex-1 font-mono text-xs text-foreground">
             {truncateAddress(summary.to, 6, 6)}
           </Text>
@@ -253,6 +251,8 @@ export function TransactionGroupOverview({
 
 /** Post-action result row that replaces the Approve/Decline buttons. */
 export function OutcomeRow({ outcome, kind }: { outcome: Outcome; kind: 'signing' | 'key' }) {
+  const colorScheme = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   if (outcome === 'approved') {
     return (
       <View className="flex-row items-center gap-1.5">
@@ -265,7 +265,7 @@ export function OutcomeRow({ outcome, kind }: { outcome: Outcome; kind: 'signing
   }
   return (
     <View className="flex-row items-center gap-1.5">
-      <MaterialIcons name="cancel" size={16} color="#94A3B8" />
+      <MaterialIcons name="cancel" size={16} color={palette.mutedForeground} />
       <Text className="text-sm font-semibold text-muted-foreground">Declined</Text>
     </View>
   );
@@ -274,7 +274,7 @@ export function OutcomeRow({ outcome, kind }: { outcome: Outcome; kind: 'signing
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-row items-start justify-between gap-3 px-3 py-2">
-      <Text className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</Text>
+      <Text className="text-xs font-medium text-muted-foreground">{label}</Text>
       <Text className="flex-1 text-right font-mono text-xs text-foreground">{value}</Text>
     </View>
   );
@@ -295,6 +295,8 @@ export function TechnicalDetails({
   className,
 }: TechnicalDetailsProps) {
   const [open, setOpen] = React.useState(false);
+  const colorScheme = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const body = (envelope.body ?? {}) as { key_type?: string; display_hint?: string };
   return (
     <View className={className}>
@@ -307,11 +309,15 @@ export function TechnicalDetails({
         accessibilityHint="Toggles decoded protocol fields and raw request JSON"
         className="flex-row items-center gap-1.5 py-1"
       >
-        <MaterialIcons name="info-outline" size={14} color="#94A3B8" />
+        <MaterialIcons name="info-outline" size={14} color={palette.mutedForeground} />
         <Text className="flex-1 text-xs font-medium text-muted-foreground">
           {open ? 'Hide technical details' : 'View technical details'}
         </Text>
-        <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={16} color="#94A3B8" />
+        <MaterialIcons
+          name={open ? 'expand-less' : 'expand-more'}
+          size={16}
+          color={palette.mutedForeground}
+        />
       </Pressable>
       {open && (
         <View className="mt-1 gap-2">
@@ -325,8 +331,8 @@ export function TechnicalDetails({
             <DetailRow label="Direction" value={directionLabel(direction)} />
           </View>
           {txnSummary && (
-            <View className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-900/30">
-              <Text className="mb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <View className="rounded-lg border border-border bg-muted p-2.5">
+              <Text className="mb-1.5 text-xs font-semibold text-muted-foreground">
                 Transaction details
               </Text>
               <TxnDetails txn={txnSummary} />

@@ -50,6 +50,8 @@ function DetailRow({
   copied?: boolean;
 }) {
   const isCopyable = typeof onLongPress === 'function' && value !== '—';
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   return (
     <Pressable
       onLongPress={onLongPress}
@@ -72,7 +74,7 @@ function DetailRow({
           <MaterialIcons
             name={copied ? 'check' : 'content-copy'}
             size={14}
-            color={copied ? '#10B981' : '#94A3B8'}
+            color={copied ? '#10B981' : palette.mutedForeground}
           />
         ) : null}
       </View>

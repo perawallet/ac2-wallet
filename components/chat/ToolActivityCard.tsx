@@ -1,5 +1,6 @@
 import { formatTime } from '@/components/chat/format';
 import { Text } from '@/components/ui/text';
+import { THEME } from '@/lib/theme';
 import type { Message } from '@/stores/messages';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useColorScheme } from 'nativewind';
@@ -17,16 +18,17 @@ interface ToolActivityCardProps {
 // to reveal the full command and (potentially long) output.
 function ToolActivityCard({ message }: ToolActivityCardProps) {
   const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const [expanded, setExpanded] = React.useState(false);
   const toolName = message.tool || 'tool';
   const hasOutput = !!message.output && message.output.trim().length > 0;
   const hasCommand = !!message.command && message.command.trim().length > 0;
   const hasBody = hasOutput || hasCommand;
   // Chevron tint must follow the theme; indigo-300 reads on dark but vanishes on light.
-  const chevronColor = colorScheme === 'dark' ? '#9595F5' : '#5858F0';
+  const chevronColor = palette.primary;
 
   return (
-    <View className="my-1 self-stretch rounded-xl border border-slate-200 border-l-4 border-l-primary bg-slate-100 p-3 dark:border-slate-700 dark:bg-slate-900">
+    <View className="my-1 self-stretch rounded-xl border border-border border-l-4 border-l-primary bg-muted p-3">
       <Pressable
         className="flex-row items-center gap-1.5"
         onPress={() => setExpanded((v) => !v)}
@@ -34,8 +36,8 @@ function ToolActivityCard({ message }: ToolActivityCardProps) {
         accessibilityRole="button"
         accessibilityLabel={expanded ? 'Collapse tool activity' : 'Expand tool activity'}
       >
-        <MaterialIcons name="terminal" size={16} color="#5858F0" />
-        <Text className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{toolName}</Text>
+        <MaterialIcons name="terminal" size={16} color={palette.primary} />
+        <Text className="text-xs font-bold text-primary">{toolName}</Text>
         {/* When collapsed, surface a compact one-line command preview so the
             user can tell what ran without expanding the whole card. */}
         {!expanded && hasCommand && (
@@ -55,12 +57,10 @@ function ToolActivityCard({ message }: ToolActivityCardProps) {
         )}
       </Pressable>
       {expanded && hasCommand && (
-        <Text className="mt-1 font-mono text-xs text-sky-700 dark:text-sky-300">{`$ ${message.command}`}</Text>
+        <Text className="mt-1 font-mono text-xs text-primary">{`$ ${message.command}`}</Text>
       )}
       {expanded && hasOutput && (
-        <Text className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-300">
-          {message.output}
-        </Text>
+        <Text className="mt-1 font-mono text-xs text-foreground">{message.output}</Text>
       )}
     </View>
   );

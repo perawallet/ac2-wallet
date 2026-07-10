@@ -38,7 +38,7 @@ function MetaRow({
 }) {
   return (
     <View className="flex-row items-center gap-3 px-3 py-2">
-      <Text className="w-16 text-xs font-medium text-slate-500 dark:text-slate-400">{label}</Text>
+      <Text className="w-16 text-xs font-medium text-muted-foreground">{label}</Text>
       <Text
         className={cn('flex-1 text-right text-xs text-foreground', mono && 'font-mono')}
         numberOfLines={1}
@@ -51,6 +51,8 @@ function MetaRow({
 }
 
 function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const { envelope } = entry;
   const signature = getSignature(entry);
   const threadLabel = !entry.thid || entry.thid === DEFAULT_THID ? 'Main' : entry.thid;
@@ -58,7 +60,7 @@ function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
   return (
     <View
       className={cn(
-        'mb-3 self-stretch rounded-xl border border-border bg-white p-3 dark:bg-slate-800',
+        'mb-3 self-stretch rounded-xl border border-border bg-card p-3',
         entry.direction === 'outbound'
           ? 'border-r-4 border-r-primary'
           : 'border-l-4 border-l-primary',
@@ -66,7 +68,7 @@ function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
     >
       {/* Header */}
       <View className="flex-row items-center gap-1.5">
-        <MaterialIcons name="vpn-key" size={18} color="#5858F0" />
+        <MaterialIcons name="vpn-key" size={18} color={palette.primary} />
         <Text className="flex-1 font-mono text-xs font-bold text-primary" numberOfLines={1}>
           {envelope.type}
         </Text>

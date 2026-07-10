@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/text';
 import { useAc2Responders } from '@/hooks/useAc2Responders';
 import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
+import { THEME } from '@/lib/theme';
 import {
   deriveOutcomeByThid,
   isMergedResponse,
@@ -24,6 +25,7 @@ import { removeSession, renameSession } from '@/stores/sessions';
 import { clearCurrentConnection, setActiveThid } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
 import * as React from 'react';
+import { useColorScheme } from 'nativewind';
 import { Alert, KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -41,6 +43,8 @@ interface ChatScreenProps {
 
 function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScreenProps) {
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const {
     isConnected,
     isError,
@@ -312,7 +316,7 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
           value={renameText}
           onChangeText={setRenameText}
           placeholder="Display name"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={palette.mutedForeground}
           returnKeyType="done"
           onSubmitEditing={commitRename}
         />

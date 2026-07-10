@@ -6,20 +6,20 @@ import { DarkTheme, DefaultTheme, type Theme } from '@react-navigation/native';
 // source, so keep these hex values in sync with the matching --token there.
 export const THEME = {
   light: {
-    background: '#F4F5FB',
-    foreground: '#0F172A',
+    background: '#F7F7FF',
+    foreground: '#1C1B3A',
     card: '#FFFFFF',
     primary: '#5858F0',
-    mutedForeground: '#64748B',
-    border: '#E2E8F0',
+    mutedForeground: '#656483',
+    border: '#DADAF7',
   },
   dark: {
-    background: '#0B111E',
-    foreground: '#F8FAFC',
-    card: '#161D2C',
-    primary: '#5858F0',
-    mutedForeground: '#94A3B8',
-    border: '#283549',
+    background: '#101025',
+    foreground: '#F7F7FF',
+    card: '#1A1A36',
+    primary: '#8585F4',
+    mutedForeground: '#9897BE',
+    border: '#35345B',
   },
 } as const;
 
@@ -29,11 +29,23 @@ export const NAV_THEME: { light: Theme; dark: Theme } = {
     colors: {
       ...DefaultTheme.colors,
       background: THEME.light.background,
+      border: THEME.light.border,
+      card: THEME.light.card,
+      notification: THEME.light.primary,
       primary: THEME.light.primary,
+      text: THEME.light.foreground,
     },
   },
   dark: {
     ...DarkTheme,
-    colors: { ...DarkTheme.colors, background: THEME.dark.background, primary: THEME.dark.primary },
+    colors: {
+      ...DarkTheme.colors,
+      background: THEME.dark.background,
+      border: THEME.dark.border,
+      card: THEME.dark.card,
+      notification: THEME.dark.primary,
+      primary: THEME.dark.primary,
+      text: THEME.dark.foreground,
+    },
   },
 };
