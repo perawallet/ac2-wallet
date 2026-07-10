@@ -162,7 +162,7 @@ function Ac2MessageCard({
         <MaterialIcons
           name={fundMoving ? 'account-balance-wallet' : 'verified-user'}
           size={22}
-          color="#6366F1"
+          color="#5858F0"
         />
         <Text className="flex-1 text-sm font-medium leading-snug text-foreground">
           {displayDescription}

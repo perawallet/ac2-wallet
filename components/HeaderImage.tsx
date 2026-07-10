@@ -1,22 +1,32 @@
 import * as React from 'react';
-import { Image, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
+import { View, useWindowDimensions } from 'react-native';
 
-const headerLight = require('../assets/images/header-light.png');
+const onboardingLock = require('../assets/images/onboarding-lock.png');
 
 function HeaderImage() {
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const visibleHeight = height * 0.615;
+  const imageSize = Math.min(width * 0.9, height * 0.54);
 
-  // Full-bleed banner: spans the full screen width and ~half its height.
-  // `cover` preserves the aspect ratio and crops the sides rather than
-  // letterboxing, so it never shows padding around the edges.
   return (
-    <Image
-      source={headerLight}
-      resizeMode="cover"
-      accessibilityIgnoresInvertColors
-      testID="header-image"
-      style={{ width: '100%', height: height / 2 }}
-    />
+    <View
+      style={{
+        alignItems: 'center',
+        height: visibleHeight,
+        paddingTop: height * 0.072,
+        width: '100%',
+      }}
+    >
+      <Image
+        source={onboardingLock}
+        contentFit="contain"
+        accessibilityIgnoresInvertColors
+        accessibilityLabel="Translucent AC2 Wallet lock"
+        testID="header-image"
+        style={{ width: imageSize, height: imageSize }}
+      />
+    </View>
   );
 }
 

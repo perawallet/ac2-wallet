@@ -228,7 +228,7 @@ function IdentityCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="badge" size={22} color="#6366F1" />
+          <MaterialIcons name="badge" size={22} color="#5858F0" />
         </View>
         <View className="flex-1">
           <Text
@@ -277,7 +277,7 @@ function AgentIdentityCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="smart-toy" size={22} color="#6366F1" />
+          <MaterialIcons name="smart-toy" size={22} color="#5858F0" />
         </View>
         <View className="flex-1">
           <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>

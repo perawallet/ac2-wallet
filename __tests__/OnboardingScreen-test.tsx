@@ -29,8 +29,12 @@ describe('Welcome', () => {
 
   it('shows the brand title and tagline', () => {
     render(<Welcome />);
-    expect(screen.getByText('AC2 Wallet')).toBeTruthy();
-    expect(screen.getByText('Unleash your agents. Keep control.')).toBeTruthy();
+    expect(screen.getByLabelText('AC2 Wallet')).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        'Your agents. Your keys. Your approval. Approve what your agents do, without ever handing them your keys.',
+      ),
+    ).toBeTruthy();
   });
 
   it('creates a wallet and navigates to /chat', async () => {

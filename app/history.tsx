@@ -66,7 +66,7 @@ function MessageCard({ entry }: { entry: Ac2MessageEntry }) {
     >
       {/* Header */}
       <View className="flex-row items-center gap-1.5">
-        <MaterialIcons name="vpn-key" size={18} color="#6366F1" />
+        <MaterialIcons name="vpn-key" size={18} color="#5858F0" />
         <Text className="flex-1 font-mono text-xs font-bold text-primary" numberOfLines={1}>
           {envelope.type}
         </Text>

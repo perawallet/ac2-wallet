@@ -23,7 +23,7 @@ function ToolActivityCard({ message }: ToolActivityCardProps) {
   const hasCommand = !!message.command && message.command.trim().length > 0;
   const hasBody = hasOutput || hasCommand;
   // Chevron tint must follow the theme; indigo-300 reads on dark but vanishes on light.
-  const chevronColor = colorScheme === 'dark' ? '#A5B4FC' : '#6366F1';
+  const chevronColor = colorScheme === 'dark' ? '#9595F5' : '#5858F0';
 
   return (
     <View className="my-1 self-stretch rounded-xl border border-slate-200 border-l-4 border-l-primary bg-slate-100 p-3 dark:border-slate-700 dark:bg-slate-900">
@@ -34,7 +34,7 @@ function ToolActivityCard({ message }: ToolActivityCardProps) {
         accessibilityRole="button"
         accessibilityLabel={expanded ? 'Collapse tool activity' : 'Expand tool activity'}
       >
-        <MaterialIcons name="terminal" size={16} color="#6366F1" />
+        <MaterialIcons name="terminal" size={16} color="#5858F0" />
         <Text className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{toolName}</Text>
         {/* When collapsed, surface a compact one-line command preview so the
             user can tell what ran without expanding the whole card. */}

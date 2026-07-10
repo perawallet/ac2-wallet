@@ -92,13 +92,13 @@ module.exports = {
     splash: {
       image: './assets/splash.png',
       resizeMode: 'contain',
-      backgroundColor: '#0052FF',
+      backgroundColor: '#5858F0',
       imageWidth: 578,
     },
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#0052FF',
+        backgroundColor: '#5858F0',
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
@@ -117,7 +117,7 @@ module.exports = {
         {
           image: './assets/splash.png',
           resizeMode: 'contain',
-          backgroundColor: '#0052FF',
+          backgroundColor: '#5858F0',
           imageWidth: 578,
         },
       ],
@@ -180,8 +180,8 @@ module.exports = {
         'https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference',
       provider: {
         name: 'AC2 Wallet',
-        primaryColor: '#3B82F6',
-        secondaryColor: '#E1EFFF',
+        primaryColor: '#5858F0',
+        secondaryColor: '#EEEEFE',
         accentColor: '#10B981',
         welcomeMessage: 'Your identity, connected.',
         logo: '',
