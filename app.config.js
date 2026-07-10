@@ -90,10 +90,10 @@ module.exports = {
     },
     icon: './assets/icon.png',
     splash: {
-      image: './assets/splash.png',
+      image: './assets/splash-logo.png',
       resizeMode: 'contain',
       backgroundColor: '#5858F0',
-      imageWidth: 578,
+      imageWidth: 180,
     },
     android: {
       adaptiveIcon: {
@@ -115,10 +115,10 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          image: './assets/splash.png',
+          image: './assets/splash-logo.png',
           resizeMode: 'contain',
           backgroundColor: '#5858F0',
-          imageWidth: 578,
+          imageWidth: 180,
         },
       ],
       [

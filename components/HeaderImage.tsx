@@ -6,15 +6,16 @@ const onboardingLock = require('../assets/images/onboarding-lock.png');
 
 function HeaderImage() {
   const { width, height } = useWindowDimensions();
-  const visibleHeight = height * 0.615;
+  const visibleHeight = Math.min(width * 1.075, height * 0.615);
   const imageSize = Math.min(width * 0.9, height * 0.54);
+  const topPadding = Math.min(width * 0.128, height * 0.072);
 
   return (
     <View
       style={{
         alignItems: 'center',
         height: visibleHeight,
-        paddingTop: height * 0.072,
+        paddingTop: topPadding,
         width: '100%',
       }}
     >

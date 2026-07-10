@@ -18,6 +18,7 @@ import {
   Modal as RNModal,
   ScrollView,
   StyleSheet,
+  Text as RNText,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -114,22 +115,22 @@ export default function Welcome() {
           />
         </View>
 
-        <View style={styles.actions}>
+        <View style={[styles.actions, { width: width * 0.839 }]}>
           <Pressable
             onPress={handleCreate}
             accessibilityRole="button"
             accessibilityLabel="Create Wallet"
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+            style={styles.primaryButton}
           >
-            <Text style={styles.primaryButtonText}>Create wallet</Text>
+            <RNText style={styles.primaryButtonText}>Create wallet</RNText>
           </Pressable>
           <Pressable
             onPress={() => router.push('/onboarding/import')}
             accessibilityRole="button"
             accessibilityLabel="Import Existing Wallet"
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+            style={styles.secondaryButton}
           >
-            <Text style={styles.secondaryButtonText}>Import existing wallet</Text>
+            <RNText style={styles.secondaryButtonText}>Import existing wallet</RNText>
           </Pressable>
         </View>
       </ScrollView>
@@ -294,7 +295,6 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 'auto',
     paddingTop: 28,
-    width: '83.9%',
   },
   primaryButton: {
     alignItems: 'center',
@@ -303,6 +303,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     height: 44,
     justifyContent: 'center',
+    width: '100%',
   },
   primaryButtonText: {
     color: '#2D2DF1',
@@ -317,13 +318,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     height: 44,
     justifyContent: 'center',
+    width: '100%',
   },
   secondaryButtonText: {
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '700',
-  },
-  buttonPressed: {
-    opacity: 0.82,
   },
 });
