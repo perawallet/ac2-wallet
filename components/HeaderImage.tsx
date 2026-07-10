@@ -6,9 +6,10 @@ const onboardingLock = require('../assets/images/onboarding-lock.png');
 
 function HeaderImage() {
   const { width, height } = useWindowDimensions();
-  const visibleHeight = Math.min(width * 1.075, height * 0.615);
+  const verticalOffset = width * 0.035;
+  const visibleHeight = Math.min(width * 1.075, height * 0.615) + verticalOffset;
   const imageSize = Math.min(width * 0.9, height * 0.54);
-  const topPadding = Math.min(width * 0.128, height * 0.072);
+  const topPadding = Math.min(width * 0.128, height * 0.072) + verticalOffset;
 
   return (
     <View
