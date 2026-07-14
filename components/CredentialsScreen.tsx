@@ -1,25 +1,27 @@
+import {
+  AgentIdentityDetailRows,
+  DetailRow,
+  getAgentMaterialHeld,
+  truncateMiddle,
+  type AgentIdentitySummary,
+} from '@/components/AgentIdentityDetails';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import type { Passkey } from '@/extensions/passkeys/types';
 import { useProvider } from '@/hooks/useProvider';
 import { THEME } from '@/lib/theme';
+import { ac2MessagesStore } from '@/stores/ac2Messages';
 import { agentIdentitiesStore, type AgentIdentity } from '@/stores/agentIdentities';
 import { formatMicroAmount, normalizeAlgorandAddress, truncateAddress } from '@/utils/format';
 import type { Account } from '@algorandfoundation/accounts-store';
-import type { Identity } from '@algorandfoundation/identities-store';
 import type { Key } from '@algorandfoundation/keystore';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
-
-function truncateMiddle(value: string, head = 10, tail = 8): string {
-  if (!value) return '';
-  if (value.length <= head + tail + 1) return value;
-  return `${value.slice(0, head)}…${value.slice(-tail)}`;
-}
 
 function formatDate(ts?: number): string | null {
   if (!ts) return null;
@@ -34,50 +36,6 @@ function uint8ToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
-}
-
-function DetailRow({
-  label,
-  value,
-  mono = false,
-  onLongPress,
-  copied = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  onLongPress?: () => void;
-  copied?: boolean;
-}) {
-  const isCopyable = typeof onLongPress === 'function' && value !== '—';
-  return (
-    <Pressable
-      onLongPress={onLongPress}
-      disabled={!isCopyable}
-      delayLongPress={250}
-      accessibilityRole={isCopyable ? 'button' : undefined}
-      accessibilityHint={isCopyable ? 'Long press to copy to clipboard' : undefined}
-      className={`flex-row items-center gap-3 py-1 ${isCopyable ? 'active:opacity-80' : ''}`}
-    >
-      <Text className="shrink-0 text-sm text-muted-foreground">{label}</Text>
-      <View className="min-w-0 flex-1 flex-row items-center justify-end gap-1.5">
-        <Text
-          className={`min-w-0 flex-1 text-right text-sm font-medium text-card-foreground ${mono ? 'font-mono' : ''}`}
-          numberOfLines={1}
-          ellipsizeMode="middle"
-        >
-          {value}
-        </Text>
-        {isCopyable ? (
-          <MaterialIcons
-            name={copied ? 'check' : 'content-copy'}
-            size={14}
-            color={copied ? '#10B981' : '#94A3B8'}
-          />
-        ) : null}
-      </View>
-    </Pressable>
-  );
 }
 
 function SectionHeader({
@@ -117,13 +75,13 @@ function PasskeyCard({
   passkey,
   iconColor,
   onDelete,
-  onLongPress,
+  onCopy,
   copiedField,
 }: {
   passkey: Passkey;
   iconColor: string;
   onDelete: () => void;
-  onLongPress: (field: string, value: string) => void;
+  onCopy: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
   const created = formatDate(passkey.createdAt);
@@ -157,7 +115,7 @@ function PasskeyCard({
           <DetailRow
             label="Origin"
             value={passkey.origin}
-            onLongPress={() => onLongPress(`pk-origin-${passkey.id}`, passkey.origin!)}
+            onPress={() => onCopy(`pk-origin-${passkey.id}`, passkey.origin!)}
             copied={copiedField === `pk-origin-${passkey.id}`}
           />
         ) : null}
@@ -168,11 +126,11 @@ function PasskeyCard({
 
 function KeyCard({
   keyItem,
-  onLongPress,
+  onCopy,
   copiedField,
 }: {
   keyItem: Key;
-  onLongPress: (field: string, value: string) => void;
+  onCopy: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
   const isRegistered = !!(keyItem.metadata as { registered?: boolean } | undefined)?.registered;
@@ -198,7 +156,7 @@ function KeyCard({
           label="ID"
           value={keyItem.id}
           mono
-          onLongPress={() => onLongPress(`key-id-${keyItem.id}`, keyItem.id)}
+          onPress={() => onCopy(`key-id-${keyItem.id}`, keyItem.id)}
           copied={copiedField === `key-id-${keyItem.id}`}
         />
         {pubKey ? (
@@ -206,56 +164,8 @@ function KeyCard({
             label="Public key"
             value={pubKey}
             mono
-            onLongPress={() => onLongPress(`key-pub-${keyItem.id}`, pubKey)}
+            onPress={() => onCopy(`key-pub-${keyItem.id}`, pubKey)}
             copied={copiedField === `key-pub-${keyItem.id}`}
-          />
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-function IdentityCard({
-  identity,
-  onLongPress,
-  copiedField,
-}: {
-  identity: Identity;
-  onLongPress: (field: string, value: string) => void;
-  copiedField: string | null;
-}) {
-  return (
-    <View className="rounded-2xl bg-card p-5 gap-3">
-      <View className="flex-row items-center gap-3">
-        <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="badge" size={22} color="#6366F1" />
-        </View>
-        <View className="flex-1">
-          <Text
-            className="text-base font-semibold text-card-foreground"
-            numberOfLines={1}
-            ellipsizeMode="middle"
-          >
-            {truncateMiddle(identity.did ?? identity.address)}
-          </Text>
-          <Text className="text-sm text-muted-foreground">{identity.type}</Text>
-        </View>
-      </View>
-      <View className="gap-1">
-        <DetailRow
-          label="Address"
-          value={identity.address}
-          mono
-          onLongPress={() => onLongPress(`ident-addr-${identity.address}`, identity.address)}
-          copied={copiedField === `ident-addr-${identity.address}`}
-        />
-        {identity.did ? (
-          <DetailRow
-            label="DID"
-            value={identity.did}
-            mono
-            onLongPress={() => onLongPress(`ident-did-${identity.address}`, identity.did!)}
-            copied={copiedField === `ident-did-${identity.address}`}
           />
         ) : null}
       </View>
@@ -265,14 +175,23 @@ function IdentityCard({
 
 function AgentIdentityCard({
   identity,
-  onLongPress,
+  materialHeld,
+  onCopy,
   copiedField,
 }: {
   identity: AgentIdentity;
-  onLongPress: (field: string, value: string) => void;
+  materialHeld: boolean | undefined;
+  onCopy: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
-  const granted = formatDate(identity.createdAt);
+  const summary: AgentIdentitySummary = {
+    controllerDid: identity.controllerDid,
+    agentDid: identity.agentDid,
+    publicKey: identity.publicKey,
+    materialHeld,
+    grantedAt: identity.createdAt,
+    keyId: identity.keyId,
+  };
   return (
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
@@ -289,41 +208,23 @@ function AgentIdentityCard({
         </View>
         <MaterialIcons name="vpn-key" size={18} color="#10B981" />
       </View>
-      <View className="gap-1">
-        <DetailRow
-          label="Agent key"
-          value={identity.publicKey}
-          mono
-          onLongPress={() => onLongPress(`agent-pub-${identity.id}`, identity.publicKey)}
-          copied={copiedField === `agent-pub-${identity.id}`}
-        />
-        <DetailRow
-          label="Controller DID"
-          value={identity.controllerDid}
-          mono
-          onLongPress={() => onLongPress(`agent-ctrl-${identity.id}`, identity.controllerDid)}
-          copied={copiedField === `agent-ctrl-${identity.id}`}
-        />
-        <DetailRow
-          label="Keystore ID"
-          value={identity.keyId}
-          mono
-          onLongPress={() => onLongPress(`agent-keyid-${identity.id}`, identity.keyId)}
-          copied={copiedField === `agent-keyid-${identity.id}`}
-        />
-        {granted ? <DetailRow label="Granted" value={granted} /> : null}
-      </View>
+      <AgentIdentityDetailRows
+        identity={summary}
+        keyPrefix={`agent-${identity.id}`}
+        onCopy={onCopy}
+        copiedField={copiedField}
+      />
     </View>
   );
 }
 
 function AccountCard({
   account,
-  onLongPress,
+  onCopy,
   copiedField,
 }: {
   account: Account;
-  onLongPress: (field: string, value: string) => void;
+  onCopy: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
   const address = normalizeAlgorandAddress(account.address) ?? account.address;
@@ -347,7 +248,7 @@ function AccountCard({
           label="Address"
           value={address}
           mono
-          onLongPress={() => onLongPress(`acct-${address}`, address)}
+          onPress={() => onCopy(`acct-${address}`, address)}
           copied={copiedField === `acct-${address}`}
         />
         <DetailRow label="Balance" value={balanceStr} />
@@ -360,8 +261,9 @@ function AccountCard({
 }
 
 export function CredentialsScreen() {
-  const { passkeys, passkey, keys, accounts, identities } = useProvider();
+  const { passkeys, passkey, keys, accounts } = useProvider();
   const agentIdentities = useStore(agentIdentitiesStore, (s) => s.identities);
+  const ac2Messages = useStore(ac2MessagesStore, (s) => s.messages);
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const [copiedField, setCopiedField] = React.useState<string | null>(null);
@@ -377,9 +279,10 @@ export function CredentialsScreen() {
   const handleCopy = React.useCallback(async (field: string, value: string) => {
     if (!value) return;
     await Clipboard.setStringAsync(value);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCopiedField(field);
     if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    copyResetTimer.current = setTimeout(() => setCopiedField(null), 1400);
+    copyResetTimer.current = setTimeout(() => setCopiedField(null), 1500);
   }, []);
 
   const handleDeletePasskey = React.useCallback(
@@ -411,7 +314,6 @@ export function CredentialsScreen() {
   const [expanded, setExpanded] = React.useState({
     passkeys: true,
     keys: true,
-    identities: true,
     agentIdentities: true,
     accounts: true,
   });
@@ -422,7 +324,6 @@ export function CredentialsScreen() {
   const isEmpty =
     passkeys.length === 0 &&
     keys.length === 0 &&
-    identities.length === 0 &&
     agentIdentities.length === 0 &&
     accounts.length === 0;
 
@@ -462,7 +363,7 @@ export function CredentialsScreen() {
                     passkey={p}
                     iconColor={palette.primary}
                     onDelete={() => handleDeletePasskey(p)}
-                    onLongPress={handleCopy}
+                    onCopy={handleCopy}
                     copiedField={copiedField}
                   />
                 ))}
@@ -482,35 +383,7 @@ export function CredentialsScreen() {
             {expanded.keys && (
               <View className="px-4 pt-2 gap-3">
                 {keys.map((k) => (
-                  <KeyCard
-                    key={k.id}
-                    keyItem={k}
-                    onLongPress={handleCopy}
-                    copiedField={copiedField}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        {identities.length > 0 && (
-          <View>
-            <SectionHeader
-              title="Identities"
-              count={identities.length}
-              expanded={expanded.identities}
-              onToggle={() => toggle('identities')}
-            />
-            {expanded.identities && (
-              <View className="px-4 pt-2 gap-3">
-                {identities.map((ident) => (
-                  <IdentityCard
-                    key={ident.address}
-                    identity={ident}
-                    onLongPress={handleCopy}
-                    copiedField={copiedField}
-                  />
+                  <KeyCard key={k.id} keyItem={k} onCopy={handleCopy} copiedField={copiedField} />
                 ))}
               </View>
             )}
@@ -531,7 +404,12 @@ export function CredentialsScreen() {
                   <AgentIdentityCard
                     key={ident.id}
                     identity={ident}
-                    onLongPress={handleCopy}
+                    materialHeld={getAgentMaterialHeld(ac2Messages, {
+                      origin: ident.origin,
+                      requestId: ident.requestId,
+                      publicKey: ident.publicKey,
+                    })}
+                    onCopy={handleCopy}
                     copiedField={copiedField}
                   />
                 ))}
@@ -554,7 +432,7 @@ export function CredentialsScreen() {
                   <AccountCard
                     key={acct.address}
                     account={acct}
-                    onLongPress={handleCopy}
+                    onCopy={handleCopy}
                     copiedField={copiedField}
                   />
                 ))}
