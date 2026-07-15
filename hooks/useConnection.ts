@@ -53,6 +53,13 @@ const HEARTBEAT_TIMEOUT_MS = 45000;
 // A heartbeat-channel send buffer above this suggests frames aren't draining to
 // the peer (a stalling transport) — logged as an early diagnostic.
 const HEARTBEAT_BUFFERED_WARN_BYTES = 256 * 1024;
+// Idle-session policy. Liveness is owned by the ICE monitor + heartbeat
+// watchdog (they detect a dead transport within seconds and auto-reconnect);
+// this slower timer is a secondary safety net that (a) tears down a genuinely
+// idle session and (b) recovers a connection that went stale while backgrounded
+// (JS timers are suspended there, so the watchdog can't fire until foreground).
+const IDLE_SESSION_TIMEOUT_MS = 60000;
+const IDLE_CHECK_INTERVAL_MS = 5000;
 
 // Why a connection was torn down unexpectedly. Routed through `failConnection`
 // so every detector (channel close, setup error, and — added in later phases —
@@ -562,11 +569,14 @@ export function useConnection(
     if (isConnected) {
       inactivityInterval = setInterval(() => {
         const now = Date.now();
-        // Idle policy unchanged in this phase: measure from the most recent of
-        // inbound peer traffic or local user action (Phase 6 revisits this).
+        // Any traffic keeps the session alive: measure from the most recent of
+        // inbound peer traffic (frames/pongs) or local user action. A dead
+        // transport is caught far sooner by the ICE monitor / heartbeat
+        // watchdog; this only fires for a genuinely quiet session or one that
+        // went stale while backgrounded.
         const lastActivity = Math.max(lastInboundActivityRef.current, lastLocalActivityRef.current);
         const inactiveTime = now - lastActivity;
-        if (inactiveTime >= 60000) {
+        if (inactiveTime >= IDLE_SESSION_TIMEOUT_MS) {
           // A stale connection whose idleness is explained by the app having
           // been backgrounded (timers suspended, no heartbeats) should recover
           // automatically; a genuine foreground idle should not (avoids churn /
@@ -576,7 +586,7 @@ export function useConnection(
           console.log(
             resumeAfterBackground
               ? 'Closing stale connection after background; will reconnect'
-              : 'Closing connection due to inactivity (1 minute)',
+              : 'Closing idle session (no activity)',
           );
           // Fully tear down so the connection effect's guard doesn't keep a
           // stale client around — otherwise a later reconnect is impossible.
@@ -596,7 +606,7 @@ export function useConnection(
             reconnectRef.current();
           }
         }
-      }, 5000);
+      }, IDLE_CHECK_INTERVAL_MS);
     }
 
     return () => {
