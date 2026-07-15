@@ -14,6 +14,19 @@ const ENV = process.env.APP_ENV || 'debug';
 const buildNumber = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
 const cameraUsageDescription = 'AC2 uses the camera to scan QR codes to pair with AI agents.';
 
+// Sentry is restricted to internal testing artifacts: nightly CI builds, manual
+// APK builds, and internal TestFlight builds — never store release builds. The
+// SENTRY_ENABLED env var is the explicit switch (set per Bitrise workflow: true
+// for the nightly iOS/Android and manual builds, false for the release
+// iOS/Play workflows). When it is unset it defaults ON for any non-production
+// build (local/dev/testing APKs) and OFF for production, so a release artifact
+// can never ship Sentry by accident. This flag gates BOTH the build-time Sentry
+// Expo plugin (source-map upload) below and the runtime Sentry.init() in
+// app/_layout.tsx (read via Constants.expoConfig.extra.sentryEnabled).
+const sentryEnabled = process.env.SENTRY_ENABLED
+  ? process.env.SENTRY_ENABLED === 'true'
+  : ENV !== 'production';
+
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
   switch (ENV) {
@@ -166,20 +179,31 @@ module.exports = {
       // screenshot prevention (FLAG_SECURE), which needs no permission, and Play
       // flags READ_MEDIA_IMAGES as a sensitive photo/video permission.
       './plugins/withRemoveMediaPermissions',
-      [
-        '@sentry/react-native/expo',
-        {
-          url: 'https://sentry.io/',
-          project: 'ac2-wallet',
-          organization: 'algorand-foundation',
-        },
-      ],
+      // Sentry's source-map upload runs during the native build (sentry-cli,
+      // needs $SENTRY_AUTH_TOKEN). Only include it for internal testing builds
+      // so release builds neither upload maps nor require the token. Gated by
+      // the same SENTRY_ENABLED switch that controls runtime Sentry.init().
+      ...(sentryEnabled
+        ? [
+            [
+              '@sentry/react-native/expo',
+              {
+                url: 'https://sentry.io/',
+                project: 'ac2-wallet',
+                organization: 'algorand-foundation',
+              },
+            ],
+          ]
+        : []),
     ],
     experiments: {
       typedRoutes: true,
       reactCompiler: true,
     },
     extra: {
+      // Runtime Sentry switch, read by app/_layout.tsx to decide whether to
+      // call Sentry.init(). Baked in at build time from the SENTRY_ENABLED gate.
+      sentryEnabled,
       termsOfServiceUrl:
         process.env.TERMS_OF_SERVICE_URL || 'https://ac2protocol.org/terms-of-service/',
       privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || 'https://perawallet.app/privacy-policy/',
