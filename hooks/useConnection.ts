@@ -43,6 +43,11 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 // retry state machine instead.
 const REQUEST_TIMEOUT_MS = 15000;
 
+// Why a connection was torn down unexpectedly. Routed through `failConnection`
+// so every detector (channel close, setup error, and — added in later phases —
+// ICE state, heartbeat watchdog, send failures) funnels into one recovery path.
+type ConnectionFailureReason = 'channel' | 'setup' | 'ice' | 'heartbeat' | 'send' | 'open';
+
 interface UseConnectionResult {
   session: Session | undefined;
   address: string | null;
@@ -311,6 +316,41 @@ export function useConnection(
   }, []);
   const scheduleAutoReconnectRef = useRef(scheduleAutoReconnect);
   scheduleAutoReconnectRef.current = scheduleAutoReconnect;
+
+  // Single funnel for an unexpected connection failure. Later async detectors
+  // (ICE state, heartbeat watchdog, send errors) all route through this so
+  // teardown + bounded reconnect happen in exactly one place. `isCurrent`
+  // closes over the observing setup run's `active` flag (set false by that
+  // run's cleanup before any newer run starts), so a stale/superseded callback
+  // is ignored and can't tear down or reschedule on top of a newer run.
+  const failConnection = useCallback(
+    (reason: ConnectionFailureReason, isCurrent: () => boolean, error?: Error) => {
+      if (!isCurrent()) return;
+      if (!error) console.log(`Connection lost (${reason})`);
+      setIsConnected(false);
+      // Drop every stale transport ref so the next reconnect isn't blocked by
+      // the connection effect's guard.
+      clearTransport();
+      // Kick off (or continue) the bounded, serialized retry sequence. Once the
+      // budget is spent, fall back to the manual Reconnect bar (surfacing the
+      // terminal error only for a setup failure).
+      if (!scheduleAutoReconnectRef.current()) {
+        setIsReconnecting(false);
+        setIsLoading(false);
+        if (error) {
+          setError(error);
+          Alert.alert(
+            'Connection Failed',
+            error.message || 'Failed to setup connection to the peer',
+            [{ text: 'OK' }],
+          );
+        }
+      }
+    },
+    [clearTransport],
+  );
+  const failConnectionRef = useRef(failConnection);
+  failConnectionRef.current = failConnection;
 
   // Live mirrors of the connection state so the AppState listener can read the
   // current values without being torn down/re-subscribed on every change (and
@@ -825,22 +865,14 @@ export function useConnection(
           onClose: () => {
             console.log('Data channel closed');
             updateSessionStatus(requestId, origin, 'closed');
-            if (active) {
-              if (deliberateCloseRef.current) {
-                deliberateCloseRef.current = false;
-                return;
-              }
-              setIsConnected(false);
-              // Drop every stale transport ref so the next mount / reconnect
-              // isn't blocked by the connection effect's guard.
-              clearTransport();
-              // Kick off (or continue) the bounded, serialized retry sequence.
-              // Once the budget is spent, fall back to the manual Reconnect bar.
-              if (!scheduleAutoReconnectRef.current()) {
-                setIsReconnecting(false);
-                setIsLoading(false);
-              }
+            // A deliberate teardown (reset / performReconnect / idle close) is
+            // expected — consume the one-shot flag and don't treat it as a
+            // failure. Everything else funnels through the single failure path.
+            if (deliberateCloseRef.current) {
+              deliberateCloseRef.current = false;
+              return;
             }
+            failConnectionRef.current('channel', () => active);
           },
         });
         ac2ClientRef.current = ac2;
@@ -851,34 +883,13 @@ export function useConnection(
         // clobber its session status. The newer run owns all recovery.
         if (!active || err?.name === 'AbortError') return;
         console.error('Failed to setup connection:', err);
-        // Tear down the partially-established SignalClient before clearing the
-        // ref. The timeout handler only closes the peer connection — also close
-        // the socket so the server-side session doesn't stay open and confuse
-        // the next connection attempt.
-        try {
-          clientRef.current?.peerClient?.close();
-        } catch {
-          /* noop */
-        }
-        try {
-          clientRef.current?.close(true);
-        } catch {
-          /* noop */
-        }
-        clientRef.current = null;
         updateSessionStatus(requestId, origin, 'failed');
-        // Retry recoverable setup failures within the bounded budget; only
-        // surface the terminal error + manual fallback once it's exhausted.
-        if (!scheduleAutoReconnectRef.current()) {
-          setIsReconnecting(false);
-          setError(err);
-          setIsLoading(false);
-          Alert.alert(
-            'Connection Failed',
-            err.message || 'Failed to setup connection to the peer',
-            [{ text: 'OK' }],
-          );
-        }
+        // Funnel through the single failure path: it tears down the
+        // partially-established transport (peer + socket included, via
+        // `clearTransport`) and hands off to the bounded auto-reconnect
+        // scheduler, surfacing the terminal error + manual fallback only once
+        // the retry budget is exhausted.
+        failConnectionRef.current('setup', () => active, err);
       } finally {
         // Only release the auth lock if this run is still the active one.
         // If cleanup already ran (`active = false`), it has already reset the
