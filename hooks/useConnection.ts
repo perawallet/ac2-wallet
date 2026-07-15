@@ -137,7 +137,11 @@ export function useConnection(
   const peerConnectionRef = useRef<MonitoredPeerConnection | null>(null);
   const peerMonitorDisposeRef = useRef<(() => void) | null>(null);
   const clientRef = useRef<SignalClient | null>(null);
-  const lastUserActivityRef = useRef<number>(Date.now());
+  // Last time we observed inbound traffic from the peer (frames, envelopes,
+  // heartbeat pongs) vs. the last local user action. Kept separate so an
+  // outbound keepalive can never be mistaken for peer presence.
+  const lastInboundActivityRef = useRef<number>(Date.now());
+  const lastLocalActivityRef = useRef<number>(Date.now());
   const authFlowInProgressRef = useRef<boolean>(false);
   // Ignore one `onClose` when the transport was intentionally torn down.
   const deliberateCloseRef = useRef(false);
@@ -281,7 +285,9 @@ export function useConnection(
     }
     clearTransport();
     authFlowInProgressRef.current = false;
-    lastUserActivityRef.current = Date.now();
+    // Reset both liveness clocks so the fresh attempt isn't judged idle.
+    lastInboundActivityRef.current = Date.now();
+    lastLocalActivityRef.current = Date.now();
     setError(null);
     setIsConnected(false);
     setIsLoading(true);
@@ -448,7 +454,7 @@ export function useConnection(
           thid,
         });
         updateSessionActivity(requestId, origin);
-        lastUserActivityRef.current = Date.now();
+        lastLocalActivityRef.current = Date.now();
       }
     },
     [requestId, origin, address],
@@ -467,7 +473,7 @@ export function useConnection(
       setActiveThid(nextThid);
       activeThidRef.current = nextThid;
       updateSessionActivity(requestId, origin);
-      lastUserActivityRef.current = Date.now();
+      lastLocalActivityRef.current = Date.now();
       return nextThid;
     },
     [origin, requestId, address],
@@ -486,7 +492,7 @@ export function useConnection(
         setActiveThid(DEFAULT_THID);
         activeThidRef.current = DEFAULT_THID;
       }
-      lastUserActivityRef.current = Date.now();
+      lastLocalActivityRef.current = Date.now();
     },
     [address, origin, requestId],
   );
@@ -508,7 +514,7 @@ export function useConnection(
         envelope: message,
       });
       updateSessionActivity(requestId, origin);
-      lastUserActivityRef.current = Date.now();
+      lastLocalActivityRef.current = Date.now();
     },
     [origin, requestId, address],
   );
@@ -521,22 +527,25 @@ export function useConnection(
     if (isConnected) {
       heartbeatInterval = setInterval(() => {
         // Prefer the `ac2-heartbeat` channel; fall back to the control channel
-        // (empty frame) if the peer didn't negotiate it.
+        // (empty frame) if the peer didn't negotiate it. `lastHeartbeat` is
+        // advanced only by INBOUND liveness (pongs/frames), never by our own
+        // send — so the UI indicator can't false-positive on a self-ping.
         const hb = heartbeatChannelRef.current;
         if (hb && hb.readyState === 'open') {
           console.log('Sending heartbeat ping');
           hb.send('ping');
-          if (active) setLastHeartbeat(Date.now());
         } else if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
           console.log('Sending heartbeat message');
           dataChannelRef.current.send('');
-          if (active) setLastHeartbeat(Date.now());
         }
       }, 20000);
 
       inactivityInterval = setInterval(() => {
         const now = Date.now();
-        const inactiveTime = now - lastUserActivityRef.current;
+        // Idle policy unchanged in this phase: measure from the most recent of
+        // inbound peer traffic or local user action (Phase 6 revisits this).
+        const lastActivity = Math.max(lastInboundActivityRef.current, lastLocalActivityRef.current);
+        const inactiveTime = now - lastActivity;
         if (inactiveTime >= 60000) {
           // A stale connection whose idleness is explained by the app having
           // been backgrounded (timers suspended, no heartbeats) should recover
@@ -775,7 +784,7 @@ export function useConnection(
           requestId,
           addressRef,
           activeThidRef,
-          lastUserActivityRef,
+          lastInboundActivityRef,
           setAgentPresence,
           setAgentPresenceDetail,
           setActiveStreamText,
@@ -800,7 +809,7 @@ export function useConnection(
                 onPing: () => {
                   if (!active) return;
                   wasBackgroundedRef.current = false;
-                  lastUserActivityRef.current = Date.now();
+                  lastInboundActivityRef.current = Date.now();
                   setLastHeartbeat(Date.now());
                 },
               });
@@ -843,7 +852,7 @@ export function useConnection(
           onInboundEnvelope: () => {
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
-            lastUserActivityRef.current = Date.now();
+            lastInboundActivityRef.current = Date.now();
             setLastHeartbeat(Date.now());
           },
           onRawMessage: (raw: string) => {
@@ -859,7 +868,7 @@ export function useConnection(
             });
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
-            lastUserActivityRef.current = Date.now();
+            lastInboundActivityRef.current = Date.now();
             setLastHeartbeat(Date.now());
           },
           onOpen: () => {
