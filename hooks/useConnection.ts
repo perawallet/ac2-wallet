@@ -1,10 +1,12 @@
 import { useProvider } from '@/hooks/useProvider';
+import type { MonitoredPeerConnection } from '@/lib/ac2';
 import {
   attachHeartbeatChannel,
   createAc2Client,
   createAc2Transport,
   DEFAULT_THID,
   generateThid,
+  monitorPeerConnection,
   sendConversationClose,
   sendConversationOpen,
 } from '@/lib/ac2';
@@ -129,6 +131,11 @@ export function useConnection(
   const streamChannelRef = useRef<RTCDataChannel | null>(null);
   // Dedicated `ac2-heartbeat` liveness channel — out-of-band relative to `ac2-v1`.
   const heartbeatChannelRef = useRef<RTCDataChannel | null>(null);
+  // The negotiated peer connection + the disposer for its connectivity monitor.
+  // The SDK never watches ICE/connection state, so we attach our own once the
+  // data channel opens and tear it down in `clearTransport`.
+  const peerConnectionRef = useRef<MonitoredPeerConnection | null>(null);
+  const peerMonitorDisposeRef = useRef<(() => void) | null>(null);
   const clientRef = useRef<SignalClient | null>(null);
   const lastUserActivityRef = useRef<number>(Date.now());
   const authFlowInProgressRef = useRef<boolean>(false);
@@ -178,6 +185,13 @@ export function useConnection(
   // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
   // "Connecting…" with no way to recover.
   const clearTransport = useCallback(() => {
+    // Detach the connectivity monitor before anything closes the peer, so a
+    // deliberate teardown can't be misread as an ICE failure.
+    if (peerMonitorDisposeRef.current) {
+      peerMonitorDisposeRef.current();
+      peerMonitorDisposeRef.current = null;
+    }
+    peerConnectionRef.current = null;
     if (ac2ClientRef.current) {
       try {
         ac2ClientRef.current.close();
@@ -773,6 +787,12 @@ export function useConnection(
           requestId,
           signalClient: client,
           signal: runAbort.signal,
+          onPeerConnection: (pc) => {
+            // Stash the peer connection; the connectivity monitor is attached in
+            // `onOpen`, once the channel is actually live (establishment-phase
+            // failures are already covered by the transport's open deadline).
+            peerConnectionRef.current = pc as unknown as MonitoredPeerConnection;
+          },
           onSideChannel: (channel) => {
             console.log(`[ac2] Discovered channel: ${channel.label}`);
             if (channel.label === 'ac2-heartbeat') {
@@ -847,6 +867,17 @@ export function useConnection(
             if (active) {
               deliberateCloseRef.current = false;
               wasBackgroundedRef.current = false;
+              // Watch the peer for connectivity loss (ICE disconnected/failed)
+              // the SDK never surfaces — the DataChannel can stay "open" while
+              // the underlying transport is dead. Route a failure through the
+              // single recovery funnel; `() => active` makes a late callback
+              // from a superseded run a no-op.
+              if (peerMonitorDisposeRef.current) peerMonitorDisposeRef.current();
+              peerMonitorDisposeRef.current = peerConnectionRef.current
+                ? monitorPeerConnection(peerConnectionRef.current, {
+                    onFailed: (reason) => failConnectionRef.current(reason, () => active),
+                  })
+                : null;
               if (autoReconnectTimerRef.current) {
                 clearTimeout(autoReconnectTimerRef.current);
                 autoReconnectTimerRef.current = null;
@@ -907,6 +938,14 @@ export function useConnection(
       // the guard in `setupConnection`. The `finally` block is guarded by
       // `active` and will not clobber the new run's lock once it acquires it.
       authFlowInProgressRef.current = false;
+      // Detach the connectivity monitor before the peer is closed below, so it
+      // can't observe the teardown as an ICE failure and leaves no dangling
+      // listeners/timers.
+      if (peerMonitorDisposeRef.current) {
+        peerMonitorDisposeRef.current();
+        peerMonitorDisposeRef.current = null;
+      }
+      peerConnectionRef.current = null;
       const hadEstablishedTransport = !!(dataChannelRef.current || ac2ClientRef.current);
       runAbort.abort();
       if (autoReconnectTimerRef.current) {

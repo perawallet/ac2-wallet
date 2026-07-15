@@ -52,6 +52,13 @@ export interface CreateAc2TransportOptions {
   /** Called for each negotiated side-channel (`ac2-stream`, `ac2-heartbeat`). */
   onSideChannel: (channel: RTCDataChannel) => void;
   /**
+   * Called once with the negotiated `RTCPeerConnection` (the SDK's
+   * `peerClient`) as soon as negotiation resolves, so the caller can attach a
+   * connectivity monitor — the SDK never does. `peerClient` is guaranteed set
+   * at this point.
+   */
+  onPeerConnection?: (peerConnection: RTCPeerConnection) => void;
+  /**
    * Optional abort signal. When fired the pending negotiation is torn down
    * immediately and the returned promise rejects with an `AbortError`.
    */
@@ -66,7 +73,7 @@ export interface CreateAc2TransportOptions {
 export async function createAc2Transport(
   opts: CreateAc2TransportOptions,
 ): Promise<Ac2TransportSetup> {
-  const { requestId, signalClient, onSideChannel, signal } = opts;
+  const { requestId, signalClient, onSideChannel, onPeerConnection, signal } = opts;
 
   if (signal?.aborted) {
     const err = new Error('Aborted');
@@ -143,6 +150,11 @@ export async function createAc2Transport(
     if (timeoutId !== undefined) clearTimeout(timeoutId);
     if (signal && onAbort) signal.removeEventListener('abort', onAbort);
   });
+
+  // Surface the negotiated peer connection so the caller can watch it for
+  // connectivity loss. The SDK attaches no ICE/connection state handlers, so
+  // this is the only seam for detecting a post-negotiation drop.
+  if (signalClient.peerClient) onPeerConnection?.(signalClient.peerClient);
 
   // The negotiation above resolves once the remote description is applied, but
   // the `ac2-v1` channel is still `connecting` at that point. Block until it
