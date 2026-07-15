@@ -1,9 +1,10 @@
 import { useProvider } from '@/hooks/useProvider';
-import type { MonitoredPeerConnection } from '@/lib/ac2';
+import type { HeartbeatMonitor, MonitoredPeerConnection } from '@/lib/ac2';
 import {
   attachHeartbeatChannel,
   createAc2Client,
   createAc2Transport,
+  createHeartbeatMonitor,
   DEFAULT_THID,
   generateThid,
   monitorPeerConnection,
@@ -44,6 +45,11 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 // forever. Bounding it turns a silent hang into a rejection that flows into the
 // retry state machine instead.
 const REQUEST_TIMEOUT_MS = 15000;
+// How often to ping the peer over `ac2-heartbeat`, and how long without ANY
+// inbound frame (pong or other traffic) before the peer is presumed dead even
+// though ICE may still report `connected` (a silent stall). ~2 missed pongs.
+const HEARTBEAT_INTERVAL_MS = 20000;
+const HEARTBEAT_TIMEOUT_MS = 45000;
 
 // Why a connection was torn down unexpectedly. Routed through `failConnection`
 // so every detector (channel close, setup error, and — added in later phases —
@@ -136,6 +142,9 @@ export function useConnection(
   // data channel opens and tear it down in `clearTransport`.
   const peerConnectionRef = useRef<MonitoredPeerConnection | null>(null);
   const peerMonitorDisposeRef = useRef<(() => void) | null>(null);
+  // Heartbeat liveness watchdog (ping/pong over `ac2-heartbeat`). Started in
+  // `onOpen`, stopped in `clearTransport` / effect cleanup.
+  const heartbeatMonitorRef = useRef<HeartbeatMonitor | null>(null);
   const clientRef = useRef<SignalClient | null>(null);
   // Last time we observed inbound traffic from the peer (frames, envelopes,
   // heartbeat pongs) vs. the last local user action. Kept separate so an
@@ -189,8 +198,13 @@ export function useConnection(
   // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
   // "Connecting…" with no way to recover.
   const clearTransport = useCallback(() => {
-    // Detach the connectivity monitor before anything closes the peer, so a
-    // deliberate teardown can't be misread as an ICE failure.
+    // Stop the liveness watchdog and detach the connectivity monitor before
+    // anything closes the peer, so a deliberate teardown can't be misread as a
+    // heartbeat timeout or an ICE failure.
+    if (heartbeatMonitorRef.current) {
+      heartbeatMonitorRef.current.stop();
+      heartbeatMonitorRef.current = null;
+    }
     if (peerMonitorDisposeRef.current) {
       peerMonitorDisposeRef.current();
       peerMonitorDisposeRef.current = null;
@@ -521,25 +535,9 @@ export function useConnection(
 
   useEffect(() => {
     let active = true;
-    let heartbeatInterval: any = null;
     let inactivityInterval: any = null;
 
     if (isConnected) {
-      heartbeatInterval = setInterval(() => {
-        // Prefer the `ac2-heartbeat` channel; fall back to the control channel
-        // (empty frame) if the peer didn't negotiate it. `lastHeartbeat` is
-        // advanced only by INBOUND liveness (pongs/frames), never by our own
-        // send — so the UI indicator can't false-positive on a self-ping.
-        const hb = heartbeatChannelRef.current;
-        if (hb && hb.readyState === 'open') {
-          console.log('Sending heartbeat ping');
-          hb.send('ping');
-        } else if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-          console.log('Sending heartbeat message');
-          dataChannelRef.current.send('');
-        }
-      }, 20000);
-
       inactivityInterval = setInterval(() => {
         const now = Date.now();
         // Idle policy unchanged in this phase: measure from the most recent of
@@ -581,7 +579,6 @@ export function useConnection(
 
     return () => {
       active = false;
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (inactivityInterval) clearInterval(inactivityInterval);
     };
   }, [isConnected, clearTransport, origin, requestId]);
@@ -806,10 +803,11 @@ export function useConnection(
             console.log(`[ac2] Discovered channel: ${channel.label}`);
             if (channel.label === 'ac2-heartbeat') {
               heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
-                onPing: () => {
+                onInbound: () => {
                   if (!active) return;
                   wasBackgroundedRef.current = false;
                   lastInboundActivityRef.current = Date.now();
+                  heartbeatMonitorRef.current?.noteInbound();
                   setLastHeartbeat(Date.now());
                 },
               });
@@ -819,6 +817,8 @@ export function useConnection(
               streamChannelRef.current = channel;
               channel.onmessage = (event) => {
                 if (!active) return;
+                // Any inbound stream frame is proof of peer liveness.
+                heartbeatMonitorRef.current?.noteInbound();
                 if (typeof event.data === 'string') applyControlFrame(event.data);
               };
               channel.onopen = () => console.log('Stream channel opened');
@@ -853,6 +853,7 @@ export function useConnection(
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
             lastInboundActivityRef.current = Date.now();
+            heartbeatMonitorRef.current?.noteInbound();
             setLastHeartbeat(Date.now());
           },
           onRawMessage: (raw: string) => {
@@ -869,6 +870,7 @@ export function useConnection(
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
             lastInboundActivityRef.current = Date.now();
+            heartbeatMonitorRef.current?.noteInbound();
             setLastHeartbeat(Date.now());
           },
           onOpen: () => {
@@ -887,6 +889,28 @@ export function useConnection(
                     onFailed: (reason) => failConnectionRef.current(reason, () => active),
                   })
                 : null;
+              // Start the liveness watchdog. It pings on `ac2-heartbeat` and
+              // fails if the peer stops responding (a silent stall) even while
+              // ICE still reads "connected". Over the `ac2-v1` fallback there is
+              // no pong contract, so run keepalives without a timeout.
+              if (heartbeatMonitorRef.current) heartbeatMonitorRef.current.stop();
+              heartbeatMonitorRef.current = createHeartbeatMonitor({
+                intervalMs: HEARTBEAT_INTERVAL_MS,
+                timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
+                send: () => {
+                  const hb = heartbeatChannelRef.current;
+                  if (hb && hb.readyState === 'open') {
+                    hb.send('ping');
+                  } else if (
+                    dataChannelRef.current &&
+                    dataChannelRef.current.readyState === 'open'
+                  ) {
+                    dataChannelRef.current.send('');
+                  }
+                },
+                onTimeout: () => failConnectionRef.current('heartbeat', () => active),
+              });
+              heartbeatMonitorRef.current.start();
               if (autoReconnectTimerRef.current) {
                 clearTimeout(autoReconnectTimerRef.current);
                 autoReconnectTimerRef.current = null;
@@ -947,9 +971,13 @@ export function useConnection(
       // the guard in `setupConnection`. The `finally` block is guarded by
       // `active` and will not clobber the new run's lock once it acquires it.
       authFlowInProgressRef.current = false;
-      // Detach the connectivity monitor before the peer is closed below, so it
-      // can't observe the teardown as an ICE failure and leaves no dangling
-      // listeners/timers.
+      // Stop the watchdog and detach the connectivity monitor before the peer
+      // is closed below, so neither observes the teardown as a failure and no
+      // timers/listeners dangle.
+      if (heartbeatMonitorRef.current) {
+        heartbeatMonitorRef.current.stop();
+        heartbeatMonitorRef.current = null;
+      }
       if (peerMonitorDisposeRef.current) {
         peerMonitorDisposeRef.current();
         peerMonitorDisposeRef.current = null;
