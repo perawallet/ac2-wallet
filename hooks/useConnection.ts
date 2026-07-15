@@ -6,10 +6,12 @@ import {
   createAc2Transport,
   createHeartbeatMonitor,
   DEFAULT_THID,
+  describeSelectedCandidatePair,
   generateThid,
   monitorPeerConnection,
   sendConversationClose,
   sendConversationOpen,
+  summarizeSelectedCandidatePair,
 } from '@/lib/ac2';
 import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
 import { findWalletAccount } from '@/lib/keystore/wallet-account';
@@ -277,6 +279,26 @@ export function useConnection(
     }
   }, []);
 
+  // Best-effort, read-only diagnostic: log which ICE path the peer selected
+  // (direct `host` / STUN `srflx` / TURN `relay`). Never logs addresses. Call
+  // before teardown — it reads the peer synchronously and resolves async.
+  const logCandidatePair = useCallback((context: string) => {
+    const pc = clientRef.current?.peerClient;
+    if (!pc || typeof pc.getStats !== 'function') return;
+    pc.getStats()
+      .then((report: any) => {
+        const summary = summarizeSelectedCandidatePair(report);
+        if (summary) {
+          console.log(`[ac2] ${context} path: ${describeSelectedCandidatePair(summary)}`);
+        }
+      })
+      .catch(() => {
+        /* diagnostics only */
+      });
+  }, []);
+  const logCandidatePairRef = useRef(logCandidatePair);
+  logCandidatePairRef.current = logCandidatePair;
+
   const reset = useCallback(() => {
     deliberateCloseRef.current = true;
     userStoppedRef.current = true;
@@ -371,6 +393,9 @@ export function useConnection(
     (reason: ConnectionFailureReason, isCurrent: () => boolean, error?: Error) => {
       if (!isCurrent()) return;
       if (!error) console.log(`Connection lost (${reason})`);
+      // Capture which ICE path this session used before tearing the peer down,
+      // to correlate failures with relay/direct usage (best-effort).
+      logCandidatePairRef.current(`failed(${reason})`);
       setIsConnected(false);
       // Drop every stale transport ref so the next reconnect isn't blocked by
       // the connection effect's guard.
@@ -669,6 +694,10 @@ export function useConnection(
       setError(null);
       authFlowInProgressRef.current = true;
 
+      // Coarse phase timing so a hang is attributable to auth vs. WebRTC
+      // negotiation vs. the channel-open wait.
+      const setupStartedAt = Date.now();
+
       try {
         const currentSessions = sessionsStore.state.sessions;
         const currentKeys = keyStore.state.keys;
@@ -754,6 +783,7 @@ export function useConnection(
           isActive: () => active,
         });
         if (authResult.superseded || !active) return;
+        console.log(`[ac2] auth phase done in ${Date.now() - setupStartedAt}ms`);
 
         // Final validation of the session before connecting
         const finalSessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
@@ -870,6 +900,7 @@ export function useConnection(
         }
 
         dataChannelRef.current = datachannel;
+        console.log(`[ac2] transport negotiated in ${Date.now() - setupStartedAt}ms`);
 
         // Wallet-side responders (`onSigningRequest` / `onKeyRequest`) are
         // intentionally NOT installed: inbound envelopes are mirrored into
@@ -906,10 +937,12 @@ export function useConnection(
             setLastHeartbeat(Date.now());
           },
           onOpen: () => {
-            console.log('Data channel opened');
+            console.log(`Data channel opened in ${Date.now() - setupStartedAt}ms`);
             if (active) {
               deliberateCloseRef.current = false;
               wasBackgroundedRef.current = false;
+              // Log the negotiated ICE path (direct/STUN/TURN) for this session.
+              logCandidatePairRef.current('connected');
               // Watch the peer for connectivity loss (ICE disconnected/failed)
               // the SDK never surfaces — the DataChannel can stay "open" while
               // the underlying transport is dead. Route a failure through the

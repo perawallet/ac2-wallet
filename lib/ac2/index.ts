@@ -5,6 +5,8 @@
 
 export { createAc2Client } from './client';
 export type { Ac2ClientSetup, CreateAc2ClientOptions } from './client';
+export { describeSelectedCandidatePair, summarizeSelectedCandidatePair } from './connectionStats';
+export type { SelectedCandidatePairSummary, StatsReportLike } from './connectionStats';
 export {
   DEFAULT_THID,
   generateThid,
