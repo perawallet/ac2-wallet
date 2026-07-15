@@ -30,6 +30,12 @@ const DEFAULT_DATA_CHANNELS = {
 
 const SIGNALING_TIMEOUT_MS = 30000;
 const SOCKET_CONNECT_TIMEOUT_MS = 10000;
+// `signalClient.peer()` resolves once the remote description is applied, long
+// before the `ac2-v1` channel is actually usable. Bound how long we then wait
+// for it to reach `open`, so a peer whose ICE never establishes (a STUN/TURN
+// stall) turns into a fast rejection the caller can retry rather than an
+// indefinite hang.
+const CHANNEL_OPEN_TIMEOUT_MS = 15000;
 const SIGNAL_CANDIDATE_NORMALIZER = Symbol('ac2.signalCandidateNormalizer');
 const SIGNAL_CANDIDATE_EVENTS = new Set(['offer-candidate', 'answer-candidate']);
 
@@ -138,7 +144,91 @@ export async function createAc2Transport(
     if (signal && onAbort) signal.removeEventListener('abort', onAbort);
   });
 
+  // The negotiation above resolves once the remote description is applied, but
+  // the `ac2-v1` channel is still `connecting` at that point. Block until it
+  // actually opens so a peer whose ICE never completes (STUN/TURN stall) fails
+  // fast into the caller's retry path instead of hanging forever waiting for an
+  // `onOpen` that never arrives.
+  try {
+    await waitForChannelOpen(datachannel, CHANNEL_OPEN_TIMEOUT_MS, signal);
+  } catch (err: any) {
+    // A non-abort failure (open timeout / early close) leaves a half-open peer
+    // whose ICE machinery would otherwise keep running; close it promptly,
+    // mirroring the signaling-timeout cleanup above. An abort intentionally
+    // does NOT hard-close the native peer here (see the abort handler's note
+    // about Android's in-flight setRemoteDescription).
+    if (err?.name !== 'AbortError') {
+      try {
+        signalClient.peerClient?.close();
+      } catch {
+        /* noop */
+      }
+    }
+    throw err;
+  }
+
   return { client: signalClient, datachannel };
+}
+
+/**
+ * Resolve once `channel` reaches the `open` state. Rejects if it does not open
+ * within `timeoutMs`, if it closes/errors first, or if `signal` aborts (with an
+ * `AbortError`). All listeners and the timer are detached on settle.
+ */
+export function waitForChannelOpen(
+  channel: RTCDataChannel,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (channel.readyState === 'open') return Promise.resolve();
+  if (signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    return Promise.reject(err);
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    function finish(err?: Error) {
+      if (timer !== undefined) clearTimeout(timer);
+      channel.removeEventListener('open', onOpen);
+      channel.removeEventListener('close', onClose);
+      channel.removeEventListener('error', onError);
+      signal?.removeEventListener('abort', onAbort);
+      if (err) reject(err);
+      else resolve();
+    }
+
+    const onOpen = () => finish();
+    const onClose = () => finish(new Error('ac2-v1 DataChannel closed before it opened'));
+    const onError = () => finish(new Error('ac2-v1 DataChannel errored before it opened'));
+    const onAbort = () => {
+      const err = new Error('Aborted');
+      err.name = 'AbortError';
+      finish(err);
+    };
+
+    channel.addEventListener('open', onOpen);
+    channel.addEventListener('close', onClose);
+    channel.addEventListener('error', onError);
+    signal?.addEventListener('abort', onAbort);
+
+    timer = setTimeout(
+      () =>
+        finish(
+          new Error(
+            `Timed out waiting for the ac2-v1 DataChannel to open (${timeoutMs}ms). ` +
+              'ICE likely failed to establish a path to the peer (STUN/TURN).',
+          ),
+        ),
+      timeoutMs,
+    );
+
+    // Guard against the channel opening between the initial check and listener
+    // attachment.
+    if (channel.readyState === 'open') finish();
+  });
 }
 
 export function normalizeIceCandidateForReactNative(
