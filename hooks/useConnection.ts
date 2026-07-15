@@ -50,6 +50,9 @@ const REQUEST_TIMEOUT_MS = 15000;
 // though ICE may still report `connected` (a silent stall). ~2 missed pongs.
 const HEARTBEAT_INTERVAL_MS = 20000;
 const HEARTBEAT_TIMEOUT_MS = 45000;
+// A heartbeat-channel send buffer above this suggests frames aren't draining to
+// the peer (a stalling transport) — logged as an early diagnostic.
+const HEARTBEAT_BUFFERED_WARN_BYTES = 256 * 1024;
 
 // Why a connection was torn down unexpectedly. Routed through `failConnection`
 // so every detector (channel close, setup error, and — added in later phases —
@@ -456,9 +459,19 @@ export function useConnection(
       const channel = streamChannelRef.current || dataChannelRef.current;
       if (text.trim() && channel && channel.readyState === 'open' && address) {
         const thid = activeThidRef.current;
-        // Tag the wire frame with the active `thid` so the agent routes it without
-        // racing the separately-delivered `ac2/ConversationOpen` control frame.
-        channel.send(JSON.stringify({ thid, text: text.trim() }));
+        try {
+          // Tag the wire frame with the active `thid` so the agent routes it
+          // without racing the separately-delivered `ac2/ConversationOpen`
+          // control frame.
+          channel.send(JSON.stringify({ thid, text: text.trim() }));
+        } catch (err) {
+          // A send can throw even on an "open" channel once the underlying peer
+          // has died (a zombie transport). Route through the single recovery
+          // funnel instead of crashing, and don't echo a frame we never sent.
+          console.warn('Failed to send message; treating as a dropped connection', err);
+          failConnectionRef.current('send', () => isConnectedRef.current);
+          return;
+        }
         addMessage({
           text: text.trim(),
           sender: 'me',
@@ -517,7 +530,16 @@ export function useConnection(
       if (!client) {
         throw new Error('AC2 client not ready (DataChannel not open)');
       }
-      client.send(message);
+      try {
+        client.send(message);
+      } catch (err) {
+        // Surface the failure to the caller (so it won't record the envelope as
+        // sent) AND route through the recovery funnel to reconnect the dead
+        // transport.
+        console.warn('Failed to send AC2 envelope; treating as a dropped connection', err);
+        failConnectionRef.current('send', () => isConnectedRef.current);
+        throw err;
+      }
       addAc2Message({
         origin,
         requestId,
@@ -899,13 +921,27 @@ export function useConnection(
                 timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
                 send: () => {
                   const hb = heartbeatChannelRef.current;
-                  if (hb && hb.readyState === 'open') {
-                    hb.send('ping');
-                  } else if (
-                    dataChannelRef.current &&
-                    dataChannelRef.current.readyState === 'open'
-                  ) {
-                    dataChannelRef.current.send('');
+                  const dc = dataChannelRef.current;
+                  const channel =
+                    hb && hb.readyState === 'open'
+                      ? hb
+                      : dc && dc.readyState === 'open'
+                        ? dc
+                        : null;
+                  if (!channel) return;
+                  // A growing send buffer means frames aren't draining to the
+                  // peer — an early signal the transport is stalling before ICE
+                  // even flips state.
+                  if (channel.bufferedAmount > HEARTBEAT_BUFFERED_WARN_BYTES) {
+                    console.warn(
+                      `Heartbeat send buffer high (${channel.bufferedAmount} bytes) — transport may be stalling`,
+                    );
+                  }
+                  try {
+                    channel.send(channel === hb ? 'ping' : '');
+                  } catch (err) {
+                    console.warn('Heartbeat send failed; treating as a dropped connection', err);
+                    failConnectionRef.current('send', () => active);
                   }
                 },
                 onTimeout: () => failConnectionRef.current('heartbeat', () => active),
