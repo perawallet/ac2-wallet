@@ -37,9 +37,15 @@ interface ChatScreenProps {
   origin: string;
   requestId: string;
   allowPasskeyCreation?: boolean;
+  onPasskeyCreationConsumed?: () => void;
 }
 
-function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScreenProps) {
+function ChatScreen({
+  origin,
+  requestId,
+  allowPasskeyCreation = false,
+  onPasskeyCreationConsumed,
+}: ChatScreenProps) {
   const insets = useSafeAreaInsets();
   const {
     isConnected,
@@ -47,7 +53,6 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     isLoading,
     isReconnecting,
     reconnectAttempt,
-    maxReconnectAttempts,
     send,
     sendAc2,
     lastHeartbeat,
@@ -62,7 +67,10 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     openConversation,
     closeConversation,
     remoteThreads,
-  } = useConnection(origin, requestId, { allowPasskeyCreation });
+  } = useConnection(origin, requestId, {
+    allowPasskeyCreation,
+    onPasskeyCreationConsumed,
+  });
 
   const { approveSigning, rejectSigning, approveKey, rejectKey } = useAc2Responders({
     address,
@@ -295,7 +303,9 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
         <ChatComposer
           onSend={send}
           enabled={false}
-          placeholder={`Reconnecting (${reconnectAttempt}/${maxReconnectAttempts})…`}
+          placeholder={
+            reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt})…` : 'Reconnecting…'
+          }
         />
       ) : isLoading ? (
         <ChatComposer onSend={send} enabled={false} placeholder="Connecting…" />

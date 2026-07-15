@@ -80,6 +80,10 @@ export function clearAc2Messages(address: string, origin: string, requestId: str
   }));
 }
 
+export function clearAllAc2Messages() {
+  ac2MessagesStore.setState((state) => ({ ...state, messages: [] }));
+}
+
 /**
  * Removes every AC2 envelope belonging to a connection, regardless of the
  * local address. Used when forgetting a persisted connection.

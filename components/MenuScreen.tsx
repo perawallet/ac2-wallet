@@ -3,13 +3,18 @@ import { Text } from '@/components/ui/text';
 import { useProvider } from '@/hooks/useProvider';
 import { clearStoredMnemonic } from '@/hooks/useWalletSetup';
 import { THEME } from '@/lib/theme';
+import { clearAllAc2Messages } from '@/stores/ac2Messages';
+import { clearAllAgentIdentities } from '@/stores/agentIdentities';
+import { clearAllMessages } from '@/stores/messages';
+import { networkStore, setNetwork } from '@/stores/network';
+import { clearSessions } from '@/stores/sessions';
+import { clearCurrentConnection } from '@/stores/ui';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 import { useEffect, useState } from 'react';
-import { networkStore, setNetwork } from '@/stores/network';
 
 function SectionHeader({ label }: { label: string }) {
   return (
@@ -85,6 +90,11 @@ export function MenuScreen() {
           text: 'Yes',
           style: 'destructive',
           onPress: async () => {
+            clearCurrentConnection();
+            clearAllMessages();
+            clearAllAc2Messages();
+            clearAllAgentIdentities();
+            await clearSessions();
             await key.store.clear();
             await account.store.clear();
             await identity.store.clear();

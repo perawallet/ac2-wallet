@@ -12,30 +12,25 @@
  * stalled request during reconnect is bounded rather than hanging forever.
  */
 import type { Passkey } from '@/extensions/passkeys';
-import { biometricOptions } from '@/lib/keystore/auth-options';
-import { bootstrap } from '@/lib/keystore/bootstrap';
-import { isWalletAccountKey } from '@/lib/keystore/wallet-account';
 import {
-  credentialIdCandidates,
   credentialIdsFromSessionData,
-  keyMatchesCredential,
   normalizeCredentialId,
-  originMatches,
   passkeyFromKey,
   passkeyMatchesConnection,
   passkeysFromSessionUser,
-  persistKeyMetadata,
 } from '@/lib/liquid-auth/helpers';
+import {
+  parsePairingCredential,
+  persistPairingCredential,
+  type DurablePairingCredential,
+} from '@/lib/liquid-auth/pairing-credentials';
 import type { ReactNativeProvider } from '@/providers/ReactNativeProvider';
-import { keyStore } from '@/stores/keystore';
-import { updateSessionPasskeyCredentialId } from '@/stores/sessions';
+import { updateSessionPairing, updateSessionPasskeyCredentialId } from '@/stores/sessions';
 import { decodeAddress } from '@/utils/algorand';
-import type { Key, KeyData } from '@algorandfoundation/keystore';
+import type { Key } from '@algorandfoundation/keystore';
 import { encodeAddress } from '@algorandfoundation/keystore';
 import { assertion, encoding } from '@algorandfoundation/liquid-client';
-import { fetchSecret, readMasterKey } from '@algorandfoundation/react-native-keystore';
 import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
-import { Buffer } from 'buffer';
 import type { MutableRefObject } from 'react';
 
 type FetchWithTimeout = (
@@ -67,15 +62,53 @@ export interface AuthenticateLiquidAuthParams {
   passkey: ReactNativeProvider['passkey'];
   setAddress: (address: string) => void;
   addressRef: MutableRefObject<string | null>;
-  authFlowInProgressRef: MutableRefObject<boolean>;
   fetchWithTimeout: FetchWithTimeout;
+  /** Cancels HTTP, signaling, and any pending credential result for this setup run. */
+  signal: AbortSignal;
   /** Returns false once this setup run has been superseded/unmounted. */
   isActive: () => boolean;
+  /** Consume scanner-only creation permission as soon as native creation succeeds. */
+  onPasskeyCreated?: () => void;
+}
+
+function abortError(): Error {
+  const error = new Error('Aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortError();
+}
+
+async function credentialOperationWithAbort<T>(
+  operation: PromiseLike<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  throwIfAborted(signal);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(operation)
+      .then(resolve, reject)
+      .finally(() => {
+        signal.removeEventListener('abort', onAbort);
+      });
+  });
+}
+
+/** Preserve byte offsets for every DOM `BufferSource` shape Liquid Client can decode. */
+export function bytesFromBufferSource(source: BufferSource): Uint8Array {
+  if (ArrayBuffer.isView(source)) {
+    return new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+  }
+  return new Uint8Array(source);
 }
 
 async function fetchAssertionOptions(
   fetchWithTimeout: FetchWithTimeout,
   origin: string,
+  requestId: string,
   credentialId: string,
 ): Promise<{ credentialId: string; options: any } | null> {
   const response = await fetchWithTimeout(
@@ -85,47 +118,13 @@ async function fetchAssertionOptions(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userVerification: 'required',
+        requestId,
       }),
     },
   );
 
   if (!response.ok) return null;
   return { credentialId, options: await response.json() };
-}
-
-async function findPasskeyKeyForCredential({
-  credential,
-  passkeys,
-  origin,
-  walletAddress,
-}: {
-  credential: any;
-  passkeys: Passkey[];
-  origin: string;
-  walletAddress: string;
-}): Promise<Key | undefined> {
-  const credentialIds = credentialIdCandidates(credential);
-  const findMatch = () => {
-    const matchedPasskey = passkeys.find((p) => credentialIds.has(normalizeCredentialId(p.id)));
-    return (
-      keyStore.state.keys.find((k) => k.id === matchedPasskey?.metadata?.keyId) ||
-      keyStore.state.keys.find((k) => keyMatchesCredential(k, credentialIds)) ||
-      keyStore.state.keys.find(
-        (k) =>
-          (k.type === 'hd-derived-p256' || k.type === 'xhd-derived-p256') &&
-          originMatches(k.metadata?.origin, origin) &&
-          k.metadata?.userHandle === walletAddress,
-      )
-    );
-  };
-
-  let matchedKey = findMatch();
-  for (let attempt = 0; !matchedKey && attempt < 3; attempt += 1) {
-    await bootstrap(biometricOptions, false);
-    matchedKey = findMatch();
-    if (!matchedKey) await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return matchedKey;
 }
 
 async function nativeStoredPasskeys(): Promise<Passkey[]> {
@@ -161,7 +160,7 @@ async function nativeStoredPasskeys(): Promise<Passkey[]> {
  */
 export async function authenticateLiquidAuth(
   params: AuthenticateLiquidAuthParams,
-): Promise<{ superseded: boolean }> {
+): Promise<{ superseded: boolean; pairing?: DurablePairingCredential }> {
   const {
     origin,
     requestId,
@@ -176,10 +175,13 @@ export async function authenticateLiquidAuth(
     passkey,
     setAddress,
     addressRef,
-    authFlowInProgressRef,
     fetchWithTimeout,
+    signal,
     isActive,
+    onPasskeyCreated,
   } = params;
+
+  throwIfAborted(signal);
 
   const storedPasskeys = await passkey.store.getPasskeys();
   const passkeysById = new Map<string, Passkey>(
@@ -225,7 +227,12 @@ export async function authenticateLiquidAuth(
 
   let assertionOptions: { credentialId: string; options: any } | null = null;
   for (const credentialId of uniqueAssertionCredentialIds) {
-    assertionOptions = await fetchAssertionOptions(fetchWithTimeout, origin, credentialId);
+    assertionOptions = await fetchAssertionOptions(
+      fetchWithTimeout,
+      origin,
+      requestId,
+      credentialId,
+    );
     if (!isActive()) return { superseded: true };
     if (assertionOptions) break;
   }
@@ -244,8 +251,8 @@ export async function authenticateLiquidAuth(
         decodedOptions.allowCredentials = [];
       }
       const existingIds = new Set(
-        decodedOptions.allowCredentials.map((c: { id: ArrayBuffer }) =>
-          encoding.toBase64URL(new Uint8Array(c.id as ArrayBuffer)),
+        decodedOptions.allowCredentials.map((credential: { id: BufferSource }) =>
+          encoding.toBase64URL(bytesFromBufferSource(credential.id)),
         ),
       );
       relevantPasskeys.forEach((p) => {
@@ -258,28 +265,27 @@ export async function authenticateLiquidAuth(
       });
     }
 
-    const challenge = encoding.fromBase64Url(assertionOptions.options.challenge);
-
     const liquidOptions = {
       requestId,
       origin,
       type: 'algorand',
       address: walletAddress,
-      signature: encoding.toBase64URL(await key.store.sign(foundKey.id, challenge)),
       device: 'Demo Web Wallet',
     };
 
-    const credential = (await navigator.credentials.get({
-      publicKey: decodedOptions,
-    })) as any;
+    throwIfAborted(signal);
+    const credential = (await credentialOperationWithAbort(
+      navigator.credentials.get({
+        publicKey: decodedOptions,
+        signal,
+      }),
+      signal,
+    )) as any;
     if (!isActive()) return { superseded: true };
-    authFlowInProgressRef.current = false;
-
     if (!credential) {
       throw new Error('Credential creation failed');
     }
 
-    const currentPasskeys = await passkey.store.getPasskeys();
     let selectedAddress: string | null = null;
     if (credential.response?.userHandle) {
       try {
@@ -317,25 +323,6 @@ export async function authenticateLiquidAuth(
       setAddress(selectedAddress);
       addressRef.current = selectedAddress;
       liquidOptions.address = selectedAddress;
-
-      // Re-sign the challenge if the address changed to match the selected passkey
-      const selectedPublicKey = decodeAddress(selectedAddress).publicKey;
-      const selectedKey = keyStore.state.keys.find(
-        (k) =>
-          isWalletAccountKey(k) &&
-          k.publicKey &&
-          k.publicKey.length === selectedPublicKey.length &&
-          k.publicKey.every((v, i) => v === selectedPublicKey[i]),
-      );
-
-      if (selectedKey) {
-        console.log('Found key for selected address, re-signing challenge');
-        liquidOptions.signature = encoding.toBase64URL(
-          await key.store.sign(selectedKey.id, challenge),
-        );
-      } else {
-        console.warn('Could not find key for selected address', selectedAddress);
-      }
     }
 
     const encodedCredential = assertion.encoder.encodeCredential(credential);
@@ -356,35 +343,12 @@ export async function authenticateLiquidAuth(
       );
     }
     updateSessionPasskeyCredentialId(requestId, origin, credential.id);
-
-    const matchedKey = await findPasskeyKeyForCredential({
-      credential,
-      passkeys: [...currentPasskeys, ...relevantPasskeys],
-      origin,
-      walletAddress: selectedAddress ?? liquidOptions.address,
-    });
-
-    if (matchedKey) {
-      try {
-        // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-        // can zero its own buffer in `finally` without wiping ours.
-        const masterKey = await readMasterKey(biometricOptions);
-        const keyData = await fetchSecret<KeyData>({
-          keyId: matchedKey.id,
-          options: { masterKey: Buffer.from(masterKey) },
-        });
-        if (keyData) {
-          keyData.metadata = {
-            ...keyData.metadata,
-            origin,
-            ...(selectedAddress ? { userHandle: selectedAddress } : {}),
-            registered: true,
-          };
-          persistKeyMetadata(keyData, masterKey);
-        }
-      } catch (error) {
-        console.error('Failed to update key metadata after assertion:', error);
-      }
+    const responseData = await submitResponse.json().catch(() => null);
+    const pairing = parsePairingCredential(responseData?.pairing);
+    if (pairing) {
+      const reference = await persistPairingCredential(origin, requestId, pairing);
+      updateSessionPairing(requestId, origin, reference);
+      return { superseded: false, pairing };
     }
   } else {
     if (!allowPasskeyCreation) {
@@ -399,6 +363,7 @@ export async function authenticateLiquidAuth(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        requestId,
         attestationType: 'none',
         authenticatorSelection: {
           authenticatorAttachment: 'platform',
@@ -448,15 +413,19 @@ export async function authenticateLiquidAuth(
       })),
     };
 
-    const credential = (await navigator.credentials.create({
-      publicKey: decodedPublicKey,
-    })) as any;
-    if (!isActive()) return { superseded: true };
-    authFlowInProgressRef.current = false;
-
+    throwIfAborted(signal);
+    const credential = (await credentialOperationWithAbort(
+      navigator.credentials.create({
+        publicKey: decodedPublicKey,
+        signal,
+      }),
+      signal,
+    )) as any;
     if (!credential) {
       throw new Error('Credential creation failed');
     }
+    onPasskeyCreated?.();
+    if (!isActive()) return { superseded: true };
 
     setAddress(liquidOptions.address);
     addressRef.current = liquidOptions.address;
@@ -493,36 +462,12 @@ export async function authenticateLiquidAuth(
       );
     }
     updateSessionPasskeyCredentialId(requestId, origin, credential.id);
-
-    const currentPasskeys = await passkey.store.getPasskeys();
-    const matchedKey = await findPasskeyKeyForCredential({
-      credential,
-      passkeys: currentPasskeys,
-      origin,
-      walletAddress: liquidOptions.address,
-    });
-
-    if (matchedKey) {
-      try {
-        // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-        // can zero its own buffer in `finally` without wiping ours.
-        const masterKey = await readMasterKey(biometricOptions);
-        const keyData = await fetchSecret<KeyData>({
-          keyId: matchedKey.id,
-          options: { masterKey: Buffer.from(masterKey) },
-        });
-        if (keyData) {
-          keyData.metadata = {
-            ...keyData.metadata,
-            origin,
-            userHandle: liquidOptions.address,
-            registered: true,
-          };
-          persistKeyMetadata(keyData, masterKey);
-        }
-      } catch (error) {
-        console.error('Failed to update key metadata after attestation:', error);
-      }
+    const responseData = await submitResponse.json().catch(() => null);
+    const pairing = parsePairingCredential(responseData?.pairing);
+    if (pairing) {
+      const reference = await persistPairingCredential(origin, requestId, pairing);
+      updateSessionPairing(requestId, origin, reference);
+      return { superseded: false, pairing };
     }
   }
 

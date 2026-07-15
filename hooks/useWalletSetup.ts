@@ -1,6 +1,11 @@
 import { useProvider } from '@/hooks/useProvider';
 import { bootstrap } from '@/lib/keystore/bootstrap';
+import { clearAllAc2Messages } from '@/stores/ac2Messages';
+import { clearAllAgentIdentities } from '@/stores/agentIdentities';
 import { localStorage } from '@/stores/mmkv-local';
+import { clearAllMessages } from '@/stores/messages';
+import { clearSessions } from '@/stores/sessions';
+import { clearCurrentConnection } from '@/stores/ui';
 import * as bip39 from '@scure/bip39';
 import { mnemonicToSeed } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
@@ -22,6 +27,12 @@ export function useWalletSetup() {
   const setupFromMnemonic = useCallback(
     async (mnemonic: string): Promise<void> => {
       const recoveryPhrase = mnemonic.split(' ');
+
+      clearCurrentConnection();
+      clearAllMessages();
+      clearAllAc2Messages();
+      clearAllAgentIdentities();
+      await clearSessions();
 
       await key.store.clear();
       await account.store.clear();

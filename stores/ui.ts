@@ -64,7 +64,12 @@ export function clearCurrentConnection() {
     currentOrigin: null,
     currentSessionId: null,
     allowPasskeyCreation: false,
+    activeThid: null,
   }));
+}
+/** Consume the scanner-only permission after the first successful auth flow. */
+export function consumePasskeyCreation() {
+  uiStore.setState((s) => ({ ...s, allowPasskeyCreation: false }));
 }
 /** Sync the active conversation thread from `ChatScreen` so History can filter to it. */
 export function setActiveThid(thid: string | null) {

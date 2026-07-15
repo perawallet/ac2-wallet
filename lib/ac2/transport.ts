@@ -5,6 +5,8 @@
  */
 
 import { SignalClient } from '@algorandfoundation/liquid-client';
+import { getPairingAuthorizationFailure } from '@/lib/liquid-auth/connection-errors';
+import { closeSignalClientWhenSafe } from '@/lib/liquid-auth/signal-client';
 
 /** Default ICE config for the Liquid Auth signaling pair. */
 const DEFAULT_ICE_SERVERS = [
@@ -32,6 +34,7 @@ const SIGNALING_TIMEOUT_MS = 30000;
 const SOCKET_CONNECT_TIMEOUT_MS = 10000;
 const SIGNAL_CANDIDATE_NORMALIZER = Symbol('ac2.signalCandidateNormalizer');
 const SIGNAL_CANDIDATE_EVENTS = new Set(['offer-candidate', 'answer-candidate']);
+type SocketListener = (...args: any[]) => unknown;
 
 export interface Ac2TransportSetup {
   /** Active Liquid Auth `SignalClient` (already authenticated). */
@@ -90,7 +93,9 @@ export async function createAc2Transport(
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<RTCDataChannel>((_, reject) => {
     timeoutId = setTimeout(() => {
-      signalClient.peerClient?.close();
+      // Cancel and detach signaling without hard-closing a native peer that may
+      // still be inside react-native-webrtc's asynchronous SDP bridge.
+      void closeSignalClientWhenSafe(signalClient);
       reject(
         new Error(
           'Timed out waiting for Liquid Auth answer-description. Check that the signaling socket is authenticated and the OpenClaw peer is still linked to this requestId.',
@@ -115,8 +120,10 @@ export async function createAc2Transport(
         // remote description when a superseded run is cancelled; tearing the
         // peer down here races that in-flight work and can crash with
         // `peerConnectionSetRemoteDescription(...getPeerConnection() == null)`.
-        // The caller's normal transport cleanup will detach the obsolete
-        // SignalClient/socket without forcing this unsafe native transition.
+        // Detach the obsolete SignalClient/socket without forcing this unsafe
+        // native transition. The caller may still run its normal idempotent
+        // transport cleanup afterward.
+        void closeSignalClientWhenSafe(signalClient);
         // Use a plain Error with name 'AbortError' rather than DOMException
         // for broadest compatibility across Hermes versions.
         const err = new Error('Aborted');
@@ -168,20 +175,103 @@ export function installSignalCandidateNormalizer(signalClient: SignalClient): vo
   }
 
   const originalOn = socket.on.bind(socket);
-  socket.on = (event: string, listener: (...args: any[]) => unknown) => {
+  const originalOff = typeof socket.off === 'function' ? socket.off.bind(socket) : undefined;
+  const originalRemoveListener =
+    typeof socket.removeListener === 'function' ? socket.removeListener.bind(socket) : undefined;
+  const originalOnce = typeof socket.once === 'function' ? socket.once.bind(socket) : undefined;
+  const registrations = new Map<string, Map<SocketListener, SocketListener[]>>();
+
+  const remember = (event: string, listener: SocketListener, wrapped: SocketListener) => {
+    let eventRegistrations = registrations.get(event);
+    if (!eventRegistrations) {
+      eventRegistrations = new Map();
+      registrations.set(event, eventRegistrations);
+    }
+    const wrappedListeners = eventRegistrations.get(listener) ?? [];
+    wrappedListeners.push(wrapped);
+    eventRegistrations.set(listener, wrappedListeners);
+  };
+
+  const forget = (event: string, listener: SocketListener): SocketListener | undefined => {
+    const eventRegistrations = registrations.get(event);
+    const wrappedListeners = eventRegistrations?.get(listener);
+    const wrapped = wrappedListeners?.shift();
+    if (wrappedListeners?.length === 0) eventRegistrations?.delete(listener);
+    if (eventRegistrations?.size === 0) registrations.delete(event);
+    return wrapped;
+  };
+
+  const forgetWrapped = (event: string, listener: SocketListener, wrapped: SocketListener) => {
+    const eventRegistrations = registrations.get(event);
+    const wrappedListeners = eventRegistrations?.get(listener);
+    const index = wrappedListeners?.indexOf(wrapped) ?? -1;
+    if (index >= 0) wrappedListeners?.splice(index, 1);
+    if (wrappedListeners?.length === 0) eventRegistrations?.delete(listener);
+    if (eventRegistrations?.size === 0) registrations.delete(event);
+  };
+
+  const wrap = (event: string, listener: SocketListener): SocketListener => {
+    const wrapped = (candidate: RTCIceCandidateInit, ...args: any[]) =>
+      listener(normalizeIceCandidateForReactNative(candidate), ...args);
+    // component-emitter uses `.fn` to let `off(event, original)` remove a
+    // once-wrapper. Keeping it here also preserves that convention for callers
+    // which bypass our patched removal methods.
+    Object.defineProperty(wrapped, 'fn', { value: listener });
+    remember(event, listener, wrapped);
+    return wrapped;
+  };
+
+  socket.on = (event: string, listener: SocketListener) => {
     if (SIGNAL_CANDIDATE_EVENTS.has(event) && typeof listener === 'function') {
-      return originalOn(event, (candidate: RTCIceCandidateInit, ...args: any[]) =>
-        listener(normalizeIceCandidateForReactNative(candidate), ...args),
-      );
+      return originalOn(event, wrap(event, listener));
     }
 
     return originalOn(event, listener);
   };
 
+  const installRemoval = (
+    methodName: 'off' | 'removeListener',
+    originalRemoval: ((event: string, listener?: SocketListener) => unknown) | undefined,
+  ) => {
+    if (!originalRemoval) return;
+    socket[methodName] = (event: string, listener?: SocketListener) => {
+      if (SIGNAL_CANDIDATE_EVENTS.has(event)) {
+        if (typeof listener === 'function') {
+          const wrapped = forget(event, listener);
+          if (wrapped) return originalRemoval(event, wrapped);
+        } else {
+          registrations.delete(event);
+        }
+      }
+      return originalRemoval(event, listener);
+    };
+  };
+
+  installRemoval('off', originalOff);
+  installRemoval('removeListener', originalRemoveListener);
+
+  if (originalOnce) {
+    socket.once = (event: string, listener: SocketListener) => {
+      if (!SIGNAL_CANDIDATE_EVENTS.has(event) || typeof listener !== 'function') {
+        return originalOnce(event, listener);
+      }
+
+      let wrapped: SocketListener;
+      wrapped = (candidate: RTCIceCandidateInit, ...args: any[]) => {
+        forgetWrapped(event, listener, wrapped);
+        (originalOff ?? originalRemoveListener)?.(event, wrapped);
+        return listener(normalizeIceCandidateForReactNative(candidate), ...args);
+      };
+      Object.defineProperty(wrapped, 'fn', { value: listener });
+      remember(event, listener, wrapped);
+      return originalOn(event, wrapped);
+    };
+  }
+
   Object.defineProperty(socket, SIGNAL_CANDIDATE_NORMALIZER, { value: true });
 }
 
-async function waitForSignalSocketConnected(signalClient: SignalClient): Promise<void> {
+export async function waitForSignalSocketConnected(signalClient: SignalClient): Promise<void> {
   // The liquid-client constructor resolves once socket.io is created, not once
   // it is connected. Sending the SDP after the connect event keeps signaling
   // ordering deterministic on React Native.
@@ -199,7 +289,14 @@ async function waitForSignalSocketConnected(signalClient: SignalClient): Promise
       cleanup();
       resolve();
     };
-    const onConnectError = (err: Error) => {
+    const onConnectError = (err: Error & { code?: unknown; data?: unknown }) => {
+      // Socket.IO emits `connect_error` for transient transport failures too
+      // (offline transitions, proxy resets, failed polling probes). Let the
+      // manager keep trying until our timeout instead of tearing down the whole
+      // WebRTC setup on the first recoverable error. Explicit authorization
+      // failures are terminal for this attempt; the connection supervisor
+      // separately decides whether to revoke or refresh the local credential.
+      if (!getPairingAuthorizationFailure(err)) return;
       cleanup();
       reject(err);
     };
@@ -211,5 +308,8 @@ async function waitForSignalSocketConnected(signalClient: SignalClient): Promise
 
     socket?.on?.('connect', onConnect);
     socket?.on?.('connect_error', onConnectError);
+    // Close the tiny race between the initial `connected` check and listener
+    // registration. Socket.IO may complete synchronously from a warm manager.
+    if (socket?.connected) onConnect();
   });
 }

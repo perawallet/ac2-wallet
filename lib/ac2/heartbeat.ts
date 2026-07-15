@@ -9,6 +9,9 @@ export interface HeartbeatChannelOptions {
   onPing: () => void;
 }
 
+const HEARTBEAT_PING = 'ping';
+const HEARTBEAT_PONG = 'pong';
+
 /**
  * Attach handlers to a discovered `ac2-heartbeat` DataChannel. Returns the
  * channel for caller-side ref storage.
@@ -17,8 +20,15 @@ export function attachHeartbeatChannel(
   channel: RTCDataChannel,
   opts: HeartbeatChannelOptions,
 ): RTCDataChannel {
-  channel.onmessage = () => {
+  channel.onmessage = (event) => {
     opts.onPing();
+    if (event.data === HEARTBEAT_PING && channel.readyState === 'open') {
+      try {
+        channel.send(HEARTBEAT_PONG);
+      } catch {
+        // The native channel may close between the state check and send.
+      }
+    }
   };
   channel.onopen = () => console.log('Heartbeat channel opened');
   channel.onclose = () => console.log('Heartbeat channel closed');

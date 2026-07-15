@@ -5,7 +5,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { localStorage } from '@/stores/mmkv-local';
 import { sessionsStore } from '@/stores/sessions';
-import { setCurrentConnection, uiStore } from '@/stores/ui';
+import { consumePasskeyCreation, setCurrentConnection, uiStore } from '@/stores/ui';
 import { useStore } from '@tanstack/react-store';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -98,9 +98,11 @@ export default function ChatTab() {
   return (
     <Screen edges={[]}>
       <ChatScreen
+        key={`${origin}:${requestId}`}
         origin={origin}
         requestId={requestId}
         allowPasskeyCreation={allowPasskeyCreation}
+        onPasskeyCreationConsumed={consumePasskeyCreation}
       />
     </Screen>
   );
