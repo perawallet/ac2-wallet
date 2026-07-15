@@ -49,6 +49,7 @@
     "@react-navigation/native": "^7.1.8",
     "@scure/base": "^2.0.0",
     "@scure/bip39": "^2.0.1",
+    "@sentry/react-native": "^8.18.0",
     "@tanstack/react-store": "0.9.1",
     "@tanstack/store": "0.9.3",
     "before-after-hook": "^4.0.0",

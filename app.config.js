@@ -166,6 +166,14 @@ module.exports = {
       // screenshot prevention (FLAG_SECURE), which needs no permission, and Play
       // flags READ_MEDIA_IMAGES as a sensitive photo/video permission.
       './plugins/withRemoveMediaPermissions',
+      [
+        '@sentry/react-native/expo',
+        {
+          url: 'https://sentry.io/',
+          project: 'ac2-wallet',
+          organization: 'algorand-foundation',
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,
