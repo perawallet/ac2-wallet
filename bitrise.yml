@@ -181,6 +181,23 @@ workflows:
                 echo "BITRISE_BUILD_NUMBER='$BITRISE_BUILD_NUMBER'  BUILD_NUMBER='$BUILD_NUMBER'"
                 NOTES=$(git log -10 --pretty=format:'- %s' 2>/dev/null || echo "Build $BUILD_NUMBER")
                 envman add --key RELEASE_NOTES --value "$NOTES"
+      - script@1:
+          title: Verify Sentry auth token (when Sentry is enabled)
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                # SENTRY_ENABLED (set by the ios_nightly/android entry workflows) turns
+                # on the @sentry/react-native/expo plugin at `expo prebuild`, which wires
+                # source-map upload into the Xcode "Bundle React Native" / Gradle
+                # assembleRelease build phases. Those phases read SENTRY_AUTH_TOKEN from
+                # the environment — it must exist as a Bitrise Secret (Workflow Editor >
+                # Secrets), NOT in this file. Fail fast here instead of ~20 minutes into
+                # the native build with a buried sentry-cli auth error.
+                if [ "$SENTRY_ENABLED" = "true" ] && [ -z "$SENTRY_AUTH_TOKEN" ]; then
+                  echo "SENTRY_ENABLED=true but SENTRY_AUTH_TOKEN is not set. Add it as a Bitrise Secret." >&2
+                  exit 1
+                fi
       - restore-cache@3:
           title: Restore node_modules
           inputs:
