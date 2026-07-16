@@ -25,7 +25,7 @@ export interface ControlFrameContext {
   requestId: string;
   addressRef: MutableRefObject<string | null>;
   activeThidRef: MutableRefObject<string>;
-  lastUserActivityRef: MutableRefObject<number>;
+  lastInboundActivityRef: MutableRefObject<number>;
   setAgentPresence: (presence: AgentPresence) => void;
   setAgentPresenceDetail: (detail: string | null) => void;
   setActiveStreamText: (text: string) => void;
@@ -39,7 +39,7 @@ export function createControlFrameHandler(ctx: ControlFrameContext): (raw: strin
     requestId,
     addressRef,
     activeThidRef,
-    lastUserActivityRef,
+    lastInboundActivityRef,
     setAgentPresence,
     setAgentPresenceDetail,
     setActiveStreamText,
@@ -52,7 +52,7 @@ export function createControlFrameHandler(ctx: ControlFrameContext): (raw: strin
     if (parsed === null) return false;
     // Any inbound control frame means the agent is alive — reset the
     // inactivity watchdog so a long "thinking" turn is never torn down.
-    lastUserActivityRef.current = Date.now();
+    lastInboundActivityRef.current = Date.now();
     if (parsed === undefined) return true; // malformed payload, swallow
     const frame: any = parsed;
     const fthid: string =
