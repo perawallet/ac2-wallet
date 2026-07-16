@@ -39,8 +39,11 @@ const agentIdentitiesStorage = createMMKV({ id: 'agent-identities' });
  * (`publicKey`, `controllerDid`'s embedded address) that was always correct.
  */
 function normalizeIdentity(identity: AgentIdentity): AgentIdentity {
-  let agentDid = identity.agentDid;
-  let controllerDid = identity.controllerDid;
+  // Stored JSON may predate the current schema — treat missing/non-string
+  // fields as empty rather than throwing (which would blank the whole list
+  // via `loadInitial`'s catch).
+  let agentDid = typeof identity.agentDid === 'string' ? identity.agentDid : '';
+  let controllerDid = typeof identity.controllerDid === 'string' ? identity.controllerDid : '';
   if (!isDidKeyMultibase(agentDid) && identity.publicKey) {
     try {
       agentDid = didKeyFromPublicKeyBase64(identity.publicKey);

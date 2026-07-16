@@ -42,6 +42,29 @@ describe('agentIdentitiesStore load-time normalization', () => {
     jest.dontMock('react-native-mmkv');
   });
 
+  it('tolerates records with missing DID fields without blanking the list', () => {
+    jest.resetModules();
+    jest.doMock('react-native-mmkv', () => ({
+      createMMKV: () => ({
+        getString: () =>
+          JSON.stringify([
+            { ...MALFORMED_STORED_IDENTITY, agentDid: undefined, controllerDid: undefined },
+          ]),
+        set: () => {},
+      }),
+    }));
+
+    const { agentIdentitiesStore } = require('@/stores/agentIdentities');
+    const [identity] = agentIdentitiesStore.state.identities;
+
+    // The record survives; agentDid is still recoverable from publicKey.
+    expect(identity).toBeDefined();
+    expect(identity.agentDid).toBe(EXPECTED_DID);
+    expect(identity.controllerDid).toBe('');
+
+    jest.dontMock('react-native-mmkv');
+  });
+
   it('leaves already-correct multibase did:key values untouched', () => {
     jest.resetModules();
     jest.doMock('react-native-mmkv', () => ({
