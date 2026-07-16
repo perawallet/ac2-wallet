@@ -43,6 +43,9 @@ describe('BackupMnemonicBanner', () => {
     render(<BackupMnemonicBanner />);
 
     fireEvent.press(screen.getByLabelText('Back up recovery phrase'));
-    expect(mockPush).toHaveBeenCalledWith('/onboarding/backup');
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/onboarding/backup',
+      params: { accessToken: expect.any(String) },
+    });
   });
 });

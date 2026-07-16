@@ -1,4 +1,5 @@
 import { Text } from '@/components/ui/text';
+import { createRecoveryPhraseAccessToken } from '@/lib/keystore/recovery-phrase-access';
 import { localStorage } from '@/stores/mmkv-local';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -17,9 +18,14 @@ function BackupMnemonicBanner() {
 
   if (!visible) return null;
 
+  const openBackup = () => {
+    const accessToken = createRecoveryPhraseAccessToken();
+    router.push({ pathname: '/onboarding/backup', params: { accessToken } });
+  };
+
   return (
     <Pressable
-      onPress={() => router.push('/onboarding/backup')}
+      onPress={openBackup}
       accessibilityRole="button"
       accessibilityLabel="Back up recovery phrase"
       className="flex-row items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30"
