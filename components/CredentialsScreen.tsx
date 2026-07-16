@@ -12,9 +12,6 @@ import { useProvider } from '@/hooks/useProvider';
 import { THEME } from '@/lib/theme';
 import { ac2MessagesStore } from '@/stores/ac2Messages';
 import { agentIdentitiesStore, type AgentIdentity } from '@/stores/agentIdentities';
-import { formatMicroAmount, normalizeAlgorandAddress, truncateAddress } from '@/utils/format';
-import type { Account } from '@algorandfoundation/accounts-store';
-import type { Key } from '@algorandfoundation/keystore';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
 import * as Clipboard from 'expo-clipboard';
@@ -30,12 +27,6 @@ function formatDate(ts?: number): string | null {
     month: 'short',
     day: 'numeric',
   });
-}
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
 }
 
 function SectionHeader({
@@ -124,57 +115,6 @@ function PasskeyCard({
   );
 }
 
-function KeyCard({
-  keyItem,
-  iconColor,
-  onCopy,
-  copiedField,
-}: {
-  keyItem: Key;
-  iconColor: string;
-  onCopy: (field: string, value: string) => void;
-  copiedField: string | null;
-}) {
-  const isRegistered = !!(keyItem.metadata as { registered?: boolean } | undefined)?.registered;
-  const pubKey = keyItem.publicKey ? uint8ToBase64(keyItem.publicKey) : null;
-  const subtitle = [keyItem.algorithm ?? 'unknown', keyItem.format].filter(Boolean).join(' · ');
-
-  return (
-    <View className="rounded-2xl bg-card p-5 gap-3">
-      <View className="flex-row items-center gap-3">
-        <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="vpn-key" size={22} color={iconColor} />
-        </View>
-        <View className="flex-1">
-          <Text className="text-base font-semibold text-card-foreground">
-            {keyItem.type ?? 'Key'}
-          </Text>
-          <Text className="text-sm text-muted-foreground">{subtitle}</Text>
-        </View>
-        {isRegistered ? <MaterialIcons name="verified" size={20} color="#10B981" /> : null}
-      </View>
-      <View className="gap-1">
-        <DetailRow
-          label="ID"
-          value={keyItem.id}
-          mono
-          onPress={() => onCopy(`key-id-${keyItem.id}`, keyItem.id)}
-          copied={copiedField === `key-id-${keyItem.id}`}
-        />
-        {pubKey ? (
-          <DetailRow
-            label="Public key"
-            value={pubKey}
-            mono
-            onPress={() => onCopy(`key-pub-${keyItem.id}`, pubKey)}
-            copied={copiedField === `key-pub-${keyItem.id}`}
-          />
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
 function AgentIdentityCard({
   identity,
   iconColor,
@@ -222,52 +162,8 @@ function AgentIdentityCard({
   );
 }
 
-function AccountCard({
-  account,
-  iconColor,
-  onCopy,
-  copiedField,
-}: {
-  account: Account;
-  iconColor: string;
-  onCopy: (field: string, value: string) => void;
-  copiedField: string | null;
-}) {
-  const address = normalizeAlgorandAddress(account.address) ?? account.address;
-  const balanceStr = `${formatMicroAmount(account.balance, 6)} ALGO`;
-
-  return (
-    <View className="rounded-2xl bg-card p-5 gap-3">
-      <View className="flex-row items-center gap-3">
-        <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="account-balance-wallet" size={22} color={iconColor} />
-        </View>
-        <View className="flex-1">
-          <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
-            {truncateAddress(address)}
-          </Text>
-          <Text className="text-sm text-muted-foreground">{account.type}</Text>
-        </View>
-      </View>
-      <View className="gap-1">
-        <DetailRow
-          label="Address"
-          value={address}
-          mono
-          onPress={() => onCopy(`acct-${address}`, address)}
-          copied={copiedField === `acct-${address}`}
-        />
-        <DetailRow label="Balance" value={balanceStr} />
-        {account.assets.length > 0 ? (
-          <DetailRow label="Assets" value={String(account.assets.length)} />
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
 export function CredentialsScreen() {
-  const { passkeys, passkey, keys, accounts } = useProvider();
+  const { passkeys, passkey } = useProvider();
   const agentIdentities = useStore(agentIdentitiesStore, (s) => s.identities);
   const ac2Messages = useStore(ac2MessagesStore, (s) => s.messages);
   const { colorScheme } = useColorScheme();
@@ -319,19 +215,13 @@ export function CredentialsScreen() {
 
   const [expanded, setExpanded] = React.useState({
     passkeys: true,
-    keys: true,
     agentIdentities: true,
-    accounts: true,
   });
 
   const toggle = (section: keyof typeof expanded) =>
     setExpanded((prev) => ({ ...prev, [section]: !prev[section] }));
 
-  const isEmpty =
-    passkeys.length === 0 &&
-    keys.length === 0 &&
-    agentIdentities.length === 0 &&
-    accounts.length === 0;
+  const isEmpty = passkeys.length === 0 && agentIdentities.length === 0;
 
   if (isEmpty) {
     return (
@@ -378,30 +268,6 @@ export function CredentialsScreen() {
           </View>
         )}
 
-        {keys.length > 0 && (
-          <View>
-            <SectionHeader
-              title="Keys"
-              count={keys.length}
-              expanded={expanded.keys}
-              onToggle={() => toggle('keys')}
-            />
-            {expanded.keys && (
-              <View className="px-4 pt-2 gap-3">
-                {keys.map((k) => (
-                  <KeyCard
-                    key={k.id}
-                    keyItem={k}
-                    iconColor={palette.primary}
-                    onCopy={handleCopy}
-                    copiedField={copiedField}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
         {agentIdentities.length > 0 && (
           <View>
             <SectionHeader
@@ -422,30 +288,6 @@ export function CredentialsScreen() {
                       requestId: ident.requestId,
                       publicKey: ident.publicKey,
                     })}
-                    onCopy={handleCopy}
-                    copiedField={copiedField}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        {accounts.length > 0 && (
-          <View>
-            <SectionHeader
-              title="Accounts"
-              count={accounts.length}
-              expanded={expanded.accounts}
-              onToggle={() => toggle('accounts')}
-            />
-            {expanded.accounts && (
-              <View className="px-4 pt-2 gap-3">
-                {(accounts as Account[]).map((acct) => (
-                  <AccountCard
-                    key={acct.address}
-                    account={acct}
-                    iconColor={palette.primary}
                     onCopy={handleCopy}
                     copiedField={copiedField}
                   />
