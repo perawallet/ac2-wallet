@@ -24,6 +24,9 @@ const cameraUsageDescription = 'AC2 uses the camera to scan QR codes to pair wit
 // (source-map upload) below and the runtime Sentry.init() in app/_layout.tsx
 // (read via Constants.expoConfig.extra.sentryEnabled).
 const sentryEnabled = process.env.SENTRY_ENABLED === 'true';
+if (sentryEnabled && !process.env.SENTRY_AUTH_TOKEN) {
+  throw new Error('SENTRY_ENABLED=true but SENTRY_AUTH_TOKEN is not set (needed for Sentry sourcemap upload).');
+}
 
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
