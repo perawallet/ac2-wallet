@@ -14,18 +14,16 @@ const ENV = process.env.APP_ENV || 'debug';
 const buildNumber = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
 const cameraUsageDescription = 'AC2 uses the camera to scan QR codes to pair with AI agents.';
 
-// Sentry is restricted to internal testing artifacts: nightly CI builds, manual
-// APK builds, and internal TestFlight builds — never store release builds. The
-// SENTRY_ENABLED env var is the explicit switch (set per Bitrise workflow: true
-// for the nightly iOS/Android and manual builds, false for the release
-// iOS/Play workflows). When it is unset it defaults ON for any non-production
-// build (local/dev/testing APKs) and OFF for production, so a release artifact
-// can never ship Sentry by accident. This flag gates BOTH the build-time Sentry
-// Expo plugin (source-map upload) below and the runtime Sentry.init() in
-// app/_layout.tsx (read via Constants.expoConfig.extra.sentryEnabled).
-const sentryEnabled = process.env.SENTRY_ENABLED
-  ? process.env.SENTRY_ENABLED === 'true'
-  : ENV !== 'production';
+// Sentry is restricted to internal testing artifacts: nightly CI builds and
+// manual/internal-TestFlight APK-style builds — never store release builds,
+// and never local dev/simulator/emulator debug builds. Opt-in only: it's OFF
+// unless SENTRY_ENABLED=true is explicitly set (Bitrise's ios_nightly/android
+// workflows and the EAS `testing` profile set it; ios_release/android_play,
+// local `expo start`, and Xcode/Android Studio debug runs never do, so they
+// stay off by default). This flag gates BOTH the build-time Sentry Expo plugin
+// (source-map upload) below and the runtime Sentry.init() in app/_layout.tsx
+// (read via Constants.expoConfig.extra.sentryEnabled).
+const sentryEnabled = process.env.SENTRY_ENABLED === 'true';
 
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
