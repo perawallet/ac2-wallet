@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "Sentry": {
+      "url": "https://mcp.sentry.dev/mcp/algorand-foundation/ac2-wallet",
+      "type": "http"
+    }
+  }
+}

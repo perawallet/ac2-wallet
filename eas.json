@@ -16,6 +16,7 @@
       },
       "env": {
         "APP_ENV": "testing",
+        "SENTRY_ENABLED": "true",
         "GRADLE_OPTS": "-Xmx4096m -XX:MaxMetaspaceSize=1g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2"
       }
     },
