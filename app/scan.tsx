@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   button: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#5858F0',
     padding: 12,
     borderRadius: 8,
     alignSelf: 'center',
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     width: 250,
     height: 250,
     borderWidth: 2,
-    borderColor: '#3B82F6',
+    borderColor: '#5858F0',
     backgroundColor: 'transparent',
     borderRadius: 20,
   },

@@ -28,7 +28,7 @@ describe('<SeedPhrase />', () => {
     'kiwi',
     'lemon',
   ];
-  const primaryColor = '#3B82F6';
+  const primaryColor = '#5858F0';
 
   it('renders all words when showSeed is true', () => {
     const { getByText } = render(

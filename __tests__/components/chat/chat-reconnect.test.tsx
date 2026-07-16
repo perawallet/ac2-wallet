@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react-native';
 import * as React from 'react';
+import { KeyboardAvoidingView } from 'react-native';
 
 jest.mock('react-native-mmkv', () => ({
   createMMKV: () => ({ getString: () => undefined, getBoolean: () => false, set: () => {} }),
@@ -39,6 +40,7 @@ jest.mock('@/stores/sessions', () => ({ removeSession: jest.fn(), renameSession:
 jest.mock('@/stores/mmkv-local', () => ({ localStorage: { getBoolean: () => false } }));
 jest.mock('@/stores/ui', () => ({ setActiveThid: jest.fn(), clearCurrentConnection: jest.fn() }));
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+jest.mock('@react-navigation/elements', () => ({ useHeaderHeight: () => 162 }));
 jest.mock('@/hooks/useAc2Responders', () => ({
   useAc2Responders: () => ({
     approveSigning: jest.fn(),
@@ -111,9 +113,10 @@ describe('ChatScreen reconnect footer', () => {
 
   it('shows the live composer when connected', () => {
     mockConnectionState = { ...baseConnection(), isConnected: true };
-    renderChat();
+    const view = renderChat();
 
     expect(screen.getByPlaceholderText('Message')).toBeTruthy();
     expect(screen.queryByLabelText('Reconnect')).toBeNull();
+    expect(view.UNSAFE_getByType(KeyboardAvoidingView).props.keyboardVerticalOffset).toBe(162);
   });
 });

@@ -1,4 +1,5 @@
 import { Text } from '@/components/ui/text';
+import { THEME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -23,7 +24,7 @@ function RawContentViewer({
 }: RawContentViewerProps) {
   const { colorScheme } = useColorScheme();
   const [expanded, setExpanded] = React.useState(initiallyExpanded);
-  const iconColor = colorScheme === 'dark' ? '#E2E8F0' : '#334155';
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const lineCount = content.split('\n').length;
   const canExpand = lineCount > collapsedLines;
 
@@ -37,9 +38,9 @@ function RawContentViewer({
   }, [content, contentType]);
 
   return (
-    <View className={cn('overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-900', className)}>
-      <View className="flex-row items-center border-b border-slate-300 bg-slate-200 px-2 py-1 dark:border-slate-700 dark:bg-slate-950">
-        <Text className="flex-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+    <View className={cn('overflow-hidden rounded-lg bg-muted', className)}>
+      <View className="flex-row items-center border-b border-border bg-secondary px-2 py-1">
+        <Text className="flex-1 font-mono text-[11px] font-semibold text-foreground">
           {contentType}
         </Text>
         <Pressable
@@ -48,7 +49,7 @@ function RawContentViewer({
           accessibilityLabel={`Copy ${contentType}`}
           className="p-1"
         >
-          <MaterialIcons name="content-copy" size={14} color={iconColor} />
+          <MaterialIcons name="content-copy" size={14} color={palette.foreground} />
         </Pressable>
         {canExpand && (
           <Pressable
@@ -60,7 +61,7 @@ function RawContentViewer({
             <MaterialIcons
               name={expanded ? 'expand-less' : 'expand-more'}
               size={16}
-              color={iconColor}
+              color={palette.foreground}
             />
           </Pressable>
         )}

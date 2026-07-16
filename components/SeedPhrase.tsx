@@ -1,7 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TextInput, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TextInput, useWindowDimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/theme';
 
 interface SeedPhraseProps {
   recoveryPhrase: string[];
@@ -11,8 +13,6 @@ interface SeedPhraseProps {
   primaryColor: string;
 }
 
-const { width } = Dimensions.get('window');
-
 export default function SeedPhrase({
   recoveryPhrase,
   showSeed,
@@ -20,6 +20,12 @@ export default function SeedPhrase({
   onInputChange,
   primaryColor,
 }: SeedPhraseProps) {
+  const { width } = useWindowDimensions();
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
+  const overlayColor =
+    colorScheme === 'dark' ? 'rgba(16, 16, 37, 0.86)' : 'rgba(247, 247, 255, 0.86)';
+
   const renderWord = (word: string, index: number) => {
     const isTestWord = validateWords !== null && index in validateWords;
     const shouldHideWord = !showSeed && !isTestWord && validateWords === null;
@@ -37,24 +43,30 @@ export default function SeedPhrase({
         exiting={FadeOut.duration(300)}
         style={[
           styles.wordBox,
-          isTestWord && styles.testWordBox,
+          {
+            width: (width - 64) / 3,
+            backgroundColor: palette.card,
+            borderColor: palette.border,
+          },
+          isTestWord && [styles.testWordBox, { width: (width - 56) / 2 }],
           isTestWord && { borderColor: primaryColor },
         ]}
       >
-        <Text style={styles.wordIndex}>{index + 1}.</Text>
+        <Text style={[styles.wordIndex, { color: palette.mutedForeground }]}>{index + 1}.</Text>
         {isTestWord ? (
           <TextInput
-            style={styles.wordInput}
+            style={[styles.wordInput, { color: palette.foreground }]}
             onChangeText={(text) => onInputChange?.(index, text)}
             value={validateWords[index] || ''}
             placeholder={`Word #${index + 1}`}
+            placeholderTextColor={palette.mutedForeground}
             autoCapitalize="none"
             autoCorrect={false}
           />
         ) : shouldHideWord ? (
-          <View style={[styles.wordHidden, { backgroundColor: '#E2E8F0' }]} />
+          <View style={[styles.wordHidden, { backgroundColor: palette.border }]} />
         ) : (
-          <Text style={styles.wordText}>{word}</Text>
+          <Text style={[styles.wordText, { color: palette.foreground }]}>{word}</Text>
         )}
       </Animated.View>
     );
@@ -70,14 +82,30 @@ export default function SeedPhrase({
           ? recoveryPhrase.map((word, index) => renderWord(word, index))
           : // Placeholder grid during initial generation (if phrase not ready yet)
             [...Array(24)].map((_, index) => (
-              <View key={index} style={styles.wordBox}>
-                <Text style={styles.wordIndex}>{index + 1}.</Text>
-                <View style={[styles.wordHidden, { backgroundColor: '#E2E8F0' }]} />
+              <View
+                key={index}
+                style={[
+                  styles.wordBox,
+                  {
+                    width: (width - 64) / 3,
+                    backgroundColor: palette.card,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.wordIndex, { color: palette.mutedForeground }]}>
+                  {index + 1}.
+                </Text>
+                <View style={[styles.wordHidden, { backgroundColor: palette.border }]} />
               </View>
             ))}
 
         {!showSeed && validateWords === null && (
-          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.lockOverlay}>
+          <Animated.View
+            entering={FadeIn}
+            exiting={FadeOut}
+            style={[styles.lockOverlay, { backgroundColor: overlayColor }]}
+          >
             <View style={[styles.lockCircle, { backgroundColor: primaryColor }]}>
               <MaterialIcons name="lock" size={32} color="#FFFFFF" />
             </View>
@@ -99,37 +127,30 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   wordBox: {
-    width: (width - 64) / 3, // 3 columns
     height: 48,
-    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     marginBottom: 4,
   },
   testWordBox: {
-    width: (width - 56) / 2, // 2 columns in test mode
     height: 56,
     borderWidth: 2,
   },
   wordIndex: {
     fontSize: 10,
-    color: '#94A3B8',
     width: 18,
   },
   wordText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1E293B',
   },
   wordInput: {
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
-    color: '#1E293B',
     padding: 0,
   },
   wordHidden: {
@@ -139,7 +160,6 @@ const styles = StyleSheet.create({
   },
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(240, 247, 255, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 12,
@@ -151,10 +171,6 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    boxShadow: '0 2px 8px rgba(16, 16, 37, 0.22)',
   },
 });

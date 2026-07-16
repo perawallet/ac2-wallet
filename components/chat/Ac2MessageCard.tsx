@@ -15,6 +15,7 @@ import {
   type Outcome,
 } from '@/lib/ac2/messageDisplay';
 import { getTransactionSummary, type TransactionSummary } from '@/lib/algorand/transactions';
+import { THEME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
 import type {
@@ -22,6 +23,7 @@ import type {
   AC2SigningRequest as SigningRequestMessage,
 } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -84,6 +86,8 @@ function Ac2MessageCard({
   approveKey,
   rejectKey,
 }: Ac2MessageCardProps) {
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const isOutbound = entry.direction === 'outbound';
   const req =
     !isOutbound && entry.envelope.type === 'ac2/SigningRequest'
@@ -124,7 +128,7 @@ function Ac2MessageCard({
   const [appCallInfoVisible, setAppCallInfoVisible] = React.useState(false);
 
   const cardClass = cn(
-    'my-1 self-stretch rounded-xl border border-border bg-white p-3 dark:bg-slate-800',
+    'my-1 self-stretch rounded-xl border border-border bg-card p-3',
     isOutbound ? 'border-r-4 border-r-primary' : 'border-l-4 border-l-primary',
   );
 
@@ -163,7 +167,7 @@ function Ac2MessageCard({
         <MaterialIcons
           name={fundMoving ? 'account-balance-wallet' : 'verified-user'}
           size={22}
-          color="#6366F1"
+          color={palette.primary}
         />
         <Text className="flex-1 text-sm font-medium leading-snug text-foreground">
           {displayDescription}

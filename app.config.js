@@ -25,7 +25,9 @@ const cameraUsageDescription = 'AC2 uses the camera to scan QR codes to pair wit
 // (read via Constants.expoConfig.extra.sentryEnabled).
 const sentryEnabled = process.env.SENTRY_ENABLED === 'true';
 if (sentryEnabled && !process.env.SENTRY_AUTH_TOKEN) {
-  throw new Error('SENTRY_ENABLED=true but SENTRY_AUTH_TOKEN is not set (needed for Sentry sourcemap upload).');
+  throw new Error(
+    'SENTRY_ENABLED=true but SENTRY_AUTH_TOKEN is not set (needed for Sentry sourcemap upload).',
+  );
 }
 
 // Per-env suffix shared by both platforms; production gets none.
@@ -104,15 +106,15 @@ module.exports = {
     },
     icon: './assets/icon.png',
     splash: {
-      image: './assets/splash.png',
+      image: './assets/splash-logo.png',
       resizeMode: 'contain',
-      backgroundColor: '#0052FF',
-      imageWidth: 578,
+      backgroundColor: '#5858F0',
+      imageWidth: 180,
     },
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#0052FF',
+        backgroundColor: '#5858F0',
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
@@ -129,10 +131,10 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          image: './assets/splash.png',
+          image: './assets/splash-logo.png',
           resizeMode: 'contain',
-          backgroundColor: '#0052FF',
-          imageWidth: 578,
+          backgroundColor: '#5858F0',
+          imageWidth: 180,
         },
       ],
       [
@@ -213,8 +215,8 @@ module.exports = {
         'https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference',
       provider: {
         name: 'AC2 Wallet',
-        primaryColor: '#3B82F6',
-        secondaryColor: '#E1EFFF',
+        primaryColor: '#5858F0',
+        secondaryColor: '#EEEEFE',
         accentColor: '#10B981',
         welcomeMessage: 'Your identity, connected.',
         logo: '',

@@ -50,6 +50,8 @@ function DetailRow({
   copied?: boolean;
 }) {
   const isCopyable = typeof onLongPress === 'function' && value !== '—';
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   return (
     <Pressable
       onLongPress={onLongPress}
@@ -72,7 +74,7 @@ function DetailRow({
           <MaterialIcons
             name={copied ? 'check' : 'content-copy'}
             size={14}
-            color={copied ? '#10B981' : '#94A3B8'}
+            color={copied ? '#10B981' : palette.mutedForeground}
           />
         ) : null}
       </View>
@@ -168,10 +170,12 @@ function PasskeyCard({
 
 function KeyCard({
   keyItem,
+  iconColor,
   onLongPress,
   copiedField,
 }: {
   keyItem: Key;
+  iconColor: string;
   onLongPress: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
@@ -183,7 +187,7 @@ function KeyCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="vpn-key" size={22} color="#64748B" />
+          <MaterialIcons name="vpn-key" size={22} color={iconColor} />
         </View>
         <View className="flex-1">
           <Text className="text-base font-semibold text-card-foreground">
@@ -217,10 +221,12 @@ function KeyCard({
 
 function IdentityCard({
   identity,
+  iconColor,
   onLongPress,
   copiedField,
 }: {
   identity: Identity;
+  iconColor: string;
   onLongPress: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
@@ -228,7 +234,7 @@ function IdentityCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="badge" size={22} color="#6366F1" />
+          <MaterialIcons name="badge" size={22} color={iconColor} />
         </View>
         <View className="flex-1">
           <Text
@@ -265,10 +271,12 @@ function IdentityCard({
 
 function AgentIdentityCard({
   identity,
+  iconColor,
   onLongPress,
   copiedField,
 }: {
   identity: AgentIdentity;
+  iconColor: string;
   onLongPress: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
@@ -277,7 +285,7 @@ function AgentIdentityCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="smart-toy" size={22} color="#6366F1" />
+          <MaterialIcons name="smart-toy" size={22} color={iconColor} />
         </View>
         <View className="flex-1">
           <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
@@ -319,10 +327,12 @@ function AgentIdentityCard({
 
 function AccountCard({
   account,
+  iconColor,
   onLongPress,
   copiedField,
 }: {
   account: Account;
+  iconColor: string;
   onLongPress: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
@@ -333,7 +343,7 @@ function AccountCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="account-balance-wallet" size={22} color="#64748B" />
+          <MaterialIcons name="account-balance-wallet" size={22} color={iconColor} />
         </View>
         <View className="flex-1">
           <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
@@ -485,6 +495,7 @@ export function CredentialsScreen() {
                   <KeyCard
                     key={k.id}
                     keyItem={k}
+                    iconColor={palette.primary}
                     onLongPress={handleCopy}
                     copiedField={copiedField}
                   />
@@ -508,6 +519,7 @@ export function CredentialsScreen() {
                   <IdentityCard
                     key={ident.address}
                     identity={ident}
+                    iconColor={palette.primary}
                     onLongPress={handleCopy}
                     copiedField={copiedField}
                   />
@@ -531,6 +543,7 @@ export function CredentialsScreen() {
                   <AgentIdentityCard
                     key={ident.id}
                     identity={ident}
+                    iconColor={palette.primary}
                     onLongPress={handleCopy}
                     copiedField={copiedField}
                   />
@@ -554,6 +567,7 @@ export function CredentialsScreen() {
                   <AccountCard
                     key={acct.address}
                     account={acct}
+                    iconColor={palette.primary}
                     onLongPress={handleCopy}
                     copiedField={copiedField}
                   />

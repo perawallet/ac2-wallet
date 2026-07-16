@@ -1,10 +1,12 @@
 import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/text';
+import { THEME } from '@/lib/theme';
 import { sessionsStore, type Session } from '@/stores/sessions';
 import { closeDrawer, setCurrentConnection, uiStore } from '@/stores/ui';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
 import { useRouter } from 'expo-router';
+import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -14,6 +16,8 @@ const HEARTBEAT_WINDOW_MS = 1000;
 
 function SessionStatusIndicator({ session }: { session: Session }) {
   const [heartbeatVisible, setHeartbeatVisible] = React.useState(false);
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
 
   React.useEffect(() => {
     if (session.status !== 'active') {
@@ -32,7 +36,11 @@ function SessionStatusIndicator({ session }: { session: Session }) {
   }, [session.lastActivity, session.status]);
 
   const color =
-    session.status === 'failed' ? '#EF4444' : session.status === 'active' ? '#10B981' : '#9CA3AF';
+    session.status === 'failed'
+      ? '#EF4444'
+      : session.status === 'active'
+        ? '#10B981'
+        : palette.mutedForeground;
 
   return (
     <View className="h-6 w-6 items-center justify-center" accessibilityRole="image">
