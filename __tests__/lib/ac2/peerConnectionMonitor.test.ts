@@ -129,6 +129,37 @@ describe('monitorPeerConnection', () => {
     expect(onFailed).toHaveBeenCalledTimes(1);
   });
 
+  it('reports failure when iceConnectionState reaches "closed" directly', () => {
+    const pc = createFakePeer({ iceConnectionState: 'connected', connectionState: 'connected' });
+    const onFailed = jest.fn();
+    monitorPeerConnection(pc as any, { onFailed });
+
+    pc.iceConnectionState = 'closed';
+    pc.emit('iceconnectionstatechange');
+
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith('ice');
+  });
+
+  it('reports failure when connectionState reaches "closed" (secondary signal)', () => {
+    const pc = createFakePeer({ iceConnectionState: 'connected', connectionState: 'connected' });
+    const onFailed = jest.fn();
+    monitorPeerConnection(pc as any, { onFailed });
+
+    pc.connectionState = 'closed';
+    pc.emit('connectionstatechange');
+
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith('ice');
+  });
+
+  it('reports failure immediately when the peer is already closed at attach (iceConnectionState)', () => {
+    const pc = createFakePeer({ iceConnectionState: 'closed', connectionState: 'closed' });
+    const onFailed = jest.fn();
+    monitorPeerConnection(pc as any, { onFailed });
+    expect(onFailed).toHaveBeenCalledTimes(1);
+  });
+
   it('fires onFailed at most once across multiple transitions', () => {
     const pc = createFakePeer({ iceConnectionState: 'connected' });
     const onFailed = jest.fn();

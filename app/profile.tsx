@@ -81,7 +81,7 @@ export default function ProfileOverlay() {
     if (!resolved || (!latestIdentity && !keyMeta)) return null;
     return {
       controllerDid: latestIdentity?.controllerDid ?? keyMeta?.controllerDid ?? '',
-      agentDid: latestIdentity?.agentDid ?? '',
+      agentDid: latestIdentity?.agentDid ?? keyMeta?.agentDid ?? '',
       publicKey: latestIdentity?.publicKey ?? keyMeta?.publicKey ?? '',
       materialHeld: keyMeta?.materialHeld,
       grantedAt: latestIdentity?.createdAt ?? keyMeta?.grantedAt ?? 0,

@@ -6,6 +6,7 @@
 
 import { useCallback } from 'react';
 import { Alert } from 'react-native';
+import { didKeyFromAddress, didKeyFromPublicKey } from '@/lib/ac2/did';
 import {
   buildApprovedKey,
   buildApprovedSigning,
@@ -126,8 +127,8 @@ export function useAc2Responders(opts: Ac2RespondersOptions): Ac2Responders {
         recordAgentIdentity({
           keyId: identityKeyId,
           publicKey: publicKeyB64,
-          agentDid: `did:key:${publicKeyB64}`,
-          controllerDid: `did:key:${address}`,
+          agentDid: didKeyFromPublicKey(publicKey),
+          controllerDid: didKeyFromAddress(address),
           origin,
           requestId,
         });

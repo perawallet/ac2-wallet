@@ -4,6 +4,7 @@
  * private material lives in `lib/keystore` keyed by `keyId`.
  */
 
+import { didKeyFromAddress, didKeyFromPublicKeyBase64, isDidKeyMultibase } from '@/lib/ac2/did';
 import { Store } from '@tanstack/react-store';
 import { createMMKV } from 'react-native-mmkv';
 
@@ -31,10 +32,39 @@ export interface AgentIdentitiesState {
 
 const agentIdentitiesStorage = createMMKV({ id: 'agent-identities' });
 
+/**
+ * Older builds stored `agentDid`/`controllerDid` as raw base64/address
+ * concatenation (`did:key:<base64>`, `did:key:<address>`) instead of proper
+ * multibase `did:key` identifiers. Re-derive them from the key material
+ * (`publicKey`, `controllerDid`'s embedded address) that was always correct.
+ */
+function normalizeIdentity(identity: AgentIdentity): AgentIdentity {
+  let agentDid = identity.agentDid;
+  let controllerDid = identity.controllerDid;
+  if (!isDidKeyMultibase(agentDid) && identity.publicKey) {
+    try {
+      agentDid = didKeyFromPublicKeyBase64(identity.publicKey);
+    } catch {
+      // Leave the stored value as-is if it can't be re-derived.
+    }
+  }
+  if (!isDidKeyMultibase(controllerDid) && controllerDid) {
+    try {
+      controllerDid = didKeyFromAddress(controllerDid.replace(/^did:key:/, ''));
+    } catch {
+      // Leave the stored value as-is if it can't be re-derived.
+    }
+  }
+  return { ...identity, agentDid, controllerDid };
+}
+
 const loadInitial = (): AgentIdentitiesState => {
   try {
     const stored = agentIdentitiesStorage.getString('identities');
-    if (stored) return { identities: JSON.parse(stored) };
+    if (stored) {
+      const identities = (JSON.parse(stored) as AgentIdentity[]).map(normalizeIdentity);
+      return { identities };
+    }
   } catch (error) {
     console.error('Failed to load agent identities from storage:', error);
   }

@@ -796,9 +796,13 @@ export function useConnection(
           if (!active) return;
 
           const sessionAddress = sessionAddressFromData(sessionData);
-          if (sessionAddress) {
+          if (sessionAddress && addressMatchesKey(sessionAddress, foundKey)) {
             setAddress(sessionAddress);
             addressRef.current = sessionAddress;
+          } else if (sessionAddress) {
+            console.warn(
+              'Ignoring final session address that does not match the active wallet key',
+            );
           }
         } else {
           console.log('Session validation failed (ignored for debugging)');

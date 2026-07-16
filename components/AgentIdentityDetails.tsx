@@ -5,6 +5,7 @@
  */
 
 import { Text } from '@/components/ui/text';
+import { didKeyFromAddress, didKeyFromPublicKeyBase64 } from '@/lib/ac2/did';
 import { THEME } from '@/lib/theme';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
 import { AC2MessageTypes } from '@algorandfoundation/ac2-sdk/schema';
@@ -115,19 +116,39 @@ export function getAgentMaterialHeld(
  */
 export function extractAgentKeyFromMessages(
   ac2Messages: Ac2MessageEntry[],
-): Pick<AgentIdentitySummary, 'controllerDid' | 'publicKey' | 'materialHeld' | 'grantedAt'> | null {
+): Pick<
+  AgentIdentitySummary,
+  'controllerDid' | 'agentDid' | 'publicKey' | 'materialHeld' | 'grantedAt'
+> | null {
   let latest: Pick<
     AgentIdentitySummary,
-    'controllerDid' | 'publicKey' | 'materialHeld' | 'grantedAt'
+    'controllerDid' | 'agentDid' | 'publicKey' | 'materialHeld' | 'grantedAt'
   > | null = null;
   for (const entry of ac2Messages) {
     const env = entry.envelope;
     if (env.type !== AC2MessageTypes.KEY_RESPONSE) continue;
     const body = env.body as { status?: string; public_key?: string; material?: string };
     if (body.status !== 'approved') continue;
+    const publicKey = body.public_key ?? '';
+    // Derive both DIDs from the underlying key material (`entry.address` /
+    // `body.public_key`) rather than the wire `from` string or a raw
+    // base64 key, since neither is a valid `did:key` on its own.
+    let controllerDid = '';
+    try {
+      controllerDid = didKeyFromAddress(entry.address);
+    } catch {
+      // Leave blank if the stored address can't be decoded.
+    }
+    let agentDid = '';
+    try {
+      agentDid = publicKey ? didKeyFromPublicKeyBase64(publicKey) : '';
+    } catch {
+      // Leave blank if the public key can't be decoded.
+    }
     const candidate = {
-      controllerDid: env.from,
-      publicKey: body.public_key ?? '',
+      controllerDid,
+      agentDid,
+      publicKey,
       materialHeld: !!body.material && body.material !== 'rejected',
       grantedAt: entry.receivedAt,
     };

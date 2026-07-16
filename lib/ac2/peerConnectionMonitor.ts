@@ -110,8 +110,14 @@ export function monitorPeerConnection(
           onRecovered?.();
         }
         break;
+      case 'closed':
+        // The native PC was closed (remote shutdown or system termination).
+        // react-native-webrtc may jump directly to 'closed' without passing
+        // through 'disconnected' → 'failed', so treat it as a terminal failure.
+        fail();
+        break;
       default:
-        // 'new' | 'checking' | 'closed' — nothing to act on.
+        // 'new' | 'checking' — nothing to act on.
         break;
     }
   };
@@ -119,17 +125,16 @@ export function monitorPeerConnection(
   const onIceChange = () => evaluateIceState();
   const onConnChange = () => {
     if (disposed || failed) return;
-    // Secondary corroboration only: a terminal peer failure is decisive, but
-    // ICE state owns the `disconnected` grace behaviour.
-    if (pc.connectionState === 'failed') fail();
+    // Secondary corroboration: terminal peer states are decisive.
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') fail();
   };
 
   pc.addEventListener('iceconnectionstatechange', onIceChange);
   pc.addEventListener('connectionstatechange', onConnChange);
 
-  // Catch a peer that is already failed/disconnected at attach time.
+  // Catch a peer that is already failed/disconnected/closed at attach time.
   evaluateIceState();
-  if (!failed && pc.connectionState === 'failed') fail();
+  if (!failed && (pc.connectionState === 'failed' || pc.connectionState === 'closed')) fail();
 
   return function dispose() {
     if (disposed) return;
