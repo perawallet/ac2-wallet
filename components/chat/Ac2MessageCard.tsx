@@ -1,9 +1,10 @@
-import { formatTime } from '@/components/chat/format';
 import {
+  KeyRequestExplainer,
   OutcomeRow,
   TechnicalDetails,
   TransactionGroupOverview,
 } from '@/components/chat/Ac2MessageCard.parts';
+import { formatTime } from '@/components/chat/format';
 import { Modal } from '@/components/Modal';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
@@ -172,6 +173,9 @@ function Ac2MessageCard({
           {displayDescription}
         </Text>
       </View>
+
+      {/* ── Identity request explainer (key requests only) ──── */}
+      {keyReq && <KeyRequestExplainer />}
 
       {/* ── Transaction warning (legal-approved copy; fund-moving only) ─── */}
       {fundMoving &&

@@ -1,6 +1,5 @@
 import { RawContentViewer } from '@/components/ui/RawContentViewer';
 import { Text } from '@/components/ui/text';
-import { THEME } from '@/lib/theme';
 import {
   directionLabel,
   displayHintLabel,
@@ -8,11 +7,12 @@ import {
   getTransactionWarnings,
   signatureLabel,
   transactionTypeLabel,
-  type TransactionRequestContext,
   type Outcome,
+  type TransactionRequestContext,
   type ValueSummaryData,
 } from '@/lib/ac2/messageDisplay';
 import type { TransactionSummary } from '@/lib/algorand/transactions';
+import { THEME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { Ac2Direction, Ac2MessageEntry } from '@/stores/ac2Messages';
 import { truncateAddress } from '@/utils/format';
@@ -245,6 +245,22 @@ export function TransactionGroupOverview({
           </Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/** Plain-language explainer shown on `ac2/KeyRequest` (agent identity) cards so
+ *  the user understands what the identity key is for before approving. */
+export function KeyRequestExplainer() {
+  return (
+    <View className="mt-2 flex-row items-start gap-2 rounded-lg border border-border bg-muted p-2.5">
+      <View className="flex-1">
+        <Text className="text-sm font-semibold text-foreground">Agent identity request</Text>
+        <Text className="mt-0.5 text-xs leading-snug text-muted-foreground">
+          Dedicated AC2 identity key for this agent to securely identify in the protocol. Separate
+          from your main wallet key. Your wallet still approves all signing operations.
+        </Text>
+      </View>
     </View>
   );
 }
