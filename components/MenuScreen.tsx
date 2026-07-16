@@ -3,13 +3,13 @@ import { Text } from '@/components/ui/text';
 import { useProvider } from '@/hooks/useProvider';
 import { clearStoredMnemonic } from '@/hooks/useWalletSetup';
 import { THEME } from '@/lib/theme';
+import { networkStore, setNetwork } from '@/stores/network';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 import { useEffect, useState } from 'react';
-import { networkStore, setNetwork } from '@/stores/network';
+import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 
 function SectionHeader({ label }: { label: string }) {
   return (
@@ -166,6 +166,14 @@ export function MenuScreen() {
           </View>
         </>
       ) : null}
+
+      <Text className="mt-auto pt-6 text-center text-xs text-muted-foreground">
+        Version: {Constants.expoConfig?.version ?? '—'} (Build Number:{' '}
+        {Constants.expoConfig?.ios?.buildNumber ??
+          Constants.expoConfig?.android?.versionCode ??
+          '—'}
+        )
+      </Text>
     </Screen>
   );
 }
