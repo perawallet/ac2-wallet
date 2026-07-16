@@ -4,6 +4,7 @@
  * that the wallet UI uses to answer `SigningRequest` / `KeyRequest`.
  */
 
+import { didKeyFromAddress } from '@/lib/ac2/did';
 import { Buffer } from 'buffer';
 import {
   buildKeyResponse,
@@ -68,7 +69,7 @@ export function buildApprovedKey(args: ApproveKeyArgs): KeyResponseMessage {
     request,
     // Bind `from` to the connected account — the bootstrap `KeyRequest.to`
     // is a wildcard placeholder, so we must override it explicitly.
-    from: `did:key:${controllerAddress}`,
+    from: didKeyFromAddress(controllerAddress),
     body: {
       status: 'approved',
       key_type: request.body.key_type ?? 'ed25519',
@@ -89,7 +90,7 @@ export function buildRejectedKey(
 ): KeyResponseMessage {
   return buildKeyResponse({
     request,
-    ...(controllerAddress ? { from: `did:key:${controllerAddress}` } : {}),
+    ...(controllerAddress ? { from: didKeyFromAddress(controllerAddress) } : {}),
     body: {
       status: 'rejected',
       key_type: request.body.key_type ?? 'ed25519',

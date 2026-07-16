@@ -4,6 +4,7 @@
  * `Ac2Client` so the agent routes plain-text chat to the right thread.
  */
 
+import { didKeyFromAddress } from '@/lib/ac2/did';
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
 import { buildConversationClose, buildConversationOpen } from './threads';
 
@@ -37,7 +38,7 @@ export function sendConversationOpen(
   try {
     client.send(
       buildConversationOpen({
-        from: `did:key:${address}`,
+        from: didKeyFromAddress(address),
         to: 'did:ac2:agent',
         thid,
         ...(title !== undefined ? { title } : {}),
@@ -56,7 +57,7 @@ export function sendConversationClose(opts: ConversationControllerOptions, thid:
   try {
     client.send(
       buildConversationClose({
-        from: `did:key:${address}`,
+        from: didKeyFromAddress(address),
         to: 'did:ac2:agent',
         thid,
       }),
