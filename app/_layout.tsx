@@ -17,14 +17,42 @@ import { passkeysStore } from '@/stores/passkeys';
 import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ThemeProvider } from '@react-navigation/native';
+import * as Sentry from '@sentry/react-native';
 import { useStore } from '@tanstack/react-store';
 import { useEventListener } from 'expo';
+import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { registerGlobals } from 'react-native-webrtc';
+
+// Sentry is limited to internal testing builds (nightly CI, manual APK, and
+// internal TestFlight). The build-time SENTRY_ENABLED gate in app.config.js
+// bakes the decision into extra.sentryEnabled; store release builds ship with
+// it false so Sentry.init() never runs. Sentry.wrap() below is a no-op when the
+// SDK is uninitialised, so it is safe to leave unconditional.
+if (Constants.expoConfig?.extra?.sentryEnabled === true) {
+  Sentry.init({
+    dsn: 'https://c84ccad1ce82242356b438236144cd40@o4506796769148928.ingest.us.sentry.io/4511739770699776',
+
+    // Adds more context data to events (IP address, cookies, user, etc.)
+    // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+    sendDefaultPii: false,
+
+    // Enable Logs
+    enableLogs: true,
+
+    // Configure Session Replay
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1,
+    integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+
+    // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+    // spotlight: __DEV__,
+  });
+}
 
 globalPolyfill();
 registerGlobals();
@@ -109,7 +137,7 @@ function RootNavigation({ fontsLoaded }: { fontsLoaded: boolean }) {
   );
 }
 
-export default function RootLayout() {
+export default Sentry.wrap(function RootLayout() {
   const { colorScheme } = useColorScheme();
   const [fontsLoaded] = useFonts({
     ...MaterialIcons.font,
@@ -149,4 +177,4 @@ export default function RootLayout() {
       </PreventScreenshotProvider>
     </FontLoadingContext.Provider>
   );
-}
+});

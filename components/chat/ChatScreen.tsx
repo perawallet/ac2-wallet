@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/text';
 import { useAc2Responders } from '@/hooks/useAc2Responders';
 import { useConnection } from '@/hooks/useConnection';
 import { DEFAULT_THID } from '@/lib/ac2';
+import { THEME } from '@/lib/theme';
 import {
   deriveOutcomeByThid,
   isMergedResponse,
@@ -22,16 +23,11 @@ import { clearAgentIdentitiesByConnection } from '@/stores/agentIdentities';
 import { clearMessages, clearMessagesByConnection, messagesStore } from '@/stores/messages';
 import { removeSession, renameSession } from '@/stores/sessions';
 import { clearCurrentConnection, setActiveThid } from '@/stores/ui';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useStore } from '@tanstack/react-store';
 import * as React from 'react';
+import { useColorScheme } from 'nativewind';
 import { Alert, KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// Height of the header sitting above the chat content in both consumers: the
-// tab's `AppHeader` and the `/session` route's custom header are each an `h-14`
-// (56px) row. Combined with the top safe-area inset it gives the offset the
-// keyboard-avoiding view needs to position the composer correctly.
-const HEADER_HEIGHT = 56;
 
 interface ChatScreenProps {
   origin: string;
@@ -40,7 +36,12 @@ interface ChatScreenProps {
 }
 
 function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScreenProps) {
-  const insets = useSafeAreaInsets();
+  // The tab header can grow when the backup reminder is visible. Reading the
+  // measured navigation header keeps the keyboard offset in sync with its
+  // actual height instead of assuming only the 56pt AppHeader is present.
+  const headerHeight = useHeaderHeight();
+  const { colorScheme } = useColorScheme();
+  const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const {
     isConnected,
     isError,
@@ -257,7 +258,7 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     <KeyboardAvoidingView
       className="flex-1 bg-background"
       behavior="padding"
-      keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
+      keyboardVerticalOffset={headerHeight}
     >
       <ConnectionStatusBar
         isConnected={isConnected}
@@ -312,7 +313,7 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
           value={renameText}
           onChangeText={setRenameText}
           placeholder="Display name"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={palette.mutedForeground}
           returnKeyType="done"
           onSubmitEditing={commitRename}
         />

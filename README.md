@@ -11,7 +11,7 @@ The application is designed as a white-label solution. You can customize the bra
   "extra": {
     "provider": {
       "name": "Aura",
-      "primaryColor": "#3B82F6",
+      "primaryColor": "#5858F0",
       "secondaryColor": "#E1EFFF",
       "accentColor": "#10B981",
       "welcomeMessage": "Your identity, rewarded."

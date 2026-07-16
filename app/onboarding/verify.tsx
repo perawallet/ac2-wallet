@@ -10,7 +10,7 @@ import { getStoredMnemonic } from '@/hooks/useWalletSetup';
 
 export default function VerifyScreen() {
   const router = useRouter();
-  const primaryColor = (Constants.expoConfig?.extra?.provider?.primaryColor as string) ?? '#0052FF';
+  const primaryColor = (Constants.expoConfig?.extra?.provider?.primaryColor as string) ?? '#5858F0';
   const [phrase, setPhrase] = React.useState<string[]>([]);
   const [indices, setIndices] = React.useState<number[]>([]);
   const [input, setInput] = React.useState<{ [k: number]: string }>({});

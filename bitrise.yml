@@ -49,11 +49,11 @@ pipelines:
 stages:
   build:
     workflows:
-      - ios: {}
+      - ios_nightly: {}
       - android: {}
   release:
     workflows:
-      - ios: {}
+      - ios_release: {}
       - android_play: {}
 
 app:
@@ -86,10 +86,41 @@ workflows:
     after_run:
       - _ios
 
+  # Nightly iOS entry: internal TestFlight build WITH Sentry. Sets SENTRY_ENABLED
+  # for the whole VM session (visible to `expo prebuild` and the gym build in
+  # _ios), which turns on both the Sentry Expo plugin (source-map upload) and the
+  # runtime Sentry.init(). This is the only difference from ios_release, so both
+  # just wrap the shared `ios` utility workflow.
+  ios_nightly:
+    meta:
+      bitrise.io:
+        stack: osx-xcode-26.2.x-edge
+        machine_type_id: g2.mac.large
+    envs:
+      - SENTRY_ENABLED: 'true'
+    after_run:
+      - ios
+
+  # Release iOS entry: TestFlight build for store promotion, WITHOUT Sentry.
+  ios_release:
+    meta:
+      bitrise.io:
+        stack: osx-xcode-26.2.x-edge
+        machine_type_id: g2.mac.large
+    envs:
+      - SENTRY_ENABLED: 'false'
+    after_run:
+      - ios
+
+  # Nightly Android: internal release APK -> Firebase App Distribution, WITH
+  # Sentry. SENTRY_ENABLED is exported for the whole VM so both `expo prebuild`
+  # and the Gradle build in _android_firebase pick it up.
   android:
     meta:
       bitrise.io:
         stack: ubuntu-noble-24.04-bitrise-2025-android
+    envs:
+      - SENTRY_ENABLED: 'true'
     before_run:
       - _prepare
     after_run:
@@ -98,11 +129,13 @@ workflows:
 
   # Release build -> Google Play internal track. Shares the Android setup with
   # the nightly Firebase workflow; only the artifact (AAB vs APK) and upload
-  # target differ.
+  # target differ. Store-bound, so Sentry is OFF.
   android_play:
     meta:
       bitrise.io:
         stack: ubuntu-noble-24.04-bitrise-2025-android
+    envs:
+      - SENTRY_ENABLED: 'false'
     before_run:
       - _prepare
     after_run:
@@ -112,11 +145,14 @@ workflows:
   # Build-only: produces a signed release AAB and publishes it as a build
   # artifact, with NO Play upload. Run this once to get the first AAB for the
   # manual Play Console upload (supply can't bootstrap a new app). Needs no
-  # Play service account — only the signing keystore secrets.
+  # Play service account — only the signing keystore secrets. Store-bound AAB,
+  # so Sentry is OFF (this is not a manual APK debugging build).
   android_play_build:
     meta:
       bitrise.io:
         stack: ubuntu-noble-24.04-bitrise-2025-android
+    envs:
+      - SENTRY_ENABLED: 'false'
     before_run:
       - _prepare
     after_run:
@@ -145,6 +181,23 @@ workflows:
                 echo "BITRISE_BUILD_NUMBER='$BITRISE_BUILD_NUMBER'  BUILD_NUMBER='$BUILD_NUMBER'"
                 NOTES=$(git log -10 --pretty=format:'- %s' 2>/dev/null || echo "Build $BUILD_NUMBER")
                 envman add --key RELEASE_NOTES --value "$NOTES"
+      - script@1:
+          title: Verify Sentry auth token (when Sentry is enabled)
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                # SENTRY_ENABLED (set by the ios_nightly/android entry workflows) turns
+                # on the @sentry/react-native/expo plugin at `expo prebuild`, which wires
+                # source-map upload into the Xcode "Bundle React Native" / Gradle
+                # assembleRelease build phases. Those phases read SENTRY_AUTH_TOKEN from
+                # the environment — it must exist as a Bitrise Secret (Workflow Editor >
+                # Secrets), NOT in this file. Fail fast here instead of ~20 minutes into
+                # the native build with a buried sentry-cli auth error.
+                if [ "$SENTRY_ENABLED" = "true" ] && [ -z "$SENTRY_AUTH_TOKEN" ]; then
+                  echo "SENTRY_ENABLED=true but SENTRY_AUTH_TOKEN is not set. Add it as a Bitrise Secret." >&2
+                  exit 1
+                fi
       - restore-cache@3:
           title: Restore node_modules
           inputs:

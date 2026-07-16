@@ -1,12 +1,17 @@
 import { useProvider } from '@/hooks/useProvider';
+import type { HeartbeatMonitor, MonitoredPeerConnection } from '@/lib/ac2';
 import {
   attachHeartbeatChannel,
   createAc2Client,
   createAc2Transport,
+  createHeartbeatMonitor,
   DEFAULT_THID,
+  describeSelectedCandidatePair,
   generateThid,
+  monitorPeerConnection,
   sendConversationClose,
   sendConversationOpen,
+  summarizeSelectedCandidatePair,
 } from '@/lib/ac2';
 import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
 import { findWalletAccount } from '@/lib/keystore/wallet-account';
@@ -42,6 +47,26 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 // forever. Bounding it turns a silent hang into a rejection that flows into the
 // retry state machine instead.
 const REQUEST_TIMEOUT_MS = 15000;
+// How often to ping the peer over `ac2-heartbeat`, and how long without ANY
+// inbound frame (pong or other traffic) before the peer is presumed dead even
+// though ICE may still report `connected` (a silent stall). ~2 missed pongs.
+const HEARTBEAT_INTERVAL_MS = 20000;
+const HEARTBEAT_TIMEOUT_MS = 45000;
+// A heartbeat-channel send buffer above this suggests frames aren't draining to
+// the peer (a stalling transport) — logged as an early diagnostic.
+const HEARTBEAT_BUFFERED_WARN_BYTES = 256 * 1024;
+// Idle-session policy. Liveness is owned by the ICE monitor + heartbeat
+// watchdog (they detect a dead transport within seconds and auto-reconnect);
+// this slower timer is a secondary safety net that (a) tears down a genuinely
+// idle session and (b) recovers a connection that went stale while backgrounded
+// (JS timers are suspended there, so the watchdog can't fire until foreground).
+const IDLE_SESSION_TIMEOUT_MS = 60000;
+const IDLE_CHECK_INTERVAL_MS = 5000;
+
+// Why a connection was torn down unexpectedly. Routed through `failConnection`
+// so every detector (channel close, setup error, and — added in later phases —
+// ICE state, heartbeat watchdog, send failures) funnels into one recovery path.
+type ConnectionFailureReason = 'channel' | 'setup' | 'ice' | 'heartbeat' | 'send' | 'open';
 
 interface UseConnectionResult {
   session: Session | undefined;
@@ -124,8 +149,20 @@ export function useConnection(
   const streamChannelRef = useRef<RTCDataChannel | null>(null);
   // Dedicated `ac2-heartbeat` liveness channel — out-of-band relative to `ac2-v1`.
   const heartbeatChannelRef = useRef<RTCDataChannel | null>(null);
+  // The negotiated peer connection + the disposer for its connectivity monitor.
+  // The SDK never watches ICE/connection state, so we attach our own once the
+  // data channel opens and tear it down in `clearTransport`.
+  const peerConnectionRef = useRef<MonitoredPeerConnection | null>(null);
+  const peerMonitorDisposeRef = useRef<(() => void) | null>(null);
+  // Heartbeat liveness watchdog (ping/pong over `ac2-heartbeat`). Started in
+  // `onOpen`, stopped in `clearTransport` / effect cleanup.
+  const heartbeatMonitorRef = useRef<HeartbeatMonitor | null>(null);
   const clientRef = useRef<SignalClient | null>(null);
-  const lastUserActivityRef = useRef<number>(Date.now());
+  // Last time we observed inbound traffic from the peer (frames, envelopes,
+  // heartbeat pongs) vs. the last local user action. Kept separate so an
+  // outbound keepalive can never be mistaken for peer presence.
+  const lastInboundActivityRef = useRef<number>(Date.now());
+  const lastLocalActivityRef = useRef<number>(Date.now());
   const authFlowInProgressRef = useRef<boolean>(false);
   // Ignore one `onClose` when the transport was intentionally torn down.
   const deliberateCloseRef = useRef(false);
@@ -173,6 +210,18 @@ export function useConnection(
   // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
   // "Connecting…" with no way to recover.
   const clearTransport = useCallback(() => {
+    // Stop the liveness watchdog and detach the connectivity monitor before
+    // anything closes the peer, so a deliberate teardown can't be misread as a
+    // heartbeat timeout or an ICE failure.
+    if (heartbeatMonitorRef.current) {
+      heartbeatMonitorRef.current.stop();
+      heartbeatMonitorRef.current = null;
+    }
+    if (peerMonitorDisposeRef.current) {
+      peerMonitorDisposeRef.current();
+      peerMonitorDisposeRef.current = null;
+    }
+    peerConnectionRef.current = null;
     if (ac2ClientRef.current) {
       try {
         ac2ClientRef.current.close();
@@ -230,6 +279,26 @@ export function useConnection(
     }
   }, []);
 
+  // Best-effort, read-only diagnostic: log which ICE path the peer selected
+  // (direct `host` / STUN `srflx` / TURN `relay`). Never logs addresses. Call
+  // before teardown — it reads the peer synchronously and resolves async.
+  const logCandidatePair = useCallback((context: string) => {
+    const pc = clientRef.current?.peerClient;
+    if (!pc || typeof pc.getStats !== 'function') return;
+    pc.getStats()
+      .then((report: any) => {
+        const summary = summarizeSelectedCandidatePair(report);
+        if (summary) {
+          console.log(`[ac2] ${context} path: ${describeSelectedCandidatePair(summary)}`);
+        }
+      })
+      .catch(() => {
+        /* diagnostics only */
+      });
+  }, []);
+  const logCandidatePairRef = useRef(logCandidatePair);
+  logCandidatePairRef.current = logCandidatePair;
+
   const reset = useCallback(() => {
     deliberateCloseRef.current = true;
     userStoppedRef.current = true;
@@ -262,7 +331,9 @@ export function useConnection(
     }
     clearTransport();
     authFlowInProgressRef.current = false;
-    lastUserActivityRef.current = Date.now();
+    // Reset both liveness clocks so the fresh attempt isn't judged idle.
+    lastInboundActivityRef.current = Date.now();
+    lastLocalActivityRef.current = Date.now();
     setError(null);
     setIsConnected(false);
     setIsLoading(true);
@@ -311,6 +382,44 @@ export function useConnection(
   }, []);
   const scheduleAutoReconnectRef = useRef(scheduleAutoReconnect);
   scheduleAutoReconnectRef.current = scheduleAutoReconnect;
+
+  // Single funnel for an unexpected connection failure. Later async detectors
+  // (ICE state, heartbeat watchdog, send errors) all route through this so
+  // teardown + bounded reconnect happen in exactly one place. `isCurrent`
+  // closes over the observing setup run's `active` flag (set false by that
+  // run's cleanup before any newer run starts), so a stale/superseded callback
+  // is ignored and can't tear down or reschedule on top of a newer run.
+  const failConnection = useCallback(
+    (reason: ConnectionFailureReason, isCurrent: () => boolean, error?: Error) => {
+      if (!isCurrent()) return;
+      if (!error) console.log(`Connection lost (${reason})`);
+      // Capture which ICE path this session used before tearing the peer down,
+      // to correlate failures with relay/direct usage (best-effort).
+      logCandidatePairRef.current(`failed(${reason})`);
+      setIsConnected(false);
+      // Drop every stale transport ref so the next reconnect isn't blocked by
+      // the connection effect's guard.
+      clearTransport();
+      // Kick off (or continue) the bounded, serialized retry sequence. Once the
+      // budget is spent, fall back to the manual Reconnect bar (surfacing the
+      // terminal error only for a setup failure).
+      if (!scheduleAutoReconnectRef.current()) {
+        setIsReconnecting(false);
+        setIsLoading(false);
+        if (error) {
+          setError(error);
+          Alert.alert(
+            'Connection Failed',
+            error.message || 'Failed to setup connection to the peer',
+            [{ text: 'OK' }],
+          );
+        }
+      }
+    },
+    [clearTransport],
+  );
+  const failConnectionRef = useRef(failConnection);
+  failConnectionRef.current = failConnection;
 
   // Live mirrors of the connection state so the AppState listener can read the
   // current values without being torn down/re-subscribed on every change (and
@@ -382,9 +491,19 @@ export function useConnection(
       const channel = streamChannelRef.current || dataChannelRef.current;
       if (text.trim() && channel && channel.readyState === 'open' && address) {
         const thid = activeThidRef.current;
-        // Tag the wire frame with the active `thid` so the agent routes it without
-        // racing the separately-delivered `ac2/ConversationOpen` control frame.
-        channel.send(JSON.stringify({ thid, text: text.trim() }));
+        try {
+          // Tag the wire frame with the active `thid` so the agent routes it
+          // without racing the separately-delivered `ac2/ConversationOpen`
+          // control frame.
+          channel.send(JSON.stringify({ thid, text: text.trim() }));
+        } catch (err) {
+          // A send can throw even on an "open" channel once the underlying peer
+          // has died (a zombie transport). Route through the single recovery
+          // funnel instead of crashing, and don't echo a frame we never sent.
+          console.warn('Failed to send message; treating as a dropped connection', err);
+          failConnectionRef.current('send', () => isConnectedRef.current);
+          return;
+        }
         addMessage({
           text: text.trim(),
           sender: 'me',
@@ -394,7 +513,7 @@ export function useConnection(
           thid,
         });
         updateSessionActivity(requestId, origin);
-        lastUserActivityRef.current = Date.now();
+        lastLocalActivityRef.current = Date.now();
       }
     },
     [requestId, origin, address],
@@ -413,7 +532,7 @@ export function useConnection(
       setActiveThid(nextThid);
       activeThidRef.current = nextThid;
       updateSessionActivity(requestId, origin);
-      lastUserActivityRef.current = Date.now();
+      lastLocalActivityRef.current = Date.now();
       return nextThid;
     },
     [origin, requestId, address],
@@ -432,7 +551,7 @@ export function useConnection(
         setActiveThid(DEFAULT_THID);
         activeThidRef.current = DEFAULT_THID;
       }
-      lastUserActivityRef.current = Date.now();
+      lastLocalActivityRef.current = Date.now();
     },
     [address, origin, requestId],
   );
@@ -443,7 +562,16 @@ export function useConnection(
       if (!client) {
         throw new Error('AC2 client not ready (DataChannel not open)');
       }
-      client.send(message);
+      try {
+        client.send(message);
+      } catch (err) {
+        // Surface the failure to the caller (so it won't record the envelope as
+        // sent) AND route through the recovery funnel to reconnect the dead
+        // transport.
+        console.warn('Failed to send AC2 envelope; treating as a dropped connection', err);
+        failConnectionRef.current('send', () => isConnectedRef.current);
+        throw err;
+      }
       addAc2Message({
         origin,
         requestId,
@@ -454,36 +582,26 @@ export function useConnection(
         envelope: message,
       });
       updateSessionActivity(requestId, origin);
-      lastUserActivityRef.current = Date.now();
+      lastLocalActivityRef.current = Date.now();
     },
     [origin, requestId, address],
   );
 
   useEffect(() => {
     let active = true;
-    let heartbeatInterval: any = null;
     let inactivityInterval: any = null;
 
     if (isConnected) {
-      heartbeatInterval = setInterval(() => {
-        // Prefer the `ac2-heartbeat` channel; fall back to the control channel
-        // (empty frame) if the peer didn't negotiate it.
-        const hb = heartbeatChannelRef.current;
-        if (hb && hb.readyState === 'open') {
-          console.log('Sending heartbeat ping');
-          hb.send('ping');
-          if (active) setLastHeartbeat(Date.now());
-        } else if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-          console.log('Sending heartbeat message');
-          dataChannelRef.current.send('');
-          if (active) setLastHeartbeat(Date.now());
-        }
-      }, 20000);
-
       inactivityInterval = setInterval(() => {
         const now = Date.now();
-        const inactiveTime = now - lastUserActivityRef.current;
-        if (inactiveTime >= 60000) {
+        // Any traffic keeps the session alive: measure from the most recent of
+        // inbound peer traffic (frames/pongs) or local user action. A dead
+        // transport is caught far sooner by the ICE monitor / heartbeat
+        // watchdog; this only fires for a genuinely quiet session or one that
+        // went stale while backgrounded.
+        const lastActivity = Math.max(lastInboundActivityRef.current, lastLocalActivityRef.current);
+        const inactiveTime = now - lastActivity;
+        if (inactiveTime >= IDLE_SESSION_TIMEOUT_MS) {
           // A stale connection whose idleness is explained by the app having
           // been backgrounded (timers suspended, no heartbeats) should recover
           // automatically; a genuine foreground idle should not (avoids churn /
@@ -493,7 +611,7 @@ export function useConnection(
           console.log(
             resumeAfterBackground
               ? 'Closing stale connection after background; will reconnect'
-              : 'Closing connection due to inactivity (1 minute)',
+              : 'Closing idle session (no activity)',
           );
           // Fully tear down so the connection effect's guard doesn't keep a
           // stale client around — otherwise a later reconnect is impossible.
@@ -513,12 +631,11 @@ export function useConnection(
             reconnectRef.current();
           }
         }
-      }, 5000);
+      }, IDLE_CHECK_INTERVAL_MS);
     }
 
     return () => {
       active = false;
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (inactivityInterval) clearInterval(inactivityInterval);
     };
   }, [isConnected, clearTransport, origin, requestId]);
@@ -576,6 +693,10 @@ export function useConnection(
       setIsLoading(true);
       setError(null);
       authFlowInProgressRef.current = true;
+
+      // Coarse phase timing so a hang is attributable to auth vs. WebRTC
+      // negotiation vs. the channel-open wait.
+      const setupStartedAt = Date.now();
 
       try {
         const currentSessions = sessionsStore.state.sessions;
@@ -662,6 +783,7 @@ export function useConnection(
           isActive: () => active,
         });
         if (authResult.superseded || !active) return;
+        console.log(`[ac2] auth phase done in ${Date.now() - setupStartedAt}ms`);
 
         // Final validation of the session before connecting
         const finalSessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
@@ -721,7 +843,7 @@ export function useConnection(
           requestId,
           addressRef,
           activeThidRef,
-          lastUserActivityRef,
+          lastInboundActivityRef,
           setAgentPresence,
           setAgentPresenceDetail,
           setActiveStreamText,
@@ -733,14 +855,21 @@ export function useConnection(
           requestId,
           signalClient: client,
           signal: runAbort.signal,
+          onPeerConnection: (pc) => {
+            // Stash the peer connection; the connectivity monitor is attached in
+            // `onOpen`, once the channel is actually live (establishment-phase
+            // failures are already covered by the transport's open deadline).
+            peerConnectionRef.current = pc as unknown as MonitoredPeerConnection;
+          },
           onSideChannel: (channel) => {
             console.log(`[ac2] Discovered channel: ${channel.label}`);
             if (channel.label === 'ac2-heartbeat') {
               heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
-                onPing: () => {
+                onInbound: () => {
                   if (!active) return;
                   wasBackgroundedRef.current = false;
-                  lastUserActivityRef.current = Date.now();
+                  lastInboundActivityRef.current = Date.now();
+                  heartbeatMonitorRef.current?.noteInbound();
                   setLastHeartbeat(Date.now());
                 },
               });
@@ -750,6 +879,8 @@ export function useConnection(
               streamChannelRef.current = channel;
               channel.onmessage = (event) => {
                 if (!active) return;
+                // Any inbound stream frame is proof of peer liveness.
+                heartbeatMonitorRef.current?.noteInbound();
                 if (typeof event.data === 'string') applyControlFrame(event.data);
               };
               channel.onopen = () => console.log('Stream channel opened');
@@ -769,6 +900,7 @@ export function useConnection(
         }
 
         dataChannelRef.current = datachannel;
+        console.log(`[ac2] transport negotiated in ${Date.now() - setupStartedAt}ms`);
 
         // Wallet-side responders (`onSigningRequest` / `onKeyRequest`) are
         // intentionally NOT installed: inbound envelopes are mirrored into
@@ -783,7 +915,8 @@ export function useConnection(
           onInboundEnvelope: () => {
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
-            lastUserActivityRef.current = Date.now();
+            lastInboundActivityRef.current = Date.now();
+            heartbeatMonitorRef.current?.noteInbound();
             setLastHeartbeat(Date.now());
           },
           onRawMessage: (raw: string) => {
@@ -799,14 +932,64 @@ export function useConnection(
             });
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
-            lastUserActivityRef.current = Date.now();
+            lastInboundActivityRef.current = Date.now();
+            heartbeatMonitorRef.current?.noteInbound();
             setLastHeartbeat(Date.now());
           },
           onOpen: () => {
-            console.log('Data channel opened');
+            console.log(`Data channel opened in ${Date.now() - setupStartedAt}ms`);
             if (active) {
               deliberateCloseRef.current = false;
               wasBackgroundedRef.current = false;
+              // Log the negotiated ICE path (direct/STUN/TURN) for this session.
+              logCandidatePairRef.current('connected');
+              // Watch the peer for connectivity loss (ICE disconnected/failed)
+              // the SDK never surfaces — the DataChannel can stay "open" while
+              // the underlying transport is dead. Route a failure through the
+              // single recovery funnel; `() => active` makes a late callback
+              // from a superseded run a no-op.
+              if (peerMonitorDisposeRef.current) peerMonitorDisposeRef.current();
+              peerMonitorDisposeRef.current = peerConnectionRef.current
+                ? monitorPeerConnection(peerConnectionRef.current, {
+                    onFailed: (reason) => failConnectionRef.current(reason, () => active),
+                  })
+                : null;
+              // Start the liveness watchdog. It pings on `ac2-heartbeat` and
+              // fails if the peer stops responding (a silent stall) even while
+              // ICE still reads "connected". Over the `ac2-v1` fallback there is
+              // no pong contract, so run keepalives without a timeout.
+              if (heartbeatMonitorRef.current) heartbeatMonitorRef.current.stop();
+              heartbeatMonitorRef.current = createHeartbeatMonitor({
+                intervalMs: HEARTBEAT_INTERVAL_MS,
+                timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
+                send: () => {
+                  const hb = heartbeatChannelRef.current;
+                  const dc = dataChannelRef.current;
+                  const channel =
+                    hb && hb.readyState === 'open'
+                      ? hb
+                      : dc && dc.readyState === 'open'
+                        ? dc
+                        : null;
+                  if (!channel) return;
+                  // A growing send buffer means frames aren't draining to the
+                  // peer — an early signal the transport is stalling before ICE
+                  // even flips state.
+                  if (channel.bufferedAmount > HEARTBEAT_BUFFERED_WARN_BYTES) {
+                    console.warn(
+                      `Heartbeat send buffer high (${channel.bufferedAmount} bytes) — transport may be stalling`,
+                    );
+                  }
+                  try {
+                    channel.send(channel === hb ? 'ping' : '');
+                  } catch (err) {
+                    console.warn('Heartbeat send failed; treating as a dropped connection', err);
+                    failConnectionRef.current('send', () => active);
+                  }
+                },
+                onTimeout: () => failConnectionRef.current('heartbeat', () => active),
+              });
+              heartbeatMonitorRef.current.start();
               if (autoReconnectTimerRef.current) {
                 clearTimeout(autoReconnectTimerRef.current);
                 autoReconnectTimerRef.current = null;
@@ -825,22 +1008,14 @@ export function useConnection(
           onClose: () => {
             console.log('Data channel closed');
             updateSessionStatus(requestId, origin, 'closed');
-            if (active) {
-              if (deliberateCloseRef.current) {
-                deliberateCloseRef.current = false;
-                return;
-              }
-              setIsConnected(false);
-              // Drop every stale transport ref so the next mount / reconnect
-              // isn't blocked by the connection effect's guard.
-              clearTransport();
-              // Kick off (or continue) the bounded, serialized retry sequence.
-              // Once the budget is spent, fall back to the manual Reconnect bar.
-              if (!scheduleAutoReconnectRef.current()) {
-                setIsReconnecting(false);
-                setIsLoading(false);
-              }
+            // A deliberate teardown (reset / performReconnect / idle close) is
+            // expected — consume the one-shot flag and don't treat it as a
+            // failure. Everything else funnels through the single failure path.
+            if (deliberateCloseRef.current) {
+              deliberateCloseRef.current = false;
+              return;
             }
+            failConnectionRef.current('channel', () => active);
           },
         });
         ac2ClientRef.current = ac2;
@@ -851,34 +1026,13 @@ export function useConnection(
         // clobber its session status. The newer run owns all recovery.
         if (!active || err?.name === 'AbortError') return;
         console.error('Failed to setup connection:', err);
-        // Tear down the partially-established SignalClient before clearing the
-        // ref. The timeout handler only closes the peer connection — also close
-        // the socket so the server-side session doesn't stay open and confuse
-        // the next connection attempt.
-        try {
-          clientRef.current?.peerClient?.close();
-        } catch {
-          /* noop */
-        }
-        try {
-          clientRef.current?.close(true);
-        } catch {
-          /* noop */
-        }
-        clientRef.current = null;
         updateSessionStatus(requestId, origin, 'failed');
-        // Retry recoverable setup failures within the bounded budget; only
-        // surface the terminal error + manual fallback once it's exhausted.
-        if (!scheduleAutoReconnectRef.current()) {
-          setIsReconnecting(false);
-          setError(err);
-          setIsLoading(false);
-          Alert.alert(
-            'Connection Failed',
-            err.message || 'Failed to setup connection to the peer',
-            [{ text: 'OK' }],
-          );
-        }
+        // Funnel through the single failure path: it tears down the
+        // partially-established transport (peer + socket included, via
+        // `clearTransport`) and hands off to the bounded auto-reconnect
+        // scheduler, surfacing the terminal error + manual fallback only once
+        // the retry budget is exhausted.
+        failConnectionRef.current('setup', () => active, err);
       } finally {
         // Only release the auth lock if this run is still the active one.
         // If cleanup already ran (`active = false`), it has already reset the
@@ -896,6 +1050,18 @@ export function useConnection(
       // the guard in `setupConnection`. The `finally` block is guarded by
       // `active` and will not clobber the new run's lock once it acquires it.
       authFlowInProgressRef.current = false;
+      // Stop the watchdog and detach the connectivity monitor before the peer
+      // is closed below, so neither observes the teardown as a failure and no
+      // timers/listeners dangle.
+      if (heartbeatMonitorRef.current) {
+        heartbeatMonitorRef.current.stop();
+        heartbeatMonitorRef.current = null;
+      }
+      if (peerMonitorDisposeRef.current) {
+        peerMonitorDisposeRef.current();
+        peerMonitorDisposeRef.current = null;
+      }
+      peerConnectionRef.current = null;
       const hadEstablishedTransport = !!(dataChannelRef.current || ac2ClientRef.current);
       runAbort.abort();
       if (autoReconnectTimerRef.current) {

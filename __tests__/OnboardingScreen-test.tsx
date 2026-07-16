@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import Welcome from '@/app/onboarding';
 
 const mockReplace = jest.fn();
@@ -29,8 +30,12 @@ describe('Welcome', () => {
 
   it('shows the brand title and tagline', () => {
     render(<Welcome />);
-    expect(screen.getByText('AC2 Wallet')).toBeTruthy();
-    expect(screen.getByText('Unleash your agents. Keep control.')).toBeTruthy();
+    expect(screen.getByLabelText('AC2 Wallet')).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        'Your agents. Your keys. Your approval. Approve what your agents do, without ever handing them your keys.',
+      ),
+    ).toBeTruthy();
   });
 
   it('creates a wallet and navigates to /chat', async () => {
@@ -45,5 +50,29 @@ describe('Welcome', () => {
     render(<Welcome />);
     fireEvent.press(screen.getByLabelText('Import Existing Wallet'));
     expect(mockPush).toHaveBeenCalledWith('/onboarding/import');
+  });
+
+  it('renders the exported button treatment', () => {
+    render(<Welcome />);
+
+    expect(StyleSheet.flatten(screen.getByLabelText('Create Wallet').props.style)).toMatchObject({
+      alignItems: 'center',
+      backgroundColor: '#FFFFFF',
+      borderRadius: 6,
+      height: 44,
+      justifyContent: 'center',
+      width: '100%',
+    });
+    expect(
+      StyleSheet.flatten(screen.getByLabelText('Import Existing Wallet').props.style),
+    ).toMatchObject({
+      alignItems: 'center',
+      borderColor: '#FFFFFF',
+      borderRadius: 6,
+      borderWidth: 1,
+      height: 44,
+      justifyContent: 'center',
+      width: '100%',
+    });
   });
 });

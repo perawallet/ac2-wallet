@@ -126,10 +126,12 @@ function PasskeyCard({
 
 function KeyCard({
   keyItem,
+  iconColor,
   onCopy,
   copiedField,
 }: {
   keyItem: Key;
+  iconColor: string;
   onCopy: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
@@ -141,7 +143,7 @@ function KeyCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="vpn-key" size={22} color="#64748B" />
+          <MaterialIcons name="vpn-key" size={22} color={iconColor} />
         </View>
         <View className="flex-1">
           <Text className="text-base font-semibold text-card-foreground">
@@ -175,11 +177,13 @@ function KeyCard({
 
 function AgentIdentityCard({
   identity,
+  iconColor,
   materialHeld,
   onCopy,
   copiedField,
 }: {
   identity: AgentIdentity;
+  iconColor: string;
   materialHeld: boolean | undefined;
   onCopy: (field: string, value: string) => void;
   copiedField: string | null;
@@ -196,7 +200,7 @@ function AgentIdentityCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="smart-toy" size={22} color="#6366F1" />
+          <MaterialIcons name="smart-toy" size={22} color={iconColor} />
         </View>
         <View className="flex-1">
           <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
@@ -220,10 +224,12 @@ function AgentIdentityCard({
 
 function AccountCard({
   account,
+  iconColor,
   onCopy,
   copiedField,
 }: {
   account: Account;
+  iconColor: string;
   onCopy: (field: string, value: string) => void;
   copiedField: string | null;
 }) {
@@ -234,7 +240,7 @@ function AccountCard({
     <View className="rounded-2xl bg-card p-5 gap-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="account-balance-wallet" size={22} color="#64748B" />
+          <MaterialIcons name="account-balance-wallet" size={22} color={iconColor} />
         </View>
         <View className="flex-1">
           <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
@@ -383,7 +389,13 @@ export function CredentialsScreen() {
             {expanded.keys && (
               <View className="px-4 pt-2 gap-3">
                 {keys.map((k) => (
-                  <KeyCard key={k.id} keyItem={k} onCopy={handleCopy} copiedField={copiedField} />
+                  <KeyCard
+                    key={k.id}
+                    keyItem={k}
+                    iconColor={palette.primary}
+                    onCopy={handleCopy}
+                    copiedField={copiedField}
+                  />
                 ))}
               </View>
             )}
@@ -404,6 +416,7 @@ export function CredentialsScreen() {
                   <AgentIdentityCard
                     key={ident.id}
                     identity={ident}
+                    iconColor={palette.primary}
                     materialHeld={getAgentMaterialHeld(ac2Messages, {
                       origin: ident.origin,
                       requestId: ident.requestId,
@@ -432,6 +445,7 @@ export function CredentialsScreen() {
                   <AccountCard
                     key={acct.address}
                     account={acct}
+                    iconColor={palette.primary}
                     onCopy={handleCopy}
                     copiedField={copiedField}
                   />
