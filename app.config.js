@@ -14,6 +14,22 @@ const ENV = process.env.APP_ENV || 'debug';
 const buildNumber = process.env.BUILD_NUMBER ? Number(process.env.BUILD_NUMBER) : 1;
 const cameraUsageDescription = 'AC2 uses the camera to scan QR codes to pair with AI agents.';
 
+// Sentry is restricted to internal testing artifacts: nightly CI builds and
+// manual/internal-TestFlight APK-style builds — never store release builds,
+// and never local dev/simulator/emulator debug builds. Opt-in only: it's OFF
+// unless SENTRY_ENABLED=true is explicitly set (Bitrise's ios_nightly/android
+// workflows and the EAS `testing` profile set it; ios_release/android_play,
+// local `expo start`, and Xcode/Android Studio debug runs never do, so they
+// stay off by default). This flag gates BOTH the build-time Sentry Expo plugin
+// (source-map upload) below and the runtime Sentry.init() in app/_layout.tsx
+// (read via Constants.expoConfig.extra.sentryEnabled).
+const sentryEnabled = process.env.SENTRY_ENABLED === 'true';
+if (sentryEnabled && !process.env.SENTRY_AUTH_TOKEN) {
+  throw new Error(
+    'SENTRY_ENABLED=true but SENTRY_AUTH_TOKEN is not set (needed for Sentry sourcemap upload).',
+  );
+}
+
 // Per-env suffix shared by both platforms; production gets none.
 const getEnvSuffix = () => {
   switch (ENV) {
@@ -90,15 +106,15 @@ module.exports = {
     },
     icon: './assets/icon.png',
     splash: {
-      image: './assets/splash.png',
+      image: './assets/splash-logo.png',
       resizeMode: 'contain',
-      backgroundColor: '#0052FF',
-      imageWidth: 578,
+      backgroundColor: '#5858F0',
+      imageWidth: 180,
     },
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#0052FF',
+        backgroundColor: '#5858F0',
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
@@ -115,10 +131,10 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          image: './assets/splash.png',
+          image: './assets/splash-logo.png',
           resizeMode: 'contain',
-          backgroundColor: '#0052FF',
-          imageWidth: 578,
+          backgroundColor: '#5858F0',
+          imageWidth: 180,
         },
       ],
       [
@@ -166,12 +182,31 @@ module.exports = {
       // screenshot prevention (FLAG_SECURE), which needs no permission, and Play
       // flags READ_MEDIA_IMAGES as a sensitive photo/video permission.
       './plugins/withRemoveMediaPermissions',
+      // Sentry's source-map upload runs during the native build (sentry-cli,
+      // needs $SENTRY_AUTH_TOKEN). Only include it for internal testing builds
+      // so release builds neither upload maps nor require the token. Gated by
+      // the same SENTRY_ENABLED switch that controls runtime Sentry.init().
+      ...(sentryEnabled
+        ? [
+            [
+              '@sentry/react-native/expo',
+              {
+                url: 'https://sentry.io/',
+                project: 'ac2-wallet',
+                organization: 'algorand-foundation',
+              },
+            ],
+          ]
+        : []),
     ],
     experiments: {
       typedRoutes: true,
       reactCompiler: true,
     },
     extra: {
+      // Runtime Sentry switch, read by app/_layout.tsx to decide whether to
+      // call Sentry.init(). Baked in at build time from the SENTRY_ENABLED gate.
+      sentryEnabled,
       termsOfServiceUrl:
         process.env.TERMS_OF_SERVICE_URL || 'https://ac2protocol.org/terms-of-service/',
       privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || 'https://perawallet.app/privacy-policy/',
@@ -180,8 +215,8 @@ module.exports = {
         'https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference',
       provider: {
         name: 'AC2 Wallet',
-        primaryColor: '#3B82F6',
-        secondaryColor: '#E1EFFF',
+        primaryColor: '#5858F0',
+        secondaryColor: '#EEEEFE',
         accentColor: '#10B981',
         welcomeMessage: 'Your identity, connected.',
         logo: '',

@@ -1,36 +1,65 @@
 import { attachHeartbeatChannel } from '@/lib/ac2/heartbeat';
 
+type FakeHeartbeatChannel = {
+  readyState: string;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onopen: (() => void) | null;
+  onclose: (() => void) | null;
+  send: jest.Mock;
+};
+
+function createFakeChannel(readyState = 'open'): FakeHeartbeatChannel {
+  return {
+    readyState,
+    onmessage: null,
+    onopen: null,
+    onclose: null,
+    send: jest.fn(),
+  };
+}
+
 describe('attachHeartbeatChannel', () => {
-  function createChannel(readyState: RTCDataChannelState = 'open') {
-    return {
-      readyState,
-      send: jest.fn(),
-      onmessage: null,
-      onopen: null,
-      onclose: null,
-    } as unknown as RTCDataChannel;
-  }
+  it('replies pong to an inbound ping and reports liveness', () => {
+    const channel = createFakeChannel('open');
+    const onInbound = jest.fn();
+    attachHeartbeatChannel(channel as any, { onInbound });
 
-  it('acknowledges an inbound ping and records liveness', () => {
-    const channel = createChannel();
-    const onPing = jest.fn();
-    attachHeartbeatChannel(channel, { onPing });
+    channel.onmessage?.({ data: 'ping' });
 
-    channel.onmessage?.({ data: 'ping' } as MessageEvent);
-
-    expect(onPing).toHaveBeenCalledTimes(1);
+    expect(onInbound).toHaveBeenCalledTimes(1);
     expect(channel.send).toHaveBeenCalledWith('pong');
   });
 
-  it('does not send on a closed channel or echo pong frames', () => {
-    const closed = createChannel('closed');
-    attachHeartbeatChannel(closed, { onPing: jest.fn() });
-    closed.onmessage?.({ data: 'ping' } as MessageEvent);
-    expect(closed.send).not.toHaveBeenCalled();
+  it('reports liveness on an inbound pong without replying', () => {
+    const channel = createFakeChannel('open');
+    const onInbound = jest.fn();
+    attachHeartbeatChannel(channel as any, { onInbound });
 
-    const open = createChannel();
-    attachHeartbeatChannel(open, { onPing: jest.fn() });
-    open.onmessage?.({ data: 'pong' } as MessageEvent);
-    expect(open.send).not.toHaveBeenCalled();
+    channel.onmessage?.({ data: 'pong' });
+
+    expect(onInbound).toHaveBeenCalledTimes(1);
+    expect(channel.send).not.toHaveBeenCalled();
+  });
+
+  it('does not reply to a ping when the channel is not open', () => {
+    const channel = createFakeChannel('closing');
+    const onInbound = jest.fn();
+    attachHeartbeatChannel(channel as any, { onInbound });
+
+    channel.onmessage?.({ data: 'ping' });
+
+    expect(onInbound).toHaveBeenCalledTimes(1);
+    expect(channel.send).not.toHaveBeenCalled();
+  });
+
+  it('counts a non-string frame as liveness without replying', () => {
+    const channel = createFakeChannel('open');
+    const onInbound = jest.fn();
+    attachHeartbeatChannel(channel as any, { onInbound });
+
+    channel.onmessage?.({ data: new ArrayBuffer(2) });
+
+    expect(onInbound).toHaveBeenCalledTimes(1);
+    expect(channel.send).not.toHaveBeenCalled();
   });
 });

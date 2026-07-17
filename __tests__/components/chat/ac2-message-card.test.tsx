@@ -1,6 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react-native';
 import { Ac2MessageCard } from '@/components/chat/Ac2MessageCard';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -107,6 +107,17 @@ describe('Ac2MessageCard — key request', () => {
     expect(screen.getByText('Sign on your behalf')).toBeTruthy();
     expect(screen.getByText('Approve')).toBeTruthy();
     expect(screen.getByText('Decline')).toBeTruthy();
+  });
+
+  it('explains what the identity request is for', () => {
+    const entry = baseEntry({
+      type: 'ac2/KeyRequest',
+      id: 'req-3b',
+      body: { key_type: 'ed25519', purpose: ['sign', 'verify'], for_operation: 'Act for you' },
+    });
+    render(<Ac2MessageCard entry={entry} isConnected actioned={false} {...handlers} />);
+    expect(screen.getByText('Agent identity request')).toBeTruthy();
+    expect(screen.getByText(/Your wallet still approves all signing/)).toBeTruthy();
   });
 });
 

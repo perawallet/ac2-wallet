@@ -1,106 +1,25 @@
+import {
+  AgentIdentityDetailRows,
+  DetailRow,
+  extractAgentKeyFromMessages,
+  truncateMiddle,
+  type AgentIdentitySummary,
+} from '@/components/AgentIdentityDetails';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { THEME } from '@/lib/theme';
-import { ac2MessagesStore, type Ac2MessageEntry } from '@/stores/ac2Messages';
+import { ac2MessagesStore } from '@/stores/ac2Messages';
 import { agentIdentitiesStore } from '@/stores/agentIdentities';
 import { sessionsStore } from '@/stores/sessions';
 import { uiStore } from '@/stores/ui';
-import { AC2MessageTypes } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
-
-interface AgentKeyMetadata {
-  controllerDid: string;
-  publicKey: string;
-  materialHeld: boolean;
-  grantedAt: number;
-}
-
-function truncateMiddle(value: string, head = 10, tail = 8): string {
-  if (!value) return '';
-  if (value.length <= head + tail + 1) return value;
-  return `${value.slice(0, head)}…${value.slice(-tail)}`;
-}
-
-function formatTimestamp(ms: number): string {
-  if (!ms) return '—';
-  try {
-    return new Date(ms).toLocaleString();
-  } catch {
-    return String(ms);
-  }
-}
-
-function DetailRow({
-  label,
-  value,
-  mono = false,
-  onLongPress,
-  copied = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  onLongPress?: () => void;
-  copied?: boolean;
-}) {
-  const isCopyable = typeof onLongPress === 'function' && value !== '—';
-  return (
-    <Pressable
-      onLongPress={onLongPress}
-      disabled={!isCopyable}
-      delayLongPress={250}
-      accessibilityRole={isCopyable ? 'button' : undefined}
-      accessibilityHint={isCopyable ? 'Long press to copy to clipboard' : undefined}
-      className={`flex-row items-center gap-3 py-1 ${isCopyable ? 'active:opacity-80' : ''}`}
-    >
-      <Text className="shrink-0 text-sm text-muted-foreground">{label}</Text>
-      <View className="min-w-0 flex-1 flex-row items-center justify-end gap-1.5">
-        <Text
-          className={`min-w-0 flex-1 text-right text-sm font-medium text-card-foreground ${mono ? 'font-mono' : ''}`}
-          numberOfLines={1}
-          ellipsizeMode="middle"
-        >
-          {value}
-        </Text>
-        {isCopyable ? (
-          <MaterialIcons
-            name={copied ? 'check' : 'content-copy'}
-            size={14}
-            color={copied ? '#10B981' : '#94A3B8'}
-          />
-        ) : null}
-      </View>
-    </Pressable>
-  );
-}
-
-function extractAgentKey(ac2Msgs: Ac2MessageEntry[]): AgentKeyMetadata | null {
-  let latest: AgentKeyMetadata | null = null;
-  for (const entry of ac2Msgs) {
-    const env = entry.envelope;
-    if (env.type !== AC2MessageTypes.KEY_RESPONSE) continue;
-    const body = env.body as {
-      status?: string;
-      public_key?: string;
-      material?: string;
-    };
-    if (body.status !== 'approved') continue;
-    const candidate: AgentKeyMetadata = {
-      controllerDid: env.from,
-      publicKey: body.public_key ?? '',
-      materialHeld: !!body.material && body.material !== 'rejected',
-      grantedAt: entry.receivedAt,
-    };
-    if (!latest || candidate.grantedAt >= latest.grantedAt) latest = candidate;
-  }
-  return latest;
-}
+import { ScrollView, View } from 'react-native';
 
 export default function ProfileOverlay() {
   const sessions = useStore(sessionsStore, (s) => s.sessions);
@@ -123,9 +42,10 @@ export default function ProfileOverlay() {
   const handleCopyField = React.useCallback(async (field: string, value: string) => {
     if (!value || value === '—') return;
     await Clipboard.setStringAsync(value);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCopiedField(field);
     if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    copyResetTimer.current = setTimeout(() => setCopiedField(null), 1400);
+    copyResetTimer.current = setTimeout(() => setCopiedField(null), 1500);
   }, []);
 
   // Match Chat tab resolution rules so this route reflects the same connection.
@@ -146,13 +66,28 @@ export default function ProfileOverlay() {
 
   const latestIdentity = scopedIdentities[0] ?? null;
 
+  // Cross-reference the AC2 message log — the source of truth for what was
+  // actually granted on the wire — in case the local store record is
+  // missing or out of sync (mirrors the diagnostics screen).
   const keyMeta = React.useMemo(() => {
     if (!resolved) return null;
     const scopedAc2 = ac2Messages.filter(
       (m) => m.origin === resolved.origin && m.requestId === resolved.requestId,
     );
-    return extractAgentKey(scopedAc2);
+    return extractAgentKeyFromMessages(scopedAc2);
   }, [ac2Messages, resolved]);
+
+  const agentSummary: AgentIdentitySummary | null = React.useMemo(() => {
+    if (!resolved || (!latestIdentity && !keyMeta)) return null;
+    return {
+      controllerDid: latestIdentity?.controllerDid ?? keyMeta?.controllerDid ?? '',
+      agentDid: latestIdentity?.agentDid ?? keyMeta?.agentDid ?? '',
+      publicKey: latestIdentity?.publicKey ?? keyMeta?.publicKey ?? '',
+      materialHeld: keyMeta?.materialHeld,
+      grantedAt: latestIdentity?.createdAt ?? keyMeta?.grantedAt ?? 0,
+      keyId: latestIdentity?.keyId,
+    };
+  }, [keyMeta, latestIdentity, resolved]);
 
   return (
     <Screen className="flex-1" edges={['bottom']}>
@@ -205,7 +140,7 @@ export default function ProfileOverlay() {
             <View className="rounded-2xl bg-card p-5 gap-3">
               <View className="flex-row items-center gap-3">
                 <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-                  <MaterialIcons name="vpn-key" size={20} color={palette.primary} />
+                  <MaterialIcons name="smart-toy" size={22} color="#6366F1" />
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-card-foreground">
@@ -217,72 +152,18 @@ export default function ProfileOverlay() {
                 </View>
               </View>
 
-              {latestIdentity || keyMeta ? (
-                <View className="gap-1">
-                  <DetailRow
-                    label="Controller DID"
-                    value={latestIdentity?.controllerDid ?? keyMeta?.controllerDid ?? '—'}
-                    mono
-                    onLongPress={() =>
-                      handleCopyField(
-                        'controllerDid',
-                        latestIdentity?.controllerDid ?? keyMeta?.controllerDid ?? '',
-                      )
-                    }
-                    copied={copiedField === 'controllerDid'}
-                  />
-                  <DetailRow
-                    label="Agent DID"
-                    value={latestIdentity?.agentDid ?? '—'}
-                    mono
-                    onLongPress={() => handleCopyField('agentDid', latestIdentity?.agentDid ?? '')}
-                    copied={copiedField === 'agentDid'}
-                  />
-                  <DetailRow
-                    label="Agent key"
-                    value={latestIdentity?.publicKey ?? keyMeta?.publicKey ?? '—'}
-                    mono
-                    onLongPress={() =>
-                      handleCopyField(
-                        'publicKey',
-                        latestIdentity?.publicKey ?? keyMeta?.publicKey ?? '',
-                      )
-                    }
-                    copied={copiedField === 'publicKey'}
-                  />
-                  <DetailRow
-                    label="Material"
-                    value={
-                      keyMeta
-                        ? keyMeta.materialHeld
-                          ? 'Held by agent'
-                          : 'Not provided'
-                        : 'Unknown'
-                    }
-                  />
-                  <DetailRow
-                    label="Granted"
-                    value={formatTimestamp(latestIdentity?.createdAt ?? keyMeta?.grantedAt ?? 0)}
-                  />
-                  <DetailRow
-                    label="Keystore ID"
-                    value={latestIdentity?.keyId ?? '—'}
-                    mono
-                    onLongPress={() => handleCopyField('keyId', latestIdentity?.keyId ?? '')}
-                    copied={copiedField === 'keyId'}
-                  />
-                </View>
+              {agentSummary ? (
+                <AgentIdentityDetailRows
+                  identity={agentSummary}
+                  keyPrefix="profile"
+                  onCopy={handleCopyField}
+                  copiedField={copiedField}
+                />
               ) : (
                 <Text className="text-sm italic text-muted-foreground">
                   No identity granted yet
                 </Text>
               )}
-
-              {latestIdentity || keyMeta ? (
-                <Text className="text-xs text-muted-foreground">
-                  Long press identity fields to copy
-                </Text>
-              ) : null}
             </View>
           </>
         )}

@@ -1,16 +1,33 @@
 import { HeaderImage } from '@/components/HeaderImage';
 import { Button } from '@/components/ui/button';
-import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { useProvider } from '@/hooks/useProvider';
 import { useWalletSetup } from '@/hooks/useWalletSetup';
 import { THEME } from '@/lib/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
-import { Alert, Linking, Pressable, Modal as RNModal, ScrollView, View } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Pressable,
+  Modal as RNModal,
+  ScrollView,
+  StyleSheet,
+  Text as RNText,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const BRAND_COLOR = '#5858F0';
+const fingerprintBackground = require('../../assets/images/onboarding-fingerprint.png');
+const wordmark = require('../../assets/images/ac2-wallet-wordmark.svg');
+const onboardingCopy = require('../../assets/images/onboarding-copy.svg');
 
 export default function Welcome() {
   const router = useRouter();
@@ -21,6 +38,8 @@ export default function Welcome() {
   const [ageConfirmed, setAgeConfirmed] = React.useState(false);
   const [termsConfirmed, setTermsConfirmed] = React.useState(false);
   const [sanctionsConfirmed, setSanctionsConfirmed] = React.useState(false);
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const iconColor =
     colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
@@ -59,31 +78,62 @@ export default function Welcome() {
   const continueAfterConsent = () => setConsentVisible(false);
 
   return (
-    <Screen className="justify-between">
-      <View className="gap-6">
+    <View style={styles.screen}>
+      <StatusBar style="light" />
+      <Image
+        source={fingerprintBackground}
+        contentFit="cover"
+        contentPosition="top center"
+        accessibilityIgnoresInvertColors
+        style={StyleSheet.absoluteFill}
+      />
+
+      <ScrollView
+        contentInsetAdjustmentBehavior="never"
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          { minHeight: height, paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
+      >
         <HeaderImage />
-        <View className="gap-5 p-6">
-          <Text className="text-center text-3xl font-bold text-foreground">AC2 Wallet</Text>
-          <Text className="text-center text-base text-muted-foreground">
-            Unleash your agents. Keep control.
-          </Text>
-          <Text className="text-center text-base text-muted-foreground">
-            AC2 Wallet is your agentic wallet for secure and private AI interactions.
-          </Text>
+        <View style={styles.intro}>
+          <Image
+            source={wordmark}
+            contentFit="contain"
+            accessible
+            accessibilityLabel="AC2 Wallet"
+            style={[styles.wordmark, { width: width * 0.392 }]}
+          />
+          <Image
+            source={onboardingCopy}
+            contentFit="contain"
+            accessible
+            accessibilityLabel="Your agents. Your keys. Your approval. Approve what your agents do, without ever handing them your keys."
+            style={[styles.onboardingCopy, { width: width * 0.716 }]}
+          />
         </View>
-      </View>
-      <View className="gap-3 p-6">
-        <Button onPress={handleCreate} accessibilityLabel="Create Wallet">
-          <Text className="text-primary-foreground">Create Wallet</Text>
-        </Button>
-        <Button
-          variant="outline"
-          onPress={() => router.push('/onboarding/import')}
-          accessibilityLabel="Import Existing Wallet"
-        >
-          <Text className="text-foreground">Import Existing Wallet</Text>
-        </Button>
-      </View>
+
+        <View style={[styles.actions, { width: width * 0.839 }]}>
+          <Pressable
+            onPress={handleCreate}
+            accessibilityRole="button"
+            accessibilityLabel="Create Wallet"
+            style={styles.primaryButton}
+          >
+            <RNText style={styles.primaryButtonText}>Create wallet</RNText>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/onboarding/import')}
+            accessibilityRole="button"
+            accessibilityLabel="Import Existing Wallet"
+            style={styles.secondaryButton}
+          >
+            <RNText style={styles.secondaryButtonText}>Import existing wallet</RNText>
+          </Pressable>
+        </View>
+      </ScrollView>
 
       <RNModal
         visible={consentVisible}
@@ -217,6 +267,62 @@ export default function Welcome() {
           </View>
         </View>
       </RNModal>
-    </Screen>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: BRAND_COLOR,
+  },
+  content: {
+    flexGrow: 1,
+  },
+  intro: {
+    alignItems: 'center',
+    gap: 26,
+    paddingHorizontal: 30,
+  },
+  wordmark: {
+    aspectRatio: 423 / 84,
+  },
+  onboardingCopy: {
+    aspectRatio: 773 / 174,
+  },
+  actions: {
+    alignSelf: 'center',
+    gap: 10,
+    marginTop: 'auto',
+    paddingTop: 28,
+  },
+  primaryButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderCurve: 'continuous',
+    borderRadius: 6,
+    height: 44,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  primaryButtonText: {
+    color: '#2D2DF1',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    borderColor: '#FFFFFF',
+    borderCurve: 'continuous',
+    borderRadius: 6,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  secondaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+});

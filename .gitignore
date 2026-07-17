@@ -55,3 +55,5 @@ vendor/bundle
 /build
 /config/*
 !/config/.gitkeep
+
+.env.local

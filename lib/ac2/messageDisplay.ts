@@ -1,6 +1,6 @@
-import { TransactionType } from '@algorandfoundation/algokit-utils/transact';
 import type { TransactionSummary } from '@/lib/algorand/transactions';
 import type { Ac2Direction, Ac2MessageEntry } from '@/stores/ac2Messages';
+import { TransactionType } from '@algorandfoundation/algokit-utils/transact';
 
 type Envelope = Ac2MessageEntry['envelope'];
 
