@@ -28,5 +28,7 @@ export { parseStreamControlFrame, STX } from './stream';
 export type { AgentPresence, StreamControlFrame } from './stream';
 export { createAc2Transport } from './transport';
 export type { Ac2TransportSetup, CreateAc2TransportOptions } from './transport';
+export { buildSignalClientOptions, createFetchWithTimeout } from './transportSetup';
+export type { FetchWithTimeout, SignalClientOptions } from './transportSetup';
 
 export type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';

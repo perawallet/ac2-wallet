@@ -1,14 +1,15 @@
+import { ConnectionPhase, useConnectionRecovery } from '@/hooks/useConnectionRecovery';
+import { useLivenessMonitors, type UseLivenessMonitorsResult } from '@/hooks/useLivenessMonitors';
 import { useProvider } from '@/hooks/useProvider';
-import type { HeartbeatMonitor, MonitoredPeerConnection } from '@/lib/ac2';
+import type { MonitoredPeerConnection } from '@/lib/ac2';
 import {
-  attachHeartbeatChannel,
+  buildSignalClientOptions,
   createAc2Client,
   createAc2Transport,
-  createHeartbeatMonitor,
+  createFetchWithTimeout,
   DEFAULT_THID,
   describeSelectedCandidatePair,
   generateThid,
-  monitorPeerConnection,
   sendConversationClose,
   sendConversationOpen,
   summarizeSelectedCandidatePair,
@@ -33,9 +34,8 @@ import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/s
 import { encodeAddress } from '@algorandfoundation/keystore';
 import { SignalClient } from '@algorandfoundation/liquid-client';
 import { useStore } from '@tanstack/react-store';
-import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, type AppStateStatus, NativeModules, Platform } from 'react-native';
+import { Alert, AppState, type AppStateStatus } from 'react-native';
 
 const AUTO_RECONNECT_DELAY_MS = 3000;
 // Bounded auto-reconnect budget. After this many failed automatic attempts we
@@ -63,10 +63,19 @@ const HEARTBEAT_BUFFERED_WARN_BYTES = 256 * 1024;
 const IDLE_SESSION_TIMEOUT_MS = 60000;
 const IDLE_CHECK_INTERVAL_MS = 5000;
 
-// Why a connection was torn down unexpectedly. Routed through `failConnection`
-// so every detector (channel close, setup error, and — added in later phases —
-// ICE state, heartbeat watchdog, send failures) funnels into one recovery path.
-type ConnectionFailureReason = 'channel' | 'setup' | 'ice' | 'heartbeat' | 'send' | 'open';
+interface ConnectionUiState {
+  phase: ConnectionPhase;
+  reconnectAttempt: number;
+  error: Error | null;
+  lastHeartbeat: number;
+}
+
+const initialConnectionUiState: ConnectionUiState = {
+  phase: 'connecting',
+  reconnectAttempt: 0,
+  error: null,
+  lastHeartbeat: Date.now(),
+};
 
 interface UseConnectionResult {
   session: Session | undefined;
@@ -123,7 +132,20 @@ export function useConnection(
   const { accounts, keys, key, passkey } = useProvider();
   const allowPasskeyCreation = options.allowPasskeyCreation ?? false;
 
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectionUi, setConnectionUi] = useState<ConnectionUiState>(initialConnectionUiState);
+  const { phase, reconnectAttempt, error, lastHeartbeat } = connectionUi;
+  const isConnected = phase === 'connected';
+  const isLoading = phase === 'connecting';
+  const isReconnecting = phase === 'reconnecting';
+  const patchConnectionUi = useCallback((patch: Partial<ConnectionUiState>) => {
+    setConnectionUi((state) => ({ ...state, ...patch }));
+  }, []);
+  const noteHeartbeat = useCallback((at: number = Date.now()) => {
+    setConnectionUi((state) => ({ ...state, lastHeartbeat: at }));
+  }, []);
+  const hasAccounts = accounts.length > 0;
+  const hasKeys = keys.length > 0;
+
   const [address, setAddress] = useState<string | null>(null);
   const addressRef = useRef<string | null>(null);
 
@@ -131,33 +153,20 @@ export function useConnection(
     addressRef.current = address;
   }, [address]);
 
-  const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now());
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
   // Auto-reconnect progress surfaced to the UI so it can show a "Reconnecting
   // (n/max)…" state while bounded retries are in flight, and only fall back to
   // the manual Reconnect button once the budget is exhausted.
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const [reconnectAttempt, setReconnectAttempt] = useState(0);
-  // Ref mirror of the attempt counter so the retry scheduler can read/increment
-  // it synchronously without racing React state batching.
-  const reconnectAttemptRef = useRef(0);
   // Bumped by `reconnect()` to re-trigger the connection effect on demand.
   const [reconnectNonce, setReconnectNonce] = useState(0);
 
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const streamChannelRef = useRef<RTCDataChannel | null>(null);
-  // Dedicated `ac2-heartbeat` liveness channel — out-of-band relative to `ac2-v1`.
-  const heartbeatChannelRef = useRef<RTCDataChannel | null>(null);
-  // The negotiated peer connection + the disposer for its connectivity monitor.
-  // The SDK never watches ICE/connection state, so we attach our own once the
-  // data channel opens and tear it down in `clearTransport`.
-  const peerConnectionRef = useRef<MonitoredPeerConnection | null>(null);
-  const peerMonitorDisposeRef = useRef<(() => void) | null>(null);
-  // Heartbeat liveness watchdog (ping/pong over `ac2-heartbeat`). Started in
-  // `onOpen`, stopped in `clearTransport` / effect cleanup.
-  const heartbeatMonitorRef = useRef<HeartbeatMonitor | null>(null);
   const clientRef = useRef<SignalClient | null>(null);
+  // Transport-liveness watchdogs (heartbeat + ICE monitor), owned by
+  // `useLivenessMonitors`. Held in a ref so `clearTransport` (declared before
+  // the hook, to break the construction cycle with the recovery hook) can tear
+  // the watchdogs down.
+  const livenessRef = useRef<UseLivenessMonitorsResult | null>(null);
   // Last time we observed inbound traffic from the peer (frames, envelopes,
   // heartbeat pongs) vs. the last local user action. Kept separate so an
   // outbound keepalive can never be mistaken for peer presence.
@@ -166,11 +175,6 @@ export function useConnection(
   const authFlowInProgressRef = useRef<boolean>(false);
   // Ignore one `onClose` when the transport was intentionally torn down.
   const deliberateCloseRef = useRef(false);
-  // Set when the user explicitly disconnects (`reset()`); blocks the
-  // foreground auto-reconnect from resurrecting a session they chose to stop.
-  const userStoppedRef = useRef(false);
-  // One-shot delayed reconnect that mirrors pressing the Reconnect button.
-  const autoReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Last observed `AppState`, so the foreground listener only reacts to a real
   // background/inactive -> active transition (not active -> active repeats).
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -210,18 +214,10 @@ export function useConnection(
   // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
   // "Connecting…" with no way to recover.
   const clearTransport = useCallback(() => {
-    // Stop the liveness watchdog and detach the connectivity monitor before
+    // Stop the liveness watchdogs (and close the heartbeat channel) before
     // anything closes the peer, so a deliberate teardown can't be misread as a
     // heartbeat timeout or an ICE failure.
-    if (heartbeatMonitorRef.current) {
-      heartbeatMonitorRef.current.stop();
-      heartbeatMonitorRef.current = null;
-    }
-    if (peerMonitorDisposeRef.current) {
-      peerMonitorDisposeRef.current();
-      peerMonitorDisposeRef.current = null;
-    }
-    peerConnectionRef.current = null;
+    livenessRef.current?.teardown();
     if (ac2ClientRef.current) {
       try {
         ac2ClientRef.current.close();
@@ -246,14 +242,6 @@ export function useConnection(
         /* noop */
       }
       streamChannelRef.current = null;
-    }
-    if (heartbeatChannelRef.current) {
-      try {
-        heartbeatChannelRef.current.close();
-      } catch {
-        /* noop */
-      }
-      heartbeatChannelRef.current = null;
     }
     if (clientRef.current) {
       try {
@@ -299,127 +287,80 @@ export function useConnection(
   const logCandidatePairRef = useRef(logCandidatePair);
   logCandidatePairRef.current = logCandidatePair;
 
+  const prepareReconnect = useCallback(() => {
+    deliberateCloseRef.current = true;
+    authFlowInProgressRef.current = false;
+    lastInboundActivityRef.current = Date.now();
+    lastLocalActivityRef.current = Date.now();
+  }, []);
+
+  const {
+    autoReconnectTimerRef,
+    userStoppedRef,
+    clearPendingAutoReconnect,
+    resetRecovery,
+    reconnect,
+    reconnectRef,
+    failConnectionRef,
+    markConnected,
+  } = useConnectionRecovery({
+    autoReconnectDelayMs: AUTO_RECONNECT_DELAY_MS,
+    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+    patchUi: patchConnectionUi,
+    clearTransport,
+    prepareReconnect,
+    requestReconnect: () => setReconnectNonce((n) => n + 1),
+    logFailure: (reason) => logCandidatePairRef.current(`failed(${reason})`),
+    onRecoveryExhausted: (connectionError) => {
+      if (!connectionError) return;
+      Alert.alert(
+        'Connection Failed',
+        connectionError.message || 'Failed to setup connection to the peer',
+        [{ text: 'OK' }],
+      );
+    },
+  });
+
+  const {
+    stashPeerConnection,
+    attachHeartbeat,
+    noteInbound: noteLivenessInbound,
+    start: startLiveness,
+    teardown: teardownLiveness,
+  } = useLivenessMonitors({
+    intervalMs: HEARTBEAT_INTERVAL_MS,
+    timeoutMs: HEARTBEAT_TIMEOUT_MS,
+    bufferedWarnBytes: HEARTBEAT_BUFFERED_WARN_BYTES,
+    getFallbackChannel: () => dataChannelRef.current,
+    onInbound: () => {
+      wasBackgroundedRef.current = false;
+      lastInboundActivityRef.current = Date.now();
+      noteHeartbeat();
+    },
+    onFailure: (reason, isCurrent) => failConnectionRef.current(reason, isCurrent),
+  });
+  livenessRef.current = {
+    stashPeerConnection,
+    attachHeartbeat,
+    noteInbound: noteLivenessInbound,
+    start: startLiveness,
+    teardown: teardownLiveness,
+  };
+
   const reset = useCallback(() => {
     deliberateCloseRef.current = true;
-    userStoppedRef.current = true;
-    reconnectAttemptRef.current = 0;
-    if (autoReconnectTimerRef.current) {
-      clearTimeout(autoReconnectTimerRef.current);
-      autoReconnectTimerRef.current = null;
-    }
+    resetRecovery(true);
     clearTransport();
     setActiveStreamText('');
     setAgentPresence(null);
     setAgentPresenceDetail(null);
-    setIsConnected(false);
-    setIsLoading(false);
-    setIsReconnecting(false);
-    setReconnectAttempt(0);
-    setError(null);
+    patchConnectionUi({
+      phase: 'closed',
+      reconnectAttempt: 0,
+      error: null,
+    });
     updateSessionStatus(requestId, origin, 'closed');
-  }, [requestId, origin, clearTransport]);
-
-  // Core reconnect primitive: tear down any stale transport (so the connection
-  // effect's guard doesn't short-circuit), flip into the loading/connecting
-  // state, and bump the nonce to re-run setup. Deliberately does NOT touch the
-  // retry budget so it can back both manual and automatic reconnects.
-  const performReconnect = useCallback(() => {
-    deliberateCloseRef.current = true;
-    if (autoReconnectTimerRef.current) {
-      clearTimeout(autoReconnectTimerRef.current);
-      autoReconnectTimerRef.current = null;
-    }
-    clearTransport();
-    authFlowInProgressRef.current = false;
-    // Reset both liveness clocks so the fresh attempt isn't judged idle.
-    lastInboundActivityRef.current = Date.now();
-    lastLocalActivityRef.current = Date.now();
-    setError(null);
-    setIsConnected(false);
-    setIsLoading(true);
-    setReconnectNonce((n) => n + 1);
-  }, [clearTransport]);
-  const performReconnectRef = useRef(performReconnect);
-  performReconnectRef.current = performReconnect;
-
-  // Manually re-establish a dropped connection (user pressed "Reconnect").
-  // Resets the automatic-retry budget so the user always gets a fresh set of
-  // attempts, and clears any exhausted/failed reconnecting state.
-  const reconnect = useCallback(() => {
-    userStoppedRef.current = false;
-    reconnectAttemptRef.current = 0;
-    setReconnectAttempt(0);
-    setIsReconnecting(false);
-    performReconnect();
-  }, [performReconnect]);
-  const reconnectRef = useRef(reconnect);
-  reconnectRef.current = reconnect;
-
-  // Schedule the next bounded, serialized automatic reconnect attempt. Returns
-  // false when we've exhausted the budget (or the user stopped the session), so
-  // callers can fall back to the manual Reconnect button. Retries never
-  // overlap: a new attempt is only ever scheduled from a prior attempt's
-  // terminal event (transport `onClose` or a setup failure), and the pending
-  // timer/in-flight guards below make double-scheduling impossible — which also
-  // guarantees we never launch two connection attempts (and two blocking
-  // biometric prompts) at once.
-  const scheduleAutoReconnect = useCallback((): boolean => {
-    if (userStoppedRef.current) return false;
-    // A retry is already pending or an attempt is mid-flight — don't stack.
-    if (autoReconnectTimerRef.current) return true;
-    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) return false;
-
-    const attempt = reconnectAttemptRef.current + 1;
-    reconnectAttemptRef.current = attempt;
-    setReconnectAttempt(attempt);
-    setIsReconnecting(true);
-    setIsLoading(false);
-    autoReconnectTimerRef.current = setTimeout(() => {
-      autoReconnectTimerRef.current = null;
-      performReconnectRef.current();
-    }, AUTO_RECONNECT_DELAY_MS);
-    return true;
-  }, []);
-  const scheduleAutoReconnectRef = useRef(scheduleAutoReconnect);
-  scheduleAutoReconnectRef.current = scheduleAutoReconnect;
-
-  // Single funnel for an unexpected connection failure. Later async detectors
-  // (ICE state, heartbeat watchdog, send errors) all route through this so
-  // teardown + bounded reconnect happen in exactly one place. `isCurrent`
-  // closes over the observing setup run's `active` flag (set false by that
-  // run's cleanup before any newer run starts), so a stale/superseded callback
-  // is ignored and can't tear down or reschedule on top of a newer run.
-  const failConnection = useCallback(
-    (reason: ConnectionFailureReason, isCurrent: () => boolean, error?: Error) => {
-      if (!isCurrent()) return;
-      if (!error) console.log(`Connection lost (${reason})`);
-      // Capture which ICE path this session used before tearing the peer down,
-      // to correlate failures with relay/direct usage (best-effort).
-      logCandidatePairRef.current(`failed(${reason})`);
-      setIsConnected(false);
-      // Drop every stale transport ref so the next reconnect isn't blocked by
-      // the connection effect's guard.
-      clearTransport();
-      // Kick off (or continue) the bounded, serialized retry sequence. Once the
-      // budget is spent, fall back to the manual Reconnect bar (surfacing the
-      // terminal error only for a setup failure).
-      if (!scheduleAutoReconnectRef.current()) {
-        setIsReconnecting(false);
-        setIsLoading(false);
-        if (error) {
-          setError(error);
-          Alert.alert(
-            'Connection Failed',
-            error.message || 'Failed to setup connection to the peer',
-            [{ text: 'OK' }],
-          );
-        }
-      }
-    },
-    [clearTransport],
-  );
-  const failConnectionRef = useRef(failConnection);
-  failConnectionRef.current = failConnection;
+  }, [requestId, origin, clearTransport, patchConnectionUi, resetRecovery]);
 
   // Live mirrors of the connection state so the AppState listener can read the
   // current values without being torn down/re-subscribed on every change (and
@@ -484,7 +425,7 @@ export function useConnection(
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
-  }, [origin, requestId]);
+  }, [origin, requestId, autoReconnectTimerRef, reconnectRef, userStoppedRef]);
 
   const send = useCallback(
     (text: string) => {
@@ -516,7 +457,7 @@ export function useConnection(
         lastLocalActivityRef.current = Date.now();
       }
     },
-    [requestId, origin, address],
+    [requestId, origin, address, failConnectionRef],
   );
 
   // Multi-conversation control plane — sends `ac2/Conversation{Open,Close}`
@@ -584,7 +525,7 @@ export function useConnection(
       updateSessionActivity(requestId, origin);
       lastLocalActivityRef.current = Date.now();
     },
-    [origin, requestId, address],
+    [origin, requestId, address, failConnectionRef],
   );
 
   useEffect(() => {
@@ -619,8 +560,7 @@ export function useConnection(
           clearTransport();
           updateSessionStatus(requestId, origin, 'closed');
           if (active) {
-            setIsConnected(false);
-            setIsLoading(false);
+            patchConnectionUi({ phase: 'closed' });
           }
           // If we're already back in the foreground, reconnect now (the
           // foreground AppState handler already ran while we still looked
@@ -638,7 +578,15 @@ export function useConnection(
       active = false;
       if (inactivityInterval) clearInterval(inactivityInterval);
     };
-  }, [isConnected, clearTransport, origin, requestId]);
+  }, [
+    isConnected,
+    clearTransport,
+    origin,
+    requestId,
+    patchConnectionUi,
+    reconnectRef,
+    userStoppedRef,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -650,26 +598,15 @@ export function useConnection(
     // `fetch` with a per-request timeout, also wired to this run's abort signal.
     // A timeout or supersession rejects the request so the outer catch can hand
     // off to the bounded auto-reconnect scheduler instead of hanging.
-    const fetchWithTimeout = (
-      input: string,
-      init: RequestInit = {},
-      timeoutMs: number = REQUEST_TIMEOUT_MS,
-    ): Promise<Response> => {
-      const controller = new AbortController();
-      const onRunAbort = () => controller.abort();
-      if (runAbort.signal.aborted) controller.abort();
-      else runAbort.signal.addEventListener('abort', onRunAbort);
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      return fetch(input, { ...init, signal: controller.signal }).finally(() => {
-        clearTimeout(timer);
-        runAbort.signal.removeEventListener('abort', onRunAbort);
-      });
-    };
+    // `fetch` with a per-request timeout, also wired to this run's abort signal.
+    // A timeout or supersession rejects the request so the outer catch can hand
+    // off to the bounded auto-reconnect scheduler instead of hanging.
+    const fetchWithTimeout = createFetchWithTimeout(runAbort.signal, REQUEST_TIMEOUT_MS);
 
     async function setupConnection() {
       if (!origin || !requestId) {
         console.error('Missing origin or requestId');
-        setIsLoading(false);
+        patchConnectionUi({ phase: 'closed' });
         return;
       }
 
@@ -690,8 +627,7 @@ export function useConnection(
         return;
       }
 
-      setIsLoading(true);
-      setError(null);
+      patchConnectionUi({ phase: 'connecting', error: null });
       authFlowInProgressRef.current = true;
 
       // Coarse phase timing so a hang is attributable to auth vs. WebRTC
@@ -808,29 +744,13 @@ export function useConnection(
           console.log('Session validation failed (ignored for debugging)');
         }
 
-        let options: any = {
-          autoConnect: true,
-          transportOptions: {},
-          withCredentials: true,
-        };
+        const options = await buildSignalClientOptions(origin);
+        if (!active) return;
 
-        if (Platform.OS === 'ios') {
-          options.transports = [EngineIoXHR];
-        } else if (NativeModules.CookieModule) {
-          const cookie = await NativeModules.CookieModule.getCookie(origin);
-
-          if (!active) return;
-
-          if (cookie) {
-            options.extraHeaders = { Cookie: cookie };
-            options.transports = ['polling'];
-            options.transportOptions = {
-              polling: { extraHeaders: { Cookie: cookie } },
-            };
-          }
-        }
-
-        const client = new SignalClient(origin, options);
+        const client = new SignalClient(
+          origin,
+          options as ConstructorParameters<typeof SignalClient>[1],
+        );
 
         if (!active) return;
 
@@ -851,7 +771,7 @@ export function useConnection(
           setAgentPresence,
           setAgentPresenceDetail,
           setActiveStreamText,
-          setLastHeartbeat,
+          setLastHeartbeat: noteHeartbeat,
           setRemoteThreads,
         });
 
@@ -863,20 +783,12 @@ export function useConnection(
             // Stash the peer connection; the connectivity monitor is attached in
             // `onOpen`, once the channel is actually live (establishment-phase
             // failures are already covered by the transport's open deadline).
-            peerConnectionRef.current = pc as unknown as MonitoredPeerConnection;
+            stashPeerConnection(pc as unknown as MonitoredPeerConnection);
           },
           onSideChannel: (channel) => {
             console.log(`[ac2] Discovered channel: ${channel.label}`);
             if (channel.label === 'ac2-heartbeat') {
-              heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
-                onInbound: () => {
-                  if (!active) return;
-                  wasBackgroundedRef.current = false;
-                  lastInboundActivityRef.current = Date.now();
-                  heartbeatMonitorRef.current?.noteInbound();
-                  setLastHeartbeat(Date.now());
-                },
-              });
+              attachHeartbeat(channel);
               return;
             }
             if (channel.label === 'ac2-stream') {
@@ -884,7 +796,7 @@ export function useConnection(
               channel.onmessage = (event) => {
                 if (!active) return;
                 // Any inbound stream frame is proof of peer liveness.
-                heartbeatMonitorRef.current?.noteInbound();
+                noteLivenessInbound();
                 if (typeof event.data === 'string') applyControlFrame(event.data);
               };
               channel.onopen = () => console.log('Stream channel opened');
@@ -920,8 +832,8 @@ export function useConnection(
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
             lastInboundActivityRef.current = Date.now();
-            heartbeatMonitorRef.current?.noteInbound();
-            setLastHeartbeat(Date.now());
+            noteLivenessInbound();
+            noteHeartbeat();
           },
           onRawMessage: (raw: string) => {
             if (applyControlFrame(raw)) return;
@@ -937,8 +849,8 @@ export function useConnection(
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
             lastInboundActivityRef.current = Date.now();
-            heartbeatMonitorRef.current?.noteInbound();
-            setLastHeartbeat(Date.now());
+            noteLivenessInbound();
+            noteHeartbeat();
           },
           onOpen: () => {
             console.log(`Data channel opened in ${Date.now() - setupStartedAt}ms`);
@@ -947,64 +859,13 @@ export function useConnection(
               wasBackgroundedRef.current = false;
               // Log the negotiated ICE path (direct/STUN/TURN) for this session.
               logCandidatePairRef.current('connected');
-              // Watch the peer for connectivity loss (ICE disconnected/failed)
-              // the SDK never surfaces — the DataChannel can stay "open" while
-              // the underlying transport is dead. Route a failure through the
-              // single recovery funnel; `() => active` makes a late callback
-              // from a superseded run a no-op.
-              if (peerMonitorDisposeRef.current) peerMonitorDisposeRef.current();
-              peerMonitorDisposeRef.current = peerConnectionRef.current
-                ? monitorPeerConnection(peerConnectionRef.current, {
-                    onFailed: (reason) => failConnectionRef.current(reason, () => active),
-                  })
-                : null;
-              // Start the liveness watchdog. It pings on `ac2-heartbeat` and
-              // fails if the peer stops responding (a silent stall) even while
-              // ICE still reads "connected". Over the `ac2-v1` fallback there is
-              // no pong contract, so run keepalives without a timeout.
-              if (heartbeatMonitorRef.current) heartbeatMonitorRef.current.stop();
-              heartbeatMonitorRef.current = createHeartbeatMonitor({
-                intervalMs: HEARTBEAT_INTERVAL_MS,
-                timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
-                send: () => {
-                  const hb = heartbeatChannelRef.current;
-                  const dc = dataChannelRef.current;
-                  const channel =
-                    hb && hb.readyState === 'open'
-                      ? hb
-                      : dc && dc.readyState === 'open'
-                        ? dc
-                        : null;
-                  if (!channel) return;
-                  // A growing send buffer means frames aren't draining to the
-                  // peer — an early signal the transport is stalling before ICE
-                  // even flips state.
-                  if (channel.bufferedAmount > HEARTBEAT_BUFFERED_WARN_BYTES) {
-                    console.warn(
-                      `Heartbeat send buffer high (${channel.bufferedAmount} bytes) — transport may be stalling`,
-                    );
-                  }
-                  try {
-                    channel.send(channel === hb ? 'ping' : '');
-                  } catch (err) {
-                    console.warn('Heartbeat send failed; treating as a dropped connection', err);
-                    failConnectionRef.current('send', () => active);
-                  }
-                },
-                onTimeout: () => failConnectionRef.current('heartbeat', () => active),
-              });
-              heartbeatMonitorRef.current.start();
-              if (autoReconnectTimerRef.current) {
-                clearTimeout(autoReconnectTimerRef.current);
-                autoReconnectTimerRef.current = null;
-              }
+              // Attach the ICE monitor and start the heartbeat watchdog now the
+              // channel is live. `() => active` makes a late callback from a
+              // superseded run a no-op.
+              startLiveness(() => active);
               // Successful connection — clear the automatic-retry budget so a
               // future drop starts a fresh set of attempts.
-              reconnectAttemptRef.current = 0;
-              setReconnectAttempt(0);
-              setIsReconnecting(false);
-              setIsConnected(true);
-              setIsLoading(false);
+              markConnected();
               setAc2Client(ac2);
               updateSessionStatus(requestId, origin, 'active');
             }
@@ -1054,24 +915,13 @@ export function useConnection(
       // the guard in `setupConnection`. The `finally` block is guarded by
       // `active` and will not clobber the new run's lock once it acquires it.
       authFlowInProgressRef.current = false;
-      // Stop the watchdog and detach the connectivity monitor before the peer
-      // is closed below, so neither observes the teardown as a failure and no
+      // Stop the watchdogs (and close the heartbeat channel) before the peer is
+      // closed below, so neither observes the teardown as a failure and no
       // timers/listeners dangle.
-      if (heartbeatMonitorRef.current) {
-        heartbeatMonitorRef.current.stop();
-        heartbeatMonitorRef.current = null;
-      }
-      if (peerMonitorDisposeRef.current) {
-        peerMonitorDisposeRef.current();
-        peerMonitorDisposeRef.current = null;
-      }
-      peerConnectionRef.current = null;
+      livenessRef.current?.teardown();
       const hadEstablishedTransport = !!(dataChannelRef.current || ac2ClientRef.current);
       runAbort.abort();
-      if (autoReconnectTimerRef.current) {
-        clearTimeout(autoReconnectTimerRef.current);
-        autoReconnectTimerRef.current = null;
-      }
+      clearPendingAutoReconnect();
       if (ac2ClientRef.current) {
         try {
           ac2ClientRef.current.close();
@@ -1100,7 +950,26 @@ export function useConnection(
         clientRef.current = null;
       }
     };
-  }, [origin, requestId, accounts.length > 0, keys.length > 0, reconnectNonce]);
+  }, [
+    origin,
+    requestId,
+    allowPasskeyCreation,
+    attachHeartbeat,
+    clearPendingAutoReconnect,
+    hasAccounts,
+    hasKeys,
+    isConnected,
+    key,
+    failConnectionRef,
+    markConnected,
+    noteHeartbeat,
+    noteLivenessInbound,
+    passkey,
+    patchConnectionUi,
+    reconnectNonce,
+    stashPeerConnection,
+    startLiveness,
+  ]);
 
   return {
     session,
