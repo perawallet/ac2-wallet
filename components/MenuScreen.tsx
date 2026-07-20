@@ -2,13 +2,15 @@ import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { useProvider } from '@/hooks/useProvider';
 import { clearStoredMnemonic } from '@/hooks/useWalletSetup';
+import { authenticateToViewRecoveryPhrase } from '@/lib/keystore/authenticate';
+import { createRecoveryPhraseAccessToken } from '@/lib/keystore/recovery-phrase-access';
 import { THEME } from '@/lib/theme';
 import { networkStore, setNetwork } from '@/stores/network';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 
 function SectionHeader({ label }: { label: string }) {
@@ -52,6 +54,7 @@ export function MenuScreen() {
   const isDark = colorScheme === 'dark';
   const palette = isDark ? THEME.dark : THEME.light;
   const [currentNetwork, setCurrentNetwork] = useState(networkStore.state.network);
+  const recoveryPhraseAuthPending = useRef(false);
 
   useEffect(() => {
     const subscription = networkStore.subscribe(() => {
@@ -72,6 +75,21 @@ export function MenuScreen() {
       await Linking.openURL(url);
     } catch (error) {
       console.error('Failed to open URL', { url, error });
+    }
+  }
+
+  async function viewRecoveryPhrase() {
+    if (recoveryPhraseAuthPending.current) return;
+
+    recoveryPhraseAuthPending.current = true;
+    try {
+      const authenticated = await authenticateToViewRecoveryPhrase();
+      if (authenticated) {
+        const accessToken = createRecoveryPhraseAccessToken();
+        router.push({ pathname: '/onboarding/backup', params: { accessToken } });
+      }
+    } finally {
+      recoveryPhraseAuthPending.current = false;
     }
   }
 
@@ -145,11 +163,7 @@ export function MenuScreen() {
 
       <SectionHeader label="Wallet" />
       <View className="overflow-hidden rounded-xl">
-        <MenuRow
-          icon="visibility"
-          label="View Recovery Phrase"
-          onPress={() => router.push('/onboarding/backup')}
-        />
+        <MenuRow icon="visibility" label="View Recovery Phrase" onPress={viewRecoveryPhrase} />
         <MenuRow icon="restart-alt" label="Reset Wallet" onPress={confirmResetWallet} isLast />
       </View>
 

@@ -18,7 +18,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { AccessibilityInfo, Alert, Pressable, ScrollView, View } from 'react-native';
 
 function formatDate(ts?: number): string | null {
   if (!ts) return null;
@@ -180,11 +180,24 @@ export function CredentialsScreen() {
 
   const handleCopy = React.useCallback(async (field: string, value: string) => {
     if (!value) return;
-    await Clipboard.setStringAsync(value);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    try {
+      const didCopy = await Clipboard.setStringAsync(value);
+      if (!didCopy) throw new Error('Clipboard did not accept the value');
+    } catch {
+      setCopiedField(null);
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = null;
+      Alert.alert('Copy failed', 'Could not copy to the clipboard.');
+      return;
+    }
+
     setCopiedField(field);
     if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
     copyResetTimer.current = setTimeout(() => setCopiedField(null), 1500);
+
+    AccessibilityInfo.announceForAccessibility('Copied to clipboard');
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
 
   const handleDeletePasskey = React.useCallback(
@@ -297,6 +310,20 @@ export function CredentialsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {copiedField ? (
+        <View
+          pointerEvents="none"
+          accessible
+          accessibilityLabel="Copied to clipboard"
+          className="absolute bottom-4 left-4 right-4 items-center"
+        >
+          <View className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 shadow-lg">
+            <MaterialIcons name="check-circle" size={18} color={palette.primary} />
+            <Text className="text-sm font-semibold text-card-foreground">Copied to clipboard</Text>
+          </View>
+        </View>
+      ) : null}
     </Screen>
   );
 }

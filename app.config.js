@@ -210,9 +210,7 @@ module.exports = {
       termsOfServiceUrl:
         process.env.TERMS_OF_SERVICE_URL || 'https://ac2protocol.org/terms-of-service/',
       privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || 'https://perawallet.app/privacy-policy/',
-      ac2OpenClawPluginUrl:
-        process.env.AC2OPEN_CLAW_PLUGIN_URL ||
-        'https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference',
+      ac2OpenClawPluginUrl: process.env.AC2OPEN_CLAW_PLUGIN_URL || 'https://ac2protocol.org/',
       provider: {
         name: 'AC2 Wallet',
         primaryColor: '#5858F0',
