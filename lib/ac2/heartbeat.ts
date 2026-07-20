@@ -9,6 +9,9 @@ export interface HeartbeatChannelOptions {
   onInbound: () => void;
 }
 
+const HEARTBEAT_PING = 'ping';
+const HEARTBEAT_PONG = 'pong';
+
 /**
  * Attach handlers to a discovered `ac2-heartbeat` DataChannel. Returns the
  * channel for caller-side ref storage.
@@ -28,9 +31,9 @@ export function attachHeartbeatChannel(
     // Reply to the agent's ping with a pong so its watchdog sees us alive. We
     // never reply to a pong, so the two sides can't ping-pong endlessly.
     const data = typeof event.data === 'string' ? event.data : '';
-    if (data === 'ping') {
+    if (data === HEARTBEAT_PING) {
       try {
-        if (channel.readyState === 'open') channel.send('pong');
+        if (channel.readyState === 'open') channel.send(HEARTBEAT_PONG);
       } catch {
         /* noop */
       }

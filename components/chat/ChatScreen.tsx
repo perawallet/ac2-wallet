@@ -33,9 +33,15 @@ interface ChatScreenProps {
   origin: string;
   requestId: string;
   allowPasskeyCreation?: boolean;
+  onPasskeyCreationConsumed?: () => void;
 }
 
-function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScreenProps) {
+function ChatScreen({
+  origin,
+  requestId,
+  allowPasskeyCreation = false,
+  onPasskeyCreationConsumed,
+}: ChatScreenProps) {
   // The tab header can grow when the backup reminder is visible. Reading the
   // measured navigation header keeps the keyboard offset in sync with its
   // actual height instead of assuming only the 56pt AppHeader is present.
@@ -48,7 +54,6 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     isLoading,
     isReconnecting,
     reconnectAttempt,
-    maxReconnectAttempts,
     send,
     sendAc2,
     lastHeartbeat,
@@ -63,7 +68,10 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     openConversation,
     closeConversation,
     remoteThreads,
-  } = useConnection(origin, requestId, { allowPasskeyCreation });
+  } = useConnection(origin, requestId, {
+    allowPasskeyCreation,
+    onPasskeyCreationConsumed,
+  });
 
   const { approveSigning, rejectSigning, approveKey, rejectKey } = useAc2Responders({
     address,
@@ -296,7 +304,9 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
         <ChatComposer
           onSend={send}
           enabled={false}
-          placeholder={`Reconnecting (${reconnectAttempt}/${maxReconnectAttempts})…`}
+          placeholder={
+            reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt})…` : 'Reconnecting…'
+          }
         />
       ) : isLoading ? (
         <ChatComposer onSend={send} enabled={false} placeholder="Connecting…" />

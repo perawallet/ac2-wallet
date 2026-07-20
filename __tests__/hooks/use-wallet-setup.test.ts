@@ -3,6 +3,11 @@ const mockGenerate = jest.fn().mockResolvedValue('id');
 const mockImportFn = jest.fn().mockResolvedValue('seed');
 const mockSetGenericPassword = jest.fn().mockResolvedValue(true);
 const mockLocalStorageSet = jest.fn();
+const mockClearSessions = jest.fn().mockResolvedValue(undefined);
+const mockClearMessages = jest.fn();
+const mockClearAc2Messages = jest.fn();
+const mockClearAgentIdentities = jest.fn();
+const mockClearCurrentConnection = jest.fn();
 
 jest.mock('@/hooks/useProvider', () => ({
   useProvider: () => ({
@@ -25,6 +30,13 @@ jest.mock('@/stores/mmkv-local', () => ({
     set: mockLocalStorageSet,
   },
 }));
+jest.mock('@/stores/sessions', () => ({ clearSessions: mockClearSessions }));
+jest.mock('@/stores/messages', () => ({ clearAllMessages: mockClearMessages }));
+jest.mock('@/stores/ac2Messages', () => ({ clearAllAc2Messages: mockClearAc2Messages }));
+jest.mock('@/stores/agentIdentities', () => ({
+  clearAllAgentIdentities: mockClearAgentIdentities,
+}));
+jest.mock('@/stores/ui', () => ({ clearCurrentConnection: mockClearCurrentConnection }));
 
 import { renderHook } from '@testing-library/react-native';
 
@@ -36,6 +48,11 @@ describe('useWalletSetup', () => {
     mockImportFn.mockClear();
     mockSetGenericPassword.mockClear();
     mockLocalStorageSet.mockClear();
+    mockClearSessions.mockClear();
+    mockClearMessages.mockClear();
+    mockClearAc2Messages.mockClear();
+    mockClearAgentIdentities.mockClear();
+    mockClearCurrentConnection.mockClear();
   });
 
   it('rejects an invalid mnemonic before touching the stores', async () => {
@@ -59,5 +76,10 @@ describe('useWalletSetup', () => {
       expect.objectContaining({ service: 'app.perawallet.ac2.mnemonic' }),
     );
     expect(mockLocalStorageSet).toHaveBeenCalledWith('mnemonicBackedUp', false);
+    expect(mockClearCurrentConnection).toHaveBeenCalledTimes(1);
+    expect(mockClearSessions).toHaveBeenCalledTimes(1);
+    expect(mockClearMessages).toHaveBeenCalledTimes(1);
+    expect(mockClearAc2Messages).toHaveBeenCalledTimes(1);
+    expect(mockClearAgentIdentities).toHaveBeenCalledTimes(1);
   });
 });

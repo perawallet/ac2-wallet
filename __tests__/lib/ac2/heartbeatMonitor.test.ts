@@ -120,6 +120,29 @@ describe('createHeartbeatMonitor', () => {
     expect(onTimeout).not.toHaveBeenCalled();
   });
 
+  it('does not install an interval when the immediate send synchronously stops it', () => {
+    const h = createHarness();
+    let monitor: ReturnType<typeof createHeartbeatMonitor>;
+    const send = jest.fn(() => monitor.stop());
+    monitor = createHeartbeatMonitor({
+      send,
+      intervalMs: 20000,
+      timeoutMs: Infinity,
+      onTimeout: jest.fn(),
+      now: h.now,
+      setIntervalFn: h.setIntervalFn,
+      clearIntervalFn: h.clearIntervalFn,
+    });
+
+    monitor.start();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(h.hasInterval()).toBe(false);
+    h.advance(10_000_000);
+    h.tick();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('never times out when timeoutMs is Infinity (fallback keepalive)', () => {
     const send = jest.fn();
     const onTimeout = jest.fn();

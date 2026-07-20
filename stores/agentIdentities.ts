@@ -129,3 +129,7 @@ export function clearAgentIdentitiesByConnection(origin: string, requestId: stri
     identities: state.identities.filter((i) => i.origin !== origin || i.requestId !== requestId),
   }));
 }
+
+export function clearAllAgentIdentities() {
+  agentIdentitiesStore.setState((state) => ({ ...state, identities: [] }));
+}

@@ -1,5 +1,6 @@
 import {
   closeDrawer,
+  consumePasskeyCreation,
   openDrawer,
   setCurrentConnection,
   setCurrentSession,
@@ -44,5 +45,11 @@ describe('uiStore', () => {
     expect(uiStore.state.currentOrigin).toBe('https://a.example');
     expect(uiStore.state.currentSessionId).toBe('req-456');
     expect(uiStore.state.allowPasskeyCreation).toBe(true);
+  });
+
+  it('consumes passkey creation permission after initial authentication', () => {
+    setCurrentConnection('https://a.example', 'req-456', { allowPasskeyCreation: true });
+    consumePasskeyCreation();
+    expect(uiStore.state.allowPasskeyCreation).toBe(false);
   });
 });

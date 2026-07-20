@@ -15,14 +15,22 @@ import {
 } from '@/lib/ac2';
 import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
 import { findWalletAccount } from '@/lib/keystore/wallet-account';
+import { classifyConnectionFailure } from '@/lib/liquid-auth/connection-errors';
 import { authenticateLiquidAuth } from '@/lib/liquid-auth/flow';
 import { addressMatchesKey, sessionAddressFromData } from '@/lib/liquid-auth/helpers';
+import {
+  loadPairingCredential,
+  type DurablePairingCredential,
+} from '@/lib/liquid-auth/pairing-credentials';
+import { closeSignalClient, closeSignalClientWhenSafe } from '@/lib/liquid-auth/signal-client';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
 import { accountsStore } from '@/stores/accounts';
 import { keyStore } from '@/stores/keystore';
 import { addMessage, clearMessagesByThread } from '@/stores/messages';
 import {
   addSession,
+  clearSessionPairingCredential,
+  revokeSessionPairing,
   Session,
   sessionsStore,
   updateSessionActivity,
@@ -37,16 +45,25 @@ import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, type AppStateStatus, NativeModules, Platform } from 'react-native';
 
-const AUTO_RECONNECT_DELAY_MS = 3000;
-// Bounded auto-reconnect budget. After this many failed automatic attempts we
-// stop retrying and fall back to the manual "Reconnect" button.
-const MAX_RECONNECT_ATTEMPTS = 3;
+const AUTO_RECONNECT_INITIAL_DELAY_MS = 1000;
+const AUTO_RECONNECT_MAX_DELAY_MS = 30000;
+// A resumed mobile radio can take several seconds to restore its route even
+// while the native DataChannel remains viable. Give the explicit ping/pong
+// probe a full network-recovery window before replacing the peer.
+const FOREGROUND_HEALTH_TIMEOUT_MS = 15000;
 // Hard ceiling on any auth/session HTTP request during setup. React Native's
 // `fetch` has NO default timeout, so a request issued while the network is
 // still recovering from a drop (exactly when auto-reconnect fires) can stall
 // forever. Bounding it turns a silent hang into a rejection that flows into the
 // retry state machine instead.
 const REQUEST_TIMEOUT_MS = 15000;
+type PairingReauthenticationState =
+  | 'idle'
+  | 'pending'
+  | 'authenticating'
+  | 'recovered'
+  | 'exhausted'
+  | 'revoked';
 // How often to ping the peer over `ac2-heartbeat`, and how long without ANY
 // inbound frame (pong or other traffic) before the peer is presumed dead even
 // though ICE may still report `connected` (a silent stall). ~2 missed pongs.
@@ -55,13 +72,6 @@ const HEARTBEAT_TIMEOUT_MS = 45000;
 // A heartbeat-channel send buffer above this suggests frames aren't draining to
 // the peer (a stalling transport) — logged as an early diagnostic.
 const HEARTBEAT_BUFFERED_WARN_BYTES = 256 * 1024;
-// Idle-session policy. Liveness is owned by the ICE monitor + heartbeat
-// watchdog (they detect a dead transport within seconds and auto-reconnect);
-// this slower timer is a secondary safety net that (a) tears down a genuinely
-// idle session and (b) recovers a connection that went stale while backgrounded
-// (JS timers are suspended there, so the watchdog can't fire until foreground).
-const IDLE_SESSION_TIMEOUT_MS = 60000;
-const IDLE_CHECK_INTERVAL_MS = 5000;
 
 // Why a connection was torn down unexpectedly. Routed through `failConnection`
 // so every detector (channel close, setup error, and — added in later phases —
@@ -86,12 +96,10 @@ interface UseConnectionResult {
   isError: boolean;
   isLoading: boolean;
   isConnected: boolean;
-  /** True while bounded automatic reconnect attempts are in flight. */
+  /** True while automatic reconnect attempts are pending or in flight. */
   isReconnecting: boolean;
   /** Current automatic reconnect attempt (1-based); `0` when not retrying. */
   reconnectAttempt: number;
-  /** Total automatic reconnect attempts before falling back to manual. */
-  maxReconnectAttempts: number;
   lastHeartbeat: number;
   reset: () => void;
   /** Tear down any stale transport and re-run the connection/auth flow. */
@@ -113,6 +121,8 @@ interface UseConnectionOptions {
    * existing passkey and otherwise surface an error.
    */
   allowPasskeyCreation?: boolean;
+  /** Called once fresh-pairing credential creation has completed successfully. */
+  onPasskeyCreationConsumed?: () => void;
 }
 
 export function useConnection(
@@ -122,8 +132,21 @@ export function useConnection(
 ): UseConnectionResult {
   const { accounts, keys, key, passkey } = useProvider();
   const allowPasskeyCreation = options.allowPasskeyCreation ?? false;
+  const onPasskeyCreationConsumed = options.onPasskeyCreationConsumed;
+  const allowPasskeyCreationRef = useRef(allowPasskeyCreation);
+  allowPasskeyCreationRef.current = allowPasskeyCreation;
+  const onPasskeyCreationConsumedRef = useRef(onPasskeyCreationConsumed);
+  onPasskeyCreationConsumedRef.current = onPasskeyCreationConsumed;
+  const providerKeyRef = useRef(key);
+  providerKeyRef.current = key;
+  const providerPasskeyRef = useRef(passkey);
+  providerPasskeyRef.current = passkey;
+  const accountsLoaded = accounts.length > 0;
+  const keysLoaded = keys.length > 0;
 
   const [isConnected, setIsConnected] = useState(false);
+  const isConnectedRef = useRef(isConnected);
+  isConnectedRef.current = isConnected;
   const [address, setAddress] = useState<string | null>(null);
   const addressRef = useRef<string | null>(null);
 
@@ -133,10 +156,11 @@ export function useConnection(
 
   const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now());
   const [isLoading, setIsLoading] = useState(true);
+  const isLoadingRef = useRef(isLoading);
+  isLoadingRef.current = isLoading;
   const [error, setError] = useState<Error | null>(null);
-  // Auto-reconnect progress surfaced to the UI so it can show a "Reconnecting
-  // (n/max)…" state while bounded retries are in flight, and only fall back to
-  // the manual Reconnect button once the budget is exhausted.
+  // Auto-reconnect progress surfaced to the UI. Transport failures retry
+  // indefinitely; user/credential errors remain explicit and interactive.
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   // Ref mirror of the attempt counter so the retry scheduler can read/increment
@@ -164,21 +188,31 @@ export function useConnection(
   const lastInboundActivityRef = useRef<number>(Date.now());
   const lastLocalActivityRef = useRef<number>(Date.now());
   const authFlowInProgressRef = useRef<boolean>(false);
+  // A completed legacy cookie-based auth remains usable for transport retries
+  // during this mount even when an older server did not return a v2 pairing.
+  const legacyAuthCompletedRef = useRef(false);
   // Ignore one `onClose` when the transport was intentionally torn down.
   const deliberateCloseRef = useRef(false);
   // Set when the user explicitly disconnects (`reset()`); blocks the
   // foreground auto-reconnect from resurrecting a session they chose to stop.
   const userStoppedRef = useRef(false);
-  // One-shot delayed reconnect that mirrors pressing the Reconnect button.
+  // Credential cancellation/revocation requires an explicit user action. It
+  // must not be retried by an AppState transition and reopen biometrics.
+  const automaticReconnectBlockedRef = useRef(false);
+  // A rejected (but not revoked) durable credential gets exactly one automatic
+  // foreground WebAuthn refresh. Transport retries after a successful refresh
+  // remain safe because they reuse the replacement credential/cookie.
+  const pairingReauthenticationStateRef = useRef<PairingReauthenticationState>('idle');
+  // The active setup controller is also visible to the AppState listener so a
+  // background transition cancels pending HTTP/signaling/credential results.
+  const setupAbortControllerRef = useRef<AbortController | null>(null);
+  // One-shot delayed reconnect. A new attempt is scheduled only after the
+  // previous one reaches a terminal setup/transport event.
   const autoReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const foregroundHealthTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Last observed `AppState`, so the foreground listener only reacts to a real
   // background/inactive -> active transition (not active -> active repeats).
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  // True once the app has been backgrounded/inactive and no inbound frame has
-  // since proven the connection still alive. Lets the inactivity close tell a
-  // stale-from-background drop (auto-reconnect when foregrounded) apart from a
-  // genuine foreground idle close (stays manual, so we don't churn/re-prompt).
-  const wasBackgroundedRef = useRef(false);
 
   // Active conversation thread; the ref mirror lets DataChannel handlers see the live value.
   const [activeThid, setActiveThid] = useState<string>(DEFAULT_THID);
@@ -210,6 +244,11 @@ export function useConnection(
   // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
   // "Connecting…" with no way to recover.
   const clearTransport = useCallback(() => {
+    const hadEstablishedTransport = !!(dataChannelRef.current || ac2ClientRef.current);
+    if (foregroundHealthTimerRef.current) {
+      clearTimeout(foregroundHealthTimerRef.current);
+      foregroundHealthTimerRef.current = null;
+    }
     // Stop the liveness watchdog and detach the connectivity monitor before
     // anything closes the peer, so a deliberate teardown can't be misread as a
     // heartbeat timeout or an ICE failure.
@@ -257,21 +296,13 @@ export function useConnection(
     }
     if (clientRef.current) {
       try {
-        // `SignalClient.close()` never tears down the WebRTC peer connection, so
-        // close it explicitly. A leaked `RTCPeerConnection` keeps the ICE
-        // session to the agent alive, so the agent still treats the old peer as
-        // active for this requestId and ignores the fresh offer a reconnect
-        // sends — leaving negotiation hung after `setLocalDescription`.
-        clientRef.current.peerClient?.close();
-      } catch {
-        /* noop */
-      }
-      try {
-        // `close(true)` also disconnects the underlying signaling socket. The
-        // default `close()` only detaches listeners and leaves the socket.io
-        // connection alive, which would then collide with the socket a
-        // subsequent (re)connect opens to the same origin — wedging signaling.
-        clientRef.current.close(true);
+        // Disconnect signaling for every teardown, but only hard-close an
+        // established peer. During negotiation Android may still be applying
+        // a remote description, and closing that native peer can race the
+        // bridge. Established transports must close the peer so the agent does
+        // not retain an obsolete ICE session for this requestId.
+        if (hadEstablishedTransport) closeSignalClient(clientRef.current, true);
+        else void closeSignalClientWhenSafe(clientRef.current);
       } catch {
         /* noop */
       }
@@ -303,15 +334,23 @@ export function useConnection(
     deliberateCloseRef.current = true;
     userStoppedRef.current = true;
     reconnectAttemptRef.current = 0;
+    pairingReauthenticationStateRef.current = 'idle';
     if (autoReconnectTimerRef.current) {
       clearTimeout(autoReconnectTimerRef.current);
       autoReconnectTimerRef.current = null;
     }
+    if (foregroundHealthTimerRef.current) {
+      clearTimeout(foregroundHealthTimerRef.current);
+      foregroundHealthTimerRef.current = null;
+    }
     clearTransport();
+    deliberateCloseRef.current = false;
     setActiveStreamText('');
     setAgentPresence(null);
     setAgentPresenceDetail(null);
+    isConnectedRef.current = false;
     setIsConnected(false);
+    isLoadingRef.current = false;
     setIsLoading(false);
     setIsReconnecting(false);
     setReconnectAttempt(0);
@@ -324,60 +363,85 @@ export function useConnection(
   // state, and bump the nonce to re-run setup. Deliberately does NOT touch the
   // retry budget so it can back both manual and automatic reconnects.
   const performReconnect = useCallback(() => {
+    if (userStoppedRef.current || automaticReconnectBlockedRef.current) return;
+    if (AppState.currentState !== 'active') {
+      isConnectedRef.current = false;
+      setIsConnected(false);
+      isLoadingRef.current = false;
+      setIsLoading(false);
+      setIsReconnecting(true);
+      return;
+    }
     deliberateCloseRef.current = true;
     if (autoReconnectTimerRef.current) {
       clearTimeout(autoReconnectTimerRef.current);
       autoReconnectTimerRef.current = null;
     }
     clearTransport();
+    deliberateCloseRef.current = false;
     authFlowInProgressRef.current = false;
     // Reset both liveness clocks so the fresh attempt isn't judged idle.
     lastInboundActivityRef.current = Date.now();
     lastLocalActivityRef.current = Date.now();
     setError(null);
+    isConnectedRef.current = false;
     setIsConnected(false);
+    isLoadingRef.current = true;
     setIsLoading(true);
+    setIsReconnecting(reconnectAttemptRef.current > 0);
     setReconnectNonce((n) => n + 1);
   }, [clearTransport]);
   const performReconnectRef = useRef(performReconnect);
   performReconnectRef.current = performReconnect;
 
   // Manually re-establish a dropped connection (user pressed "Reconnect").
-  // Resets the automatic-retry budget so the user always gets a fresh set of
-  // attempts, and clears any exhausted/failed reconnecting state.
+  // Reset the backoff so an explicit request starts immediately.
   const reconnect = useCallback(() => {
+    if (pairingReauthenticationStateRef.current === 'revoked') {
+      Alert.alert(
+        'Connection Removed',
+        'This pairing was removed by the agent. Scan a new pairing code to connect again.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
     userStoppedRef.current = false;
+    automaticReconnectBlockedRef.current = false;
+    if (pairingReauthenticationStateRef.current === 'exhausted') {
+      pairingReauthenticationStateRef.current = 'pending';
+      legacyAuthCompletedRef.current = false;
+    }
     reconnectAttemptRef.current = 0;
     setReconnectAttempt(0);
     setIsReconnecting(false);
     performReconnect();
   }, [performReconnect]);
-  const reconnectRef = useRef(reconnect);
-  reconnectRef.current = reconnect;
 
-  // Schedule the next bounded, serialized automatic reconnect attempt. Returns
-  // false when we've exhausted the budget (or the user stopped the session), so
-  // callers can fall back to the manual Reconnect button. Retries never
-  // overlap: a new attempt is only ever scheduled from a prior attempt's
-  // terminal event (transport `onClose` or a setup failure), and the pending
-  // timer/in-flight guards below make double-scheduling impossible — which also
-  // guarantees we never launch two connection attempts (and two blocking
-  // biometric prompts) at once.
+  // Schedule the next serialized automatic reconnect with capped exponential
+  // backoff and jitter. The sequence is deliberately unbounded: a durable
+  // pairing remains reconnectable after any length of disconnection. Timers
+  // pause while the app is backgrounded and resume on foreground.
   const scheduleAutoReconnect = useCallback((): boolean => {
-    if (userStoppedRef.current) return false;
-    // A retry is already pending or an attempt is mid-flight — don't stack.
+    if (userStoppedRef.current || automaticReconnectBlockedRef.current) return false;
     if (autoReconnectTimerRef.current) return true;
-    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) return false;
+
+    setIsReconnecting(true);
+    isLoadingRef.current = false;
+    setIsLoading(false);
+    if (AppState.currentState !== 'active') return true;
 
     const attempt = reconnectAttemptRef.current + 1;
     reconnectAttemptRef.current = attempt;
     setReconnectAttempt(attempt);
-    setIsReconnecting(true);
-    setIsLoading(false);
+    const exponentialDelay = Math.min(
+      AUTO_RECONNECT_INITIAL_DELAY_MS * 2 ** Math.min(attempt - 1, 10),
+      AUTO_RECONNECT_MAX_DELAY_MS,
+    );
+    const jitteredDelay = Math.round(exponentialDelay * (0.8 + Math.random() * 0.4));
     autoReconnectTimerRef.current = setTimeout(() => {
       autoReconnectTimerRef.current = null;
       performReconnectRef.current();
-    }, AUTO_RECONNECT_DELAY_MS);
+    }, jitteredDelay);
     return true;
   }, []);
   const scheduleAutoReconnectRef = useRef(scheduleAutoReconnect);
@@ -385,7 +449,7 @@ export function useConnection(
 
   // Single funnel for an unexpected connection failure. Later async detectors
   // (ICE state, heartbeat watchdog, send errors) all route through this so
-  // teardown + bounded reconnect happen in exactly one place. `isCurrent`
+  // teardown + durable reconnect happen in exactly one place. `isCurrent`
   // closes over the observing setup run's `active` flag (set false by that
   // run's cleanup before any newer run starts), so a stale/superseded callback
   // is ignored and can't tear down or reschedule on top of a newer run.
@@ -396,13 +460,17 @@ export function useConnection(
       // Capture which ICE path this session used before tearing the peer down,
       // to correlate failures with relay/direct usage (best-effort).
       logCandidatePairRef.current(`failed(${reason})`);
+      isConnectedRef.current = false;
       setIsConnected(false);
       // Drop every stale transport ref so the next reconnect isn't blocked by
-      // the connection effect's guard.
+      // the connection effect's guard. Mark this close deliberate so the data
+      // channel's close callback cannot recursively schedule the same failure.
+      deliberateCloseRef.current = true;
       clearTransport();
-      // Kick off (or continue) the bounded, serialized retry sequence. Once the
-      // budget is spent, fall back to the manual Reconnect bar (surfacing the
-      // terminal error only for a setup failure).
+      deliberateCloseRef.current = false;
+      // Kick off (or continue) the unbounded, serialized retry sequence. This
+      // returns false only when the user stopped the session or credential
+      // interaction explicitly blocked automatic recovery.
       if (!scheduleAutoReconnectRef.current()) {
         setIsReconnecting(false);
         setIsLoading(false);
@@ -421,70 +489,147 @@ export function useConnection(
   const failConnectionRef = useRef(failConnection);
   failConnectionRef.current = failConnection;
 
+  // `monitorPeerConnection` evaluates the current native state synchronously.
+  // Install it transactionally so an already-closed peer cannot fail the
+  // connection during attachment and then be committed as healthy afterward.
+  const attachPeerMonitorSafely = useCallback((isCurrent: () => boolean): boolean => {
+    if (!isCurrent()) return false;
+    const peer = peerConnectionRef.current;
+    if (!peer) return true;
+
+    if (peerMonitorDisposeRef.current) {
+      peerMonitorDisposeRef.current();
+      peerMonitorDisposeRef.current = null;
+    }
+
+    let failedDuringAttach = false;
+    const dispose = monitorPeerConnection(peer, {
+      onFailed: (reason) => {
+        failedDuringAttach = true;
+        failConnectionRef.current(reason, isCurrent);
+      },
+    });
+    if (failedDuringAttach || !isCurrent() || peerConnectionRef.current !== peer) {
+      dispose();
+      return false;
+    }
+
+    peerMonitorDisposeRef.current = dispose;
+    return true;
+  }, []);
+
   // Live mirrors of the connection state so the AppState listener can read the
   // current values without being torn down/re-subscribed on every change (and
   // without capturing a stale closure).
-  const isConnectedRef = useRef(isConnected);
-  isConnectedRef.current = isConnected;
-  const isLoadingRef = useRef(isLoading);
-  isLoadingRef.current = isLoading;
-  const isReconnectingRef = useRef(isReconnecting);
-  isReconnectingRef.current = isReconnecting;
-
-  // Automatically resume a dropped connection when the app returns to the
-  // foreground. Subscribed once per session (keyed on origin/requestId); all
-  // decision state is read from refs so there is no stale-closure risk. The
-  // in-progress guards below are what prevent a second connection attempt from
-  // launching a duplicate — and therefore a duplicate blocking biometric
-  // prompt, since the passkey assertion/attestation step is what triggers it.
+  // Resume dropped sessions on foreground and actively probe connections that
+  // may have gone stale while the native runtime suspended JavaScript.
   useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
       const prevState = appStateRef.current;
       appStateRef.current = nextState;
 
-      // Remember that we left the foreground. Timers are suspended while
-      // backgrounded, so a connection can silently go stale; this flag lets the
-      // inactivity close distinguish that from a genuine foreground idle.
       if (nextState === 'background' || nextState === 'inactive') {
-        wasBackgroundedRef.current = true;
-      }
-
-      // Only react to a genuine (background|inactive) -> active transition.
-      if (nextState !== 'active' || prevState === 'active') return;
-
-      // Respect an explicit user disconnect; don't resurrect a stopped session.
-      if (userStoppedRef.current) return;
-
-      // A healthy connection needs nothing.
-      if (isConnectedRef.current) return;
-
-      // Never start a second connection while one is already in flight. Any of
-      // these means "busy": an auth flow (blocking biometric prompt) is open,
-      // a SignalClient is already set up, we're in the loading/connecting
-      // state, an auto-reconnect sequence is running, or a retry timer is
-      // already pending.
-      if (
-        authFlowInProgressRef.current ||
-        clientRef.current ||
-        isLoadingRef.current ||
-        isReconnectingRef.current ||
-        autoReconnectTimerRef.current
-      ) {
+        if (autoReconnectTimerRef.current) {
+          clearTimeout(autoReconnectTimerRef.current);
+          autoReconnectTimerRef.current = null;
+        }
+        if (foregroundHealthTimerRef.current) {
+          clearTimeout(foregroundHealthTimerRef.current);
+          foregroundHealthTimerRef.current = null;
+        }
+        // React Native suspends JS timers in the background. Pause both
+        // watchdogs so their queued deadlines cannot fire immediately on
+        // resume and destroy a native peer that survived suspension.
+        heartbeatMonitorRef.current?.stop();
+        if (peerMonitorDisposeRef.current) {
+          peerMonitorDisposeRef.current();
+          peerMonitorDisposeRef.current = null;
+        }
+        // iOS reports `inactive` while presenting system passkey/Face ID UI.
+        // Cancelling setup here aborts the very credential operation that made
+        // the app inactive and can reopen biometrics on the next `active`
+        // transition. Only a true background transition cancels setup.
+        if (nextState === 'inactive') return;
+        if (!isConnectedRef.current && setupAbortControllerRef.current) {
+          setupAbortControllerRef.current.abort();
+          deliberateCloseRef.current = true;
+          clearTransport();
+          deliberateCloseRef.current = false;
+          authFlowInProgressRef.current = false;
+        }
+        if (
+          !isConnectedRef.current &&
+          !userStoppedRef.current &&
+          !automaticReconnectBlockedRef.current
+        ) {
+          isLoadingRef.current = false;
+          setIsLoading(false);
+          setIsReconnecting(true);
+        }
         return;
       }
 
-      // Only resume sessions we still track (not forgotten by the user).
-      const existingSession = sessionsStore.state.sessions.find(
-        (s) => s.id === requestId && s.origin === origin,
-      );
-      if (!existingSession) return;
+      if (nextState !== 'active' || prevState === 'active') return;
+      if (userStoppedRef.current || automaticReconnectBlockedRef.current) return;
 
-      reconnectRef.current();
+      if (isConnectedRef.current) {
+        const heartbeat = heartbeatChannelRef.current;
+        const control = dataChannelRef.current;
+        if (!control || control.readyState !== 'open') {
+          performReconnectRef.current();
+          return;
+        }
+
+        // Older peers may only expose `ac2-v1`. Keep that supported fallback
+        // alive across foreground transitions and let the ICE monitor judge the
+        // native peer; there is no ping/pong contract to probe on this channel.
+        if (!heartbeat) {
+          heartbeatMonitorRef.current?.start();
+          attachPeerMonitorSafely(
+            () => AppState.currentState === 'active' && isConnectedRef.current,
+          );
+          return;
+        }
+
+        if (heartbeat.readyState !== 'open') {
+          performReconnectRef.current();
+          return;
+        }
+
+        // `start()` re-anchors the heartbeat deadline to foreground time. ICE
+        // monitoring resumes only after the pong below proves the radio route
+        // has recovered.
+        heartbeatMonitorRef.current?.start();
+        const inboundBeforeProbe = lastInboundActivityRef.current;
+        try {
+          heartbeat.send('ping');
+        } catch {
+          performReconnectRef.current();
+          return;
+        }
+        foregroundHealthTimerRef.current = setTimeout(() => {
+          foregroundHealthTimerRef.current = null;
+          if (
+            AppState.currentState === 'active' &&
+            isConnectedRef.current &&
+            lastInboundActivityRef.current <= inboundBeforeProbe
+          ) {
+            performReconnectRef.current();
+          }
+        }, FOREGROUND_HEALTH_TIMEOUT_MS);
+        return;
+      }
+
+      if (authFlowInProgressRef.current || clientRef.current || isLoadingRef.current) {
+        return;
+      }
+
+      performReconnectRef.current();
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
-  }, [origin, requestId]);
+  }, [origin, requestId, clearTransport, attachPeerMonitorSafely]);
 
   const send = useCallback(
     (text: string) => {
@@ -589,63 +734,11 @@ export function useConnection(
 
   useEffect(() => {
     let active = true;
-    let inactivityInterval: any = null;
-
-    if (isConnected) {
-      inactivityInterval = setInterval(() => {
-        const now = Date.now();
-        // Any traffic keeps the session alive: measure from the most recent of
-        // inbound peer traffic (frames/pongs) or local user action. A dead
-        // transport is caught far sooner by the ICE monitor / heartbeat
-        // watchdog; this only fires for a genuinely quiet session or one that
-        // went stale while backgrounded.
-        const lastActivity = Math.max(lastInboundActivityRef.current, lastLocalActivityRef.current);
-        const inactiveTime = now - lastActivity;
-        if (inactiveTime >= IDLE_SESSION_TIMEOUT_MS) {
-          // A stale connection whose idleness is explained by the app having
-          // been backgrounded (timers suspended, no heartbeats) should recover
-          // automatically; a genuine foreground idle should not (avoids churn /
-          // repeated biometric prompts). An intentional disconnect never
-          // resumes.
-          const resumeAfterBackground = !userStoppedRef.current && wasBackgroundedRef.current;
-          console.log(
-            resumeAfterBackground
-              ? 'Closing stale connection after background; will reconnect'
-              : 'Closing idle session (no activity)',
-          );
-          // Fully tear down so the connection effect's guard doesn't keep a
-          // stale client around — otherwise a later reconnect is impossible.
-          deliberateCloseRef.current = true;
-          clearTransport();
-          updateSessionStatus(requestId, origin, 'closed');
-          if (active) {
-            setIsConnected(false);
-            setIsLoading(false);
-          }
-          // If we're already back in the foreground, reconnect now (the
-          // foreground AppState handler already ran while we still looked
-          // connected, so it won't fire again). If the close happened while
-          // still backgrounded, that handler resumes us on the next activation.
-          if (resumeAfterBackground && AppState.currentState === 'active') {
-            wasBackgroundedRef.current = false;
-            reconnectRef.current();
-          }
-        }
-      }, IDLE_CHECK_INTERVAL_MS);
-    }
-
-    return () => {
-      active = false;
-      if (inactivityInterval) clearInterval(inactivityInterval);
-    };
-  }, [isConnected, clearTransport, origin, requestId]);
-
-  useEffect(() => {
-    let active = true;
     // Aborts every in-flight setup request when this run is superseded (a newer
     // reconnect/nonce bump) or unmounted, so a stalled request from an obsolete
     // attempt can't linger and race a fresh one.
     const runAbort = new AbortController();
+    setupAbortControllerRef.current = runAbort;
 
     // `fetch` with a per-request timeout, also wired to this run's abort signal.
     // A timeout or supersession rejects the request so the outer catch can hand
@@ -660,7 +753,11 @@ export function useConnection(
       if (runAbort.signal.aborted) controller.abort();
       else runAbort.signal.addEventListener('abort', onRunAbort);
       const timer = setTimeout(() => controller.abort(), timeoutMs);
-      return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+      return fetch(input, {
+        ...init,
+        credentials: init.credentials ?? 'include',
+        signal: controller.signal,
+      }).finally(() => {
         clearTimeout(timer);
         runAbort.signal.removeEventListener('abort', onRunAbort);
       });
@@ -669,7 +766,17 @@ export function useConnection(
     async function setupConnection() {
       if (!origin || !requestId) {
         console.error('Missing origin or requestId');
+        isLoadingRef.current = false;
         setIsLoading(false);
+        return;
+      }
+
+      // Never launch a passkey/biometric interaction from the background.
+      // A paused reconnect is resumed by the AppState listener above.
+      if (AppState.currentState !== 'active') {
+        isLoadingRef.current = false;
+        setIsLoading(false);
+        setIsReconnecting(true);
         return;
       }
 
@@ -686,13 +793,15 @@ export function useConnection(
       }
 
       // If we are already connecting or connected, don't start again
-      if (clientRef.current || isConnected) {
+      if (clientRef.current || isConnectedRef.current) {
         return;
       }
 
+      isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
       authFlowInProgressRef.current = true;
+      let attemptedDurablePairing = false;
 
       // Coarse phase timing so a hang is attributable to auth vs. WebRTC
       // negotiation vs. the channel-open wait.
@@ -706,13 +815,26 @@ export function useConnection(
         const existingSession = currentSessions.find(
           (s) => s.id === requestId && s.origin === origin,
         );
+        if (existingSession?.pairingStatus === 'revoked') {
+          // Revocation is durable too. Do not turn an explicitly removed
+          // pairing into a fresh WebAuthn prompt after a remount/app restart.
+          pairingReauthenticationStateRef.current = 'revoked';
+          automaticReconnectBlockedRef.current = true;
+          isLoadingRef.current = false;
+          setIsLoading(false);
+          setIsReconnecting(false);
+          setError(
+            new Error(
+              'This pairing was removed by the agent. Scan a new pairing code to connect again.',
+            ),
+          );
+          return;
+        }
         if (!existingSession) {
           // Persist the connection durably (no TTL) so it survives app
           // restarts and can be reconnected/renegotiated later using the same
           // requestId — mirroring how the OpenClaw plugin persists connections.
-          addSession({ id: requestId, origin, status: 'active' });
-        } else if (existingSession.status !== 'active') {
-          updateSessionStatus(requestId, origin, 'active');
+          addSession({ id: requestId, origin, status: 'closed' });
         }
 
         const walletAccount = findWalletAccount(currentAccounts, currentKeys);
@@ -740,93 +862,143 @@ export function useConnection(
 
         const walletAddress = encodeAddress(foundKey.publicKey);
         console.log('Found key for attestation:', foundKey.id, foundKey.type);
+        setAddress(walletAddress);
+        addressRef.current = walletAddress;
 
-        const sessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
-        if (!active) return;
-        let initialSessionData: any = null;
-        let initialSessionAddress: string | null = null;
-        console.log('Initial session status:', sessionCheck.ok);
-
-        if (sessionCheck.ok) {
-          try {
-            const sessionData = await sessionCheck.json();
-            initialSessionData = sessionData;
-            if (!active) return;
-            initialSessionAddress = sessionAddressFromData(sessionData);
-            if (initialSessionAddress && addressMatchesKey(initialSessionAddress, foundKey)) {
-              setAddress(initialSessionAddress);
-              addressRef.current = initialSessionAddress;
-            } else if (initialSessionAddress) {
-              console.warn('Ignoring session address that does not match the active wallet key');
-            }
-          } catch (error) {
-            console.warn('Unable to parse existing auth session response:', error);
-          }
-        }
-
-        const authResult = await authenticateLiquidAuth({
+        // A v2 pairing is the durable authorization. It intentionally bypasses
+        // `/auth/session` and WebAuthn on every transport reconnect, including
+        // after process restarts or long periods offline.
+        let pairingCredential: DurablePairingCredential | null = await loadPairingCredential(
           origin,
           requestId,
-          foundKey,
-          walletAddress,
-          currentKeys,
-          initialSessionData,
-          initialSessionAddress,
-          existingSessionPasskeyCredentialId: existingSession?.passkeyCredentialId,
-          allowPasskeyCreation,
-          key,
-          passkey,
-          setAddress,
-          addressRef,
-          authFlowInProgressRef,
-          fetchWithTimeout,
-          isActive: () => active,
-        });
-        if (authResult.superseded || !active) return;
-        console.log(`[ac2] auth phase done in ${Date.now() - setupStartedAt}ms`);
-
-        // Final validation of the session before connecting
-        const finalSessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
-
+          existingSession?.pairing,
+        );
         if (!active) return;
+        attemptedDurablePairing = pairingCredential !== null;
 
-        if (finalSessionCheck.ok) {
-          const sessionData = await finalSessionCheck.json();
-
-          if (!active) return;
-
-          const sessionAddress = sessionAddressFromData(sessionData);
-          if (sessionAddress && addressMatchesKey(sessionAddress, foundKey)) {
-            setAddress(sessionAddress);
-            addressRef.current = sessionAddress;
-          } else if (sessionAddress) {
-            console.warn(
-              'Ignoring final session address that does not match the active wallet key',
-            );
+        // Older servers may not issue a durable pairing yet. Authenticate at
+        // most once during this mounted connection so a transient transport
+        // failure never re-opens biometrics while the legacy cookie is valid.
+        if (!pairingCredential && !legacyAuthCompletedRef.current) {
+          if (AppState.currentState !== 'active') {
+            isLoadingRef.current = false;
+            setIsLoading(false);
+            setIsReconnecting(true);
+            return;
           }
-        } else {
-          console.log('Session validation failed (ignored for debugging)');
+          if (pairingReauthenticationStateRef.current === 'pending') {
+            pairingReauthenticationStateRef.current = 'authenticating';
+          }
+
+          const sessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
+          if (!active) return;
+          let initialSessionData: any = null;
+          let initialSessionAddress: string | null = null;
+          console.log('Initial session status:', sessionCheck.ok);
+
+          if (sessionCheck.ok) {
+            try {
+              const sessionData = await sessionCheck.json();
+              initialSessionData = sessionData;
+              if (!active) return;
+              initialSessionAddress = sessionAddressFromData(sessionData);
+              if (initialSessionAddress && addressMatchesKey(initialSessionAddress, foundKey)) {
+                setAddress(initialSessionAddress);
+                addressRef.current = initialSessionAddress;
+              } else if (initialSessionAddress) {
+                console.warn('Ignoring session address that does not match the active wallet key');
+              }
+            } catch (sessionError) {
+              console.warn('Unable to parse existing auth session response:', sessionError);
+            }
+          }
+
+          if (AppState.currentState !== 'active') {
+            isLoadingRef.current = false;
+            setIsLoading(false);
+            setIsReconnecting(true);
+            return;
+          }
+
+          const passkeyCreationWasAllowed = allowPasskeyCreationRef.current;
+          const consumePasskeyCreation = () => {
+            allowPasskeyCreationRef.current = false;
+            onPasskeyCreationConsumedRef.current?.();
+          };
+          const authResult = await authenticateLiquidAuth({
+            origin,
+            requestId,
+            foundKey,
+            walletAddress,
+            currentKeys,
+            initialSessionData,
+            initialSessionAddress,
+            existingSessionPasskeyCredentialId: existingSession?.passkeyCredentialId,
+            allowPasskeyCreation: allowPasskeyCreationRef.current,
+            key: providerKeyRef.current,
+            passkey: providerPasskeyRef.current,
+            setAddress,
+            addressRef,
+            fetchWithTimeout,
+            signal: runAbort.signal,
+            isActive: () => active,
+            onPasskeyCreated: consumePasskeyCreation,
+          });
+          if (authResult.superseded || !active) return;
+          pairingCredential = authResult.pairing ?? null;
+          legacyAuthCompletedRef.current = true;
+          if (pairingReauthenticationStateRef.current === 'authenticating') {
+            pairingReauthenticationStateRef.current = 'recovered';
+          }
+          // Assertion can also complete a scanner-initiated flow. Attestation
+          // consumes this earlier, immediately after native credential creation.
+          if (passkeyCreationWasAllowed && allowPasskeyCreationRef.current) {
+            consumePasskeyCreation();
+          }
+
+          // Preserve the legacy session address only when it belongs to the
+          // wallet key selected for this connection.
+          const finalSessionCheck = await fetchWithTimeout(`${origin}/auth/session`);
+          if (!active) return;
+          if (finalSessionCheck.ok) {
+            const sessionData = await finalSessionCheck.json();
+            if (!active) return;
+            const sessionAddress = sessionAddressFromData(sessionData);
+            if (sessionAddress && addressMatchesKey(sessionAddress, foundKey)) {
+              setAddress(sessionAddress);
+              addressRef.current = sessionAddress;
+            }
+          }
         }
 
-        let options: any = {
+        const options: any = {
           autoConnect: true,
-          transportOptions: {},
           withCredentials: true,
+          // Prefer a real WebSocket; retain polling as a compatibility fallback
+          // for constrained networks instead of forcing all mobile traffic onto
+          // fragile long-poll XHR.
+          transports: ['websocket', 'polling'],
+          tryAllTransports: true,
         };
 
-        if (Platform.OS === 'ios') {
+        if (pairingCredential) {
+          options.auth = pairingCredential;
+        } else if (Platform.OS === 'ios') {
+          // Legacy cookie-only servers need the native Engine.IO XHR bridge.
+          // Durable v2 pairing above stays WebSocket-first and never takes this
+          // polling path, which avoids reintroducing the observed XHR fragility.
           options.transports = [EngineIoXHR];
+          delete options.tryAllTransports;
         } else if (NativeModules.CookieModule) {
           const cookie = await NativeModules.CookieModule.getCookie(origin);
-
           if (!active) return;
-
           if (cookie) {
             options.extraHeaders = { Cookie: cookie };
             options.transports = ['polling'];
             options.transportOptions = {
               polling: { extraHeaders: { Cookie: cookie } },
             };
+            delete options.tryAllTransports;
           }
         }
 
@@ -871,10 +1043,21 @@ export function useConnection(
               heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
                 onInbound: () => {
                   if (!active) return;
-                  wasBackgroundedRef.current = false;
-                  lastInboundActivityRef.current = Date.now();
+                  const now = Date.now();
+                  lastInboundActivityRef.current = now;
                   heartbeatMonitorRef.current?.noteInbound();
-                  setLastHeartbeat(Date.now());
+                  if (foregroundHealthTimerRef.current) {
+                    clearTimeout(foregroundHealthTimerRef.current);
+                    foregroundHealthTimerRef.current = null;
+                  }
+                  setLastHeartbeat(now);
+                  // ICE monitoring is paused while backgrounded so a suspended
+                  // grace timer cannot kill a viable peer on resume. A pong is
+                  // proof the radio path has recovered, so it is now safe to
+                  // resume terminal/disconnected peer-state monitoring.
+                  if (AppState.currentState === 'active' && !peerMonitorDisposeRef.current) {
+                    attachPeerMonitorSafely(() => active && isConnectedRef.current);
+                  }
                 },
               });
               return;
@@ -883,8 +1066,10 @@ export function useConnection(
               streamChannelRef.current = channel;
               channel.onmessage = (event) => {
                 if (!active) return;
-                // Any inbound stream frame is proof of peer liveness.
+                const now = Date.now();
+                lastInboundActivityRef.current = now;
                 heartbeatMonitorRef.current?.noteInbound();
+                setLastHeartbeat(now);
                 if (typeof event.data === 'string') applyControlFrame(event.data);
               };
               channel.onopen = () => console.log('Stream channel opened');
@@ -899,7 +1084,7 @@ export function useConnection(
           // bridge may still be asynchronously applying the remote
           // description, and tearing the peer down races that work and can
           // crash with a null `PeerConnectionObserver`.
-          client.close(true);
+          void closeSignalClientWhenSafe(client);
           return;
         }
 
@@ -910,6 +1095,76 @@ export function useConnection(
         // intentionally NOT installed: inbound envelopes are mirrored into
         // `ac2MessagesStore` by `createAc2Client` and `app/chat.tsx` handles
         // approve/reject interactively against the visible store entry.
+        let openClient: Ac2Client | null = null;
+        let openArrivedBeforeClient = false;
+        const finalizeOpen = (clientForRun: Ac2Client) => {
+          const isCurrentTransport = () =>
+            active &&
+            dataChannelRef.current === datachannel &&
+            ac2ClientRef.current === clientForRun;
+          if (!isCurrentTransport() || isConnectedRef.current) return;
+
+          console.log(`Data channel opened in ${Date.now() - setupStartedAt}ms`);
+          deliberateCloseRef.current = false;
+          // Log the negotiated ICE path (direct/STUN/TURN) for this session.
+          logCandidatePairRef.current('connected');
+          // The peer monitor evaluates synchronously. If it observes a terminal
+          // state, `failConnection` clears these refs and this finalizer stops
+          // before publishing a false connected state.
+          if (!attachPeerMonitorSafely(isCurrentTransport)) return;
+
+          // Start the foreground-only liveness watchdog. AppState pauses it
+          // while JavaScript is suspended and re-anchors it on resume.
+          heartbeatMonitorRef.current?.stop();
+          heartbeatMonitorRef.current = createHeartbeatMonitor({
+            intervalMs: HEARTBEAT_INTERVAL_MS,
+            timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
+            send: () => {
+              const hb = heartbeatChannelRef.current;
+              const dc = dataChannelRef.current;
+              const channel =
+                hb && hb.readyState === 'open' ? hb : dc && dc.readyState === 'open' ? dc : null;
+              if (!channel) return;
+              // A growing send buffer means frames aren't draining to the peer
+              // — an early signal the transport is stalling before ICE flips.
+              if (channel.bufferedAmount > HEARTBEAT_BUFFERED_WARN_BYTES) {
+                console.warn(
+                  `Heartbeat send buffer high (${channel.bufferedAmount} bytes) — transport may be stalling`,
+                );
+              }
+              try {
+                channel.send(channel === hb ? 'ping' : '');
+              } catch (err) {
+                console.warn('Heartbeat send failed; treating as a dropped connection', err);
+                failConnectionRef.current('send', isCurrentTransport);
+              }
+            },
+            onTimeout: () => failConnectionRef.current('heartbeat', isCurrentTransport),
+          });
+          heartbeatMonitorRef.current.start();
+
+          // `start()` sends synchronously and can discover a dead native
+          // channel. Never commit success if that failure already cleared us.
+          if (!isCurrentTransport()) return;
+          if (autoReconnectTimerRef.current) {
+            clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = null;
+          }
+          reconnectAttemptRef.current = 0;
+          automaticReconnectBlockedRef.current = false;
+          pairingReauthenticationStateRef.current = 'idle';
+          lastInboundActivityRef.current = Date.now();
+          setReconnectAttempt(0);
+          setIsReconnecting(false);
+          isConnectedRef.current = true;
+          setIsConnected(true);
+          isLoadingRef.current = false;
+          setIsLoading(false);
+          setError(null);
+          setAc2Client(clientForRun);
+          updateSessionStatus(requestId, origin, 'active');
+        };
+
         const { client: ac2 } = createAc2Client({
           datachannel,
           origin,
@@ -918,10 +1173,10 @@ export function useConnection(
           getActiveThid: () => activeThidRef.current,
           onInboundEnvelope: () => {
             updateSessionActivity(requestId, origin);
-            wasBackgroundedRef.current = false;
-            lastInboundActivityRef.current = Date.now();
+            const now = Date.now();
+            lastInboundActivityRef.current = now;
             heartbeatMonitorRef.current?.noteInbound();
-            setLastHeartbeat(Date.now());
+            setLastHeartbeat(now);
           },
           onRawMessage: (raw: string) => {
             if (applyControlFrame(raw)) return;
@@ -935,81 +1190,22 @@ export function useConnection(
               thid: activeThidRef.current,
             });
             updateSessionActivity(requestId, origin);
-            wasBackgroundedRef.current = false;
-            lastInboundActivityRef.current = Date.now();
+            const now = Date.now();
+            lastInboundActivityRef.current = now;
             heartbeatMonitorRef.current?.noteInbound();
-            setLastHeartbeat(Date.now());
+            setLastHeartbeat(now);
           },
           onOpen: () => {
-            console.log(`Data channel opened in ${Date.now() - setupStartedAt}ms`);
-            if (active) {
-              deliberateCloseRef.current = false;
-              wasBackgroundedRef.current = false;
-              // Log the negotiated ICE path (direct/STUN/TURN) for this session.
-              logCandidatePairRef.current('connected');
-              // Watch the peer for connectivity loss (ICE disconnected/failed)
-              // the SDK never surfaces — the DataChannel can stay "open" while
-              // the underlying transport is dead. Route a failure through the
-              // single recovery funnel; `() => active` makes a late callback
-              // from a superseded run a no-op.
-              if (peerMonitorDisposeRef.current) peerMonitorDisposeRef.current();
-              peerMonitorDisposeRef.current = peerConnectionRef.current
-                ? monitorPeerConnection(peerConnectionRef.current, {
-                    onFailed: (reason) => failConnectionRef.current(reason, () => active),
-                  })
-                : null;
-              // Start the liveness watchdog. It pings on `ac2-heartbeat` and
-              // fails if the peer stops responding (a silent stall) even while
-              // ICE still reads "connected". Over the `ac2-v1` fallback there is
-              // no pong contract, so run keepalives without a timeout.
-              if (heartbeatMonitorRef.current) heartbeatMonitorRef.current.stop();
-              heartbeatMonitorRef.current = createHeartbeatMonitor({
-                intervalMs: HEARTBEAT_INTERVAL_MS,
-                timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
-                send: () => {
-                  const hb = heartbeatChannelRef.current;
-                  const dc = dataChannelRef.current;
-                  const channel =
-                    hb && hb.readyState === 'open'
-                      ? hb
-                      : dc && dc.readyState === 'open'
-                        ? dc
-                        : null;
-                  if (!channel) return;
-                  // A growing send buffer means frames aren't draining to the
-                  // peer — an early signal the transport is stalling before ICE
-                  // even flips state.
-                  if (channel.bufferedAmount > HEARTBEAT_BUFFERED_WARN_BYTES) {
-                    console.warn(
-                      `Heartbeat send buffer high (${channel.bufferedAmount} bytes) — transport may be stalling`,
-                    );
-                  }
-                  try {
-                    channel.send(channel === hb ? 'ping' : '');
-                  } catch (err) {
-                    console.warn('Heartbeat send failed; treating as a dropped connection', err);
-                    failConnectionRef.current('send', () => active);
-                  }
-                },
-                onTimeout: () => failConnectionRef.current('heartbeat', () => active),
-              });
-              heartbeatMonitorRef.current.start();
-              if (autoReconnectTimerRef.current) {
-                clearTimeout(autoReconnectTimerRef.current);
-                autoReconnectTimerRef.current = null;
-              }
-              // Successful connection — clear the automatic-retry budget so a
-              // future drop starts a fresh set of attempts.
-              reconnectAttemptRef.current = 0;
-              setReconnectAttempt(0);
-              setIsReconnecting(false);
-              setIsConnected(true);
-              setIsLoading(false);
-              setAc2Client(ac2);
-              updateSessionStatus(requestId, origin, 'active');
+            if (!openClient) {
+              openArrivedBeforeClient = true;
+              return;
             }
+            finalizeOpen(openClient);
           },
           onClose: () => {
+            // Ignore a delayed close from a transport that cleanup already
+            // detached (or that a newer reconnect has replaced).
+            if (!active || dataChannelRef.current !== datachannel) return;
             console.log('Data channel closed');
             updateSessionStatus(requestId, origin, 'closed');
             // A deliberate teardown (reset / performReconnect / idle close) is
@@ -1022,7 +1218,9 @@ export function useConnection(
             failConnectionRef.current('channel', () => active);
           },
         });
+        openClient = ac2;
         ac2ClientRef.current = ac2;
+        if (openArrivedBeforeClient) finalizeOpen(ac2);
       } catch (err: any) {
         // A superseded run (cleanup/reconnect fired, or the transport was
         // aborted) must do nothing: `clientRef` now points at the newer run's
@@ -1030,13 +1228,85 @@ export function useConnection(
         // clobber its session status. The newer run owns all recovery.
         if (!active || err?.name === 'AbortError') return;
         console.error('Failed to setup connection:', err);
-        updateSessionStatus(requestId, origin, 'failed');
-        // Funnel through the single failure path: it tears down the
-        // partially-established transport (peer + socket included, via
-        // `clearTransport`) and hands off to the bounded auto-reconnect
-        // scheduler, surfacing the terminal error + manual fallback only once
-        // the retry budget is exhausted.
-        failConnectionRef.current('setup', () => active, err);
+        const failureKind = classifyConnectionFailure(err, attemptedDurablePairing);
+        const reauthenticationFailed = pairingReauthenticationStateRef.current === 'authenticating';
+        if (
+          failureKind === 'pairing-revoked' ||
+          failureKind === 'credential-interaction' ||
+          reauthenticationFailed
+        ) {
+          automaticReconnectBlockedRef.current = true;
+        }
+        isConnectedRef.current = false;
+        setIsConnected(false);
+        deliberateCloseRef.current = true;
+        clearTransport();
+        deliberateCloseRef.current = false;
+        if (failureKind === 'pairing-revoked') {
+          pairingReauthenticationStateRef.current = 'revoked';
+          revokeSessionPairing(requestId, origin);
+          setIsReconnecting(false);
+          setError(err);
+          isLoadingRef.current = false;
+          setIsLoading(false);
+          Alert.alert(
+            'Connection Removed',
+            'This pairing was removed by the agent. Scan a new pairing code to connect again.',
+            [{ text: 'OK' }],
+          );
+        } else if (failureKind === 'pairing-unauthorized') {
+          // An unauthorized credential is stale/invalid, not proof that the
+          // agent removed the pairing. Clear only the local secret/reference,
+          // then allow one foreground passkey assertion to mint a replacement.
+          await clearSessionPairingCredential(requestId, origin);
+          legacyAuthCompletedRef.current = false;
+          if (!active) return;
+
+          if (pairingReauthenticationStateRef.current === 'idle') {
+            pairingReauthenticationStateRef.current = 'pending';
+            reconnectAttemptRef.current = 0;
+            setReconnectAttempt(0);
+            setError(null);
+            isLoadingRef.current = false;
+            setIsLoading(false);
+            setIsReconnecting(true);
+            updateSessionStatus(requestId, origin, 'closed');
+
+            if (AppState.currentState === 'active') {
+              performReconnectRef.current();
+            }
+          } else {
+            pairingReauthenticationStateRef.current = 'exhausted';
+            automaticReconnectBlockedRef.current = true;
+            updateSessionStatus(requestId, origin, 'failed');
+            setIsReconnecting(false);
+            setError(err);
+            isLoadingRef.current = false;
+            setIsLoading(false);
+            Alert.alert(
+              'Authentication Required',
+              'The saved connection credential could not be refreshed. Tap Reconnect to authenticate again.',
+              [{ text: 'OK' }],
+            );
+          }
+        } else if (failureKind === 'credential-interaction' || reauthenticationFailed) {
+          if (reauthenticationFailed) {
+            pairingReauthenticationStateRef.current = 'exhausted';
+          }
+          updateSessionStatus(requestId, origin, 'failed');
+          setIsReconnecting(false);
+          setError(err);
+          isLoadingRef.current = false;
+          setIsLoading(false);
+          Alert.alert(
+            'Connection Failed',
+            err.message || 'Failed to setup connection to the peer',
+            [{ text: 'OK' }],
+          );
+        } else {
+          updateSessionStatus(requestId, origin, 'closed');
+          failConnectionRef.current('setup', () => active, err);
+        }
       } finally {
         // Only release the auth lock if this run is still the active one.
         // If cleanup already ran (`active = false`), it has already reset the
@@ -1068,9 +1338,16 @@ export function useConnection(
       peerConnectionRef.current = null;
       const hadEstablishedTransport = !!(dataChannelRef.current || ac2ClientRef.current);
       runAbort.abort();
+      if (setupAbortControllerRef.current === runAbort) {
+        setupAbortControllerRef.current = null;
+      }
       if (autoReconnectTimerRef.current) {
         clearTimeout(autoReconnectTimerRef.current);
         autoReconnectTimerRef.current = null;
+      }
+      if (foregroundHealthTimerRef.current) {
+        clearTimeout(foregroundHealthTimerRef.current);
+        foregroundHealthTimerRef.current = null;
       }
       if (ac2ClientRef.current) {
         try {
@@ -1084,23 +1361,32 @@ export function useConnection(
         dataChannelRef.current.close();
         dataChannelRef.current = null;
       }
+      if (streamChannelRef.current) {
+        streamChannelRef.current.close();
+        streamChannelRef.current = null;
+      }
+      if (heartbeatChannelRef.current) {
+        heartbeatChannelRef.current.close();
+        heartbeatChannelRef.current = null;
+      }
       if (clientRef.current) {
-        // Only hard-close the peer once this effect still owns an established
-        // transport. For a superseded setup run, `runAbort.abort()` above has
-        // already cancelled the logical attempt; force-closing the native peer
-        // here can race Android's in-flight `setRemoteDescription` and crash.
-        if (hadEstablishedTransport) {
-          try {
-            clientRef.current.peerClient?.close();
-          } catch {
-            /* noop */
-          }
-        }
-        clientRef.current.close(true);
+        // Always disconnect signaling. Only hard-close the native peer when
+        // this effect owns an established transport; superseded setup runs can
+        // still have Android `setRemoteDescription` work in flight.
+        if (hadEstablishedTransport) closeSignalClient(clientRef.current, true);
+        else void closeSignalClientWhenSafe(clientRef.current);
         clientRef.current = null;
       }
     };
-  }, [origin, requestId, accounts.length > 0, keys.length > 0, reconnectNonce]);
+  }, [
+    origin,
+    requestId,
+    accountsLoaded,
+    keysLoaded,
+    reconnectNonce,
+    clearTransport,
+    attachPeerMonitorSafely,
+  ]);
 
   return {
     session,
@@ -1117,7 +1403,6 @@ export function useConnection(
     isConnected,
     isReconnecting,
     reconnectAttempt,
-    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
     lastHeartbeat,
     reset,
     reconnect,

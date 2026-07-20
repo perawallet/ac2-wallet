@@ -53,8 +53,13 @@ export function createHeartbeatMonitor(options: HeartbeatMonitorOptions): Heartb
   let timer: any = null;
   let lastInbound = 0;
   let timedOut = false;
+  // Kept separately from `timer`: the immediate send in `start()` is allowed to
+  // synchronously trigger transport teardown, whose cleanup calls `stop()`
+  // before an interval handle has been assigned.
+  let running = false;
 
   const stop = () => {
+    running = false;
     if (timer !== null) {
       clearIntervalFn(timer);
       timer = null;
@@ -62,6 +67,9 @@ export function createHeartbeatMonitor(options: HeartbeatMonitorOptions): Heartb
   };
 
   const tick = () => {
+    // A callback already queued by the runtime may still arrive after
+    // `clearInterval`; teardown must make that callback inert as well.
+    if (!running) return;
     // Declare failure once if the peer has been silent past the timeout;
     // otherwise send the next keepalive ping.
     if (now() - lastInbound >= timeoutMs) {
@@ -76,13 +84,29 @@ export function createHeartbeatMonitor(options: HeartbeatMonitorOptions): Heartb
   };
 
   const start = () => {
-    if (timer !== null) return; // already running
+    if (running) return;
+    running = true;
     timedOut = false;
     lastInbound = now();
     // Send an immediate first ping so the deadline is anchored to a real send,
-    // then continue on the interval.
-    send();
-    timer = setIntervalFn(tick, intervalMs);
+    // then continue on the interval. `send()` may synchronously call `stop()`
+    // through the connection failure path; never install an orphaned timer in
+    // that case.
+    try {
+      send();
+    } catch (error) {
+      running = false;
+      throw error;
+    }
+    if (!running) return;
+
+    const nextTimer = setIntervalFn(tick, intervalMs);
+    if (!running) {
+      // Defensive support for injectable/synchronous timer implementations.
+      clearIntervalFn(nextTimer);
+      return;
+    }
+    timer = nextTimer;
   };
 
   const noteInbound = () => {

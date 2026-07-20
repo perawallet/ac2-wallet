@@ -156,15 +156,6 @@ export default Sentry.wrap(function RootLayout() {
     }
   });
 
-  useEventListener(ReactNativePasskeyAutofill, 'onPasskeyAuthenticated', (event) => {
-    console.log('Passkey authenticated via autofill:', event);
-    if (event.success) {
-      bootstrap(biometricOptions).catch((e) =>
-        console.error('Failed to reload keys after passkey authenticated:', e),
-      );
-    }
-  });
-
   return (
     <FontLoadingContext.Provider value={{ fontsLoaded }}>
       <PreventScreenshotProvider>

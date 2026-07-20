@@ -218,6 +218,10 @@ export function clearMessages(address: string, origin: string, requestId: string
   }));
 }
 
+export function clearAllMessages() {
+  messagesStore.setState((state) => ({ ...state, messages: [] }));
+}
+
 /**
  * Removes every chat message belonging to a connection, regardless of the
  * local address. Used when forgetting a persisted connection.

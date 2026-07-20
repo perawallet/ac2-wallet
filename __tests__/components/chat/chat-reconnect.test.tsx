@@ -61,7 +61,6 @@ function baseConnection() {
     isLoading: false,
     isReconnecting: false,
     reconnectAttempt: 0,
-    maxReconnectAttempts: 3,
     send: jest.fn(),
     sendAc2: jest.fn(),
     lastHeartbeat: Date.now(),
@@ -99,11 +98,11 @@ describe('ChatScreen reconnect footer', () => {
     mockConnectionState = { ...baseConnection(), isReconnecting: true, reconnectAttempt: 2 };
     renderChat();
 
-    expect(screen.getByPlaceholderText('Reconnecting (2/3)…')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Reconnecting (attempt 2)…')).toBeTruthy();
     expect(screen.queryByLabelText('Reconnect')).toBeNull();
   });
 
-  it('falls back to the manual Reconnect bar once retries are exhausted', () => {
+  it('shows the manual Reconnect bar when automatic recovery is not active', () => {
     mockConnectionState = { ...baseConnection(), isReconnecting: false, isLoading: false };
     renderChat();
 
