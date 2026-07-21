@@ -24,9 +24,19 @@ export type {
   MonitorPeerConnectionOptions,
   PeerConnectionFailureReason,
 } from './peerConnectionMonitor';
+export {
+  hasPeerPresence,
+  isPeerOffline,
+  isPeerUnreachableError,
+  normalizePresence,
+  PRESENCE_EVENT,
+  queryPresence,
+  subscribeToPresence,
+} from './presence';
+export type { PresenceResult, PresenceSocket } from './presence';
 export { parseStreamControlFrame, STX } from './stream';
 export type { AgentPresence, StreamControlFrame } from './stream';
-export { createAc2Transport } from './transport';
+export { createAc2Transport, waitForSignalSocketConnected } from './transport';
 export type { Ac2TransportSetup, CreateAc2TransportOptions } from './transport';
 
 export type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
