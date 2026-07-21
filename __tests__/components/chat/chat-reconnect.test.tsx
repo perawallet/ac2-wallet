@@ -60,6 +60,8 @@ function baseConnection() {
     isError: false,
     isLoading: false,
     isReconnecting: false,
+    peerOffline: false,
+    isSocketConnected: true,
     reconnectAttempt: 0,
     maxReconnectAttempts: 3,
     send: jest.fn(),
@@ -109,6 +111,32 @@ describe('ChatScreen reconnect footer', () => {
 
     expect(screen.getByLabelText('Reconnect')).toBeTruthy();
     expect(screen.queryByPlaceholderText(/Reconnecting/)).toBeNull();
+  });
+
+  it('shows a clean peer-offline notice (no pop-up) in the reconnect bar', () => {
+    mockConnectionState = {
+      ...baseConnection(),
+      isReconnecting: false,
+      isLoading: false,
+      peerOffline: true,
+    };
+    renderChat();
+
+    expect(screen.getByLabelText('Reconnect')).toBeTruthy();
+    expect(screen.getByText(/Check your remote device/)).toBeTruthy();
+  });
+
+  it('shows a "service unavailable" notice when the socket is disconnected', () => {
+    mockConnectionState = {
+      ...baseConnection(),
+      isReconnecting: false,
+      isLoading: false,
+      isSocketConnected: false,
+    };
+    renderChat();
+
+    expect(screen.getByLabelText('Reconnect')).toBeTruthy();
+    expect(screen.getByText(/Service unavailable/)).toBeTruthy();
   });
 
   it('shows the live composer when connected', () => {

@@ -6,6 +6,8 @@
 
 import { SignalClient } from '@algorandfoundation/liquid-client';
 
+import { subscribeToPresence, type PresenceResult } from './presence';
+
 /** Default ICE config for the Liquid Auth signaling pair. */
 const DEFAULT_ICE_SERVERS = [
   {
@@ -63,6 +65,13 @@ export interface CreateAc2TransportOptions {
    * immediately and the returned promise rejects with an `AbortError`.
    */
   signal?: AbortSignal;
+  /**
+   * Optional presence listener. When provided, server-broadcast `presence`
+   * updates for the `requestId` are forwarded here so the caller can track how
+   * many devices are connected (and decide whether reconnecting is worthwhile).
+   * Handled outside `SignalClient`, directly on the signaling socket.
+   */
+  onPresence?: (presence: PresenceResult) => void;
 }
 
 /**
@@ -73,7 +82,7 @@ export interface CreateAc2TransportOptions {
 export async function createAc2Transport(
   opts: CreateAc2TransportOptions,
 ): Promise<Ac2TransportSetup> {
-  const { requestId, signalClient, onSideChannel, onPeerConnection, signal } = opts;
+  const { requestId, signalClient, onSideChannel, onPeerConnection, signal, onPresence } = opts;
 
   if (signal?.aborted) {
     const err = new Error('Aborted');
@@ -88,6 +97,13 @@ export async function createAc2Transport(
 
   await waitForSignalSocketConnected(signalClient);
   installSignalCandidateNormalizer(signalClient);
+
+  // Presence is handled outside the SignalClient, directly on the socket: keep
+  // the caller informed of how many devices are connected for this requestId.
+  if (onPresence) {
+    const socket = (signalClient as any).socket;
+    if (socket) subscribeToPresence(socket, onPresence);
+  }
 
   const peerPromise = signalClient.peer(
     requestId,
@@ -283,7 +299,7 @@ export function installSignalCandidateNormalizer(signalClient: SignalClient): vo
   Object.defineProperty(socket, SIGNAL_CANDIDATE_NORMALIZER, { value: true });
 }
 
-async function waitForSignalSocketConnected(signalClient: SignalClient): Promise<void> {
+export async function waitForSignalSocketConnected(signalClient: SignalClient): Promise<void> {
   // The liquid-client constructor resolves once socket.io is created, not once
   // it is connected. Sending the SDP after the connect event keeps signaling
   // ordering deterministic on React Native.

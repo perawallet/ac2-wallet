@@ -47,6 +47,8 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     isError,
     isLoading,
     isReconnecting,
+    peerOffline,
+    isSocketConnected,
     reconnectAttempt,
     maxReconnectAttempts,
     send,
@@ -301,7 +303,12 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
       ) : isLoading ? (
         <ChatComposer onSend={send} enabled={false} placeholder="Connecting…" />
       ) : (
-        <ReconnectBar onReconnect={reconnect} isError={isError} />
+        <ReconnectBar
+          onReconnect={reconnect}
+          isError={isError}
+          peerOffline={peerOffline}
+          serviceUnavailable={!isSocketConnected}
+        />
       )}
       <Modal
         visible={renameVisible}
