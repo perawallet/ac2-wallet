@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react-native';
 import * as React from 'react';
-import { KeyboardAvoidingView } from 'react-native';
+import { Alert, KeyboardAvoidingView } from 'react-native';
 
 jest.mock('react-native-mmkv', () => ({
   createMMKV: () => ({ getString: () => undefined, getBoolean: () => false, set: () => {} }),
@@ -60,6 +60,8 @@ function baseConnection() {
     isError: false,
     isLoading: false,
     isReconnecting: false,
+    peerOffline: false,
+    isSocketConnected: true,
     reconnectAttempt: 0,
     maxReconnectAttempts: 3,
     send: jest.fn(),
@@ -76,6 +78,9 @@ function baseConnection() {
     openConversation: jest.fn(),
     closeConversation: jest.fn(),
     remoteThreads: [],
+    connectionNotice: null,
+    dismissConnectionNotice: jest.fn(),
+    isRegistered: true,
   };
 }
 
@@ -111,6 +116,32 @@ describe('ChatScreen reconnect footer', () => {
     expect(screen.queryByPlaceholderText(/Reconnecting/)).toBeNull();
   });
 
+  it('shows a clean peer-offline notice (no pop-up) in the reconnect bar', () => {
+    mockConnectionState = {
+      ...baseConnection(),
+      isReconnecting: false,
+      isLoading: false,
+      peerOffline: true,
+    };
+    renderChat();
+
+    expect(screen.getByLabelText('Reconnect')).toBeTruthy();
+    expect(screen.getByText(/Check your remote device/)).toBeTruthy();
+  });
+
+  it('shows a "service unavailable" notice when the socket is disconnected', () => {
+    mockConnectionState = {
+      ...baseConnection(),
+      isReconnecting: false,
+      isLoading: false,
+      isSocketConnected: false,
+    };
+    renderChat();
+
+    expect(screen.getByLabelText('Reconnect')).toBeTruthy();
+    expect(screen.getByText(/Service unavailable/)).toBeTruthy();
+  });
+
   it('shows the live composer when connected', () => {
     mockConnectionState = { ...baseConnection(), isConnected: true };
     const view = renderChat();
@@ -118,5 +149,35 @@ describe('ChatScreen reconnect footer', () => {
     expect(screen.getByPlaceholderText('Message')).toBeTruthy();
     expect(screen.queryByLabelText('Reconnect')).toBeNull();
     expect(view.UNSAFE_getByType(KeyboardAvoidingView).props.keyboardVerticalOffset).toBe(162);
+  });
+
+  it('disables the composer when connected but the wallet is not registered', () => {
+    // A foreign wallet locked out, or no identity granted yet: block new
+    // messages until registration completes.
+    mockConnectionState = { ...baseConnection(), isConnected: true, isRegistered: false };
+    renderChat();
+
+    const input = screen.getByPlaceholderText("Not registered — can't send messages");
+    expect(input).toBeTruthy();
+    expect(input.props.editable).toBe(false);
+    expect(screen.queryByPlaceholderText('Message')).toBeNull();
+  });
+
+  it('prompts to delete the connection when connected but not registered', () => {
+    // The connection is dead (re-pairing generates a new requestId), so the app
+    // offers to delete this thread.
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockConnectionState = { ...baseConnection(), isConnected: true, isRegistered: false };
+    renderChat();
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Connection not registered',
+      expect.stringContaining('delete'),
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'Keep' }),
+        expect.objectContaining({ text: 'Delete', style: 'destructive' }),
+      ]),
+    );
+    alertSpy.mockRestore();
   });
 });

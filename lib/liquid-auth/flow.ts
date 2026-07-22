@@ -63,6 +63,12 @@ export interface AuthenticateLiquidAuthParams {
    * creating a new one via attestation. Only the initial scan flow opts in.
    */
   allowPasskeyCreation: boolean;
+  /**
+   * Internal recovery flag. Set when re-entering the exchange after a failed
+   * native assertion so it skips the (now unusable) passkey and re-registers
+   * via attestation, bypassing the `allowPasskeyCreation` guard.
+   */
+  recoverFromFailedAssertion?: boolean;
   key: ReactNativeProvider['key'];
   passkey: ReactNativeProvider['passkey'];
   setAddress: (address: string) => void;
@@ -155,6 +161,24 @@ async function nativeStoredPasskeys(): Promise<Passkey[]> {
 }
 
 /**
+ * Whether a failed native passkey assertion should trigger re-registration via
+ * attestation. User-driven aborts (cancellation, timeout, interruption) are
+ * intentionally excluded so we respect the user's choice instead of silently
+ * re-registering; everything else (e.g. a native "The incoming request cannot
+ * be validated" error after the device lost the credential) is recoverable.
+ */
+export function isRecoverableAssertionFailure(error: unknown): boolean {
+  const code = (error as { error?: unknown } | null)?.error;
+  if (
+    typeof code === 'string' &&
+    (code === 'UserCancelled' || code === 'TimedOut' || code === 'Interrupted')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Run the assertion (existing passkey) or attestation (first-time) exchange.
  * Resolves `{ superseded: true }` when the run was cancelled mid-flight, or
  * `{ superseded: false }` once authentication has completed.
@@ -224,10 +248,15 @@ export async function authenticateLiquidAuth(
   });
 
   let assertionOptions: { credentialId: string; options: any } | null = null;
-  for (const credentialId of uniqueAssertionCredentialIds) {
-    assertionOptions = await fetchAssertionOptions(fetchWithTimeout, origin, credentialId);
-    if (!isActive()) return { superseded: true };
-    if (assertionOptions) break;
+  // Skip looking up an existing passkey when recovering from a failed native
+  // assertion: the device can no longer use the credential, so go straight to
+  // attestation to re-register it.
+  if (!params.recoverFromFailedAssertion) {
+    for (const credentialId of uniqueAssertionCredentialIds) {
+      assertionOptions = await fetchAssertionOptions(fetchWithTimeout, origin, credentialId);
+      if (!isActive()) return { superseded: true };
+      if (assertionOptions) break;
+    }
   }
 
   if (assertionOptions) {
@@ -269,9 +298,28 @@ export async function authenticateLiquidAuth(
       device: 'Demo Web Wallet',
     };
 
-    const credential = (await navigator.credentials.get({
-      publicKey: decodedOptions,
-    })) as any;
+    let credential: any;
+    try {
+      credential = (await navigator.credentials.get({
+        publicKey: decodedOptions,
+      })) as any;
+    } catch (assertionError) {
+      // After an app reinstall the platform may no longer hold this passkey even
+      // though the server still has the credential record (so assertion options
+      // were found above). Instead of aborting the whole connection with a
+      // native "The incoming request cannot be validated" error, fall back to
+      // attestation to re-register the passkey. User-driven aborts
+      // (cancel/timeout) are re-thrown so they surface normally.
+      if (!isRecoverableAssertionFailure(assertionError)) throw assertionError;
+      console.warn(
+        'Passkey assertion failed; re-registering via attestation:',
+        assertionError,
+      );
+      return authenticateLiquidAuth({
+        ...params,
+        recoverFromFailedAssertion: true,
+      });
+    }
     if (!isActive()) return { superseded: true };
     authFlowInProgressRef.current = false;
 
@@ -387,7 +435,10 @@ export async function authenticateLiquidAuth(
       }
     }
   } else {
-    if (!allowPasskeyCreation) {
+    // Allow re-registration during recovery even when passkey creation is
+    // otherwise disabled: we already know a credential exists server-side, the
+    // device just lost the local passkey (e.g. after an app reinstall).
+    if (!allowPasskeyCreation && !params.recoverFromFailedAssertion) {
       throw new Error(
         'No existing passkey was found for this connection. Scan the agent QR code again to create one.',
       );

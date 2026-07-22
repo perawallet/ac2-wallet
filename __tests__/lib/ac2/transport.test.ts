@@ -1,4 +1,5 @@
 import {
+  attachSignalingDiagnostics,
   installSignalCandidateNormalizer,
   normalizeIceCandidateForReactNative,
   waitForChannelOpen,
@@ -78,6 +79,74 @@ describe('installSignalCandidateNormalizer', () => {
       },
       'extra-arg',
     );
+  });
+});
+
+describe('attachSignalingDiagnostics', () => {
+  // A minimal EventEmitter-shaped SignalClient stand-in.
+  function createFakeSignalClient() {
+    const listeners = new Map<string, Set<(...args: any[]) => void>>();
+    return {
+      on(event: string, listener: (...args: any[]) => void) {
+        (listeners.get(event) ?? listeners.set(event, new Set()).get(event)!).add(listener);
+      },
+      off(event: string, listener: (...args: any[]) => void) {
+        listeners.get(event)?.delete(listener);
+      },
+      emit(event: string, ...args: any[]) {
+        listeners.get(event)?.forEach((listener) => listener(...args));
+      },
+      listenerCount(event: string) {
+        return listeners.get(event)?.size ?? 0;
+      },
+    };
+  }
+
+  it('logs a start line and each signaling milestone', () => {
+    const client = createFakeSignalClient();
+    const logs: string[] = [];
+
+    attachSignalingDiagnostics(client as any, 'req-12345678', (m) => logs.push(m));
+
+    expect(logs.some((m) => m.includes("peer('answer') started"))).toBe(true);
+
+    client.emit('offer-description', 'sdp-offer');
+    client.emit('answer-description', { type: 'answer', sdp: 'sdp-answer' });
+
+    expect(logs.some((m) => m.includes('offer-description') && m.includes('SENT'))).toBe(true);
+    expect(logs.some((m) => m.includes('answer-description') && m.includes('RECEIVED'))).toBe(true);
+  });
+
+  it('logs only the first candidate of each kind and reports totals on dispose', () => {
+    const client = createFakeSignalClient();
+    const logs: string[] = [];
+
+    const dispose = attachSignalingDiagnostics(client as any, 'req-1', (m) => logs.push(m));
+
+    client.emit('offer-candidate', {});
+    client.emit('offer-candidate', {});
+    client.emit('offer-candidate', {});
+
+    const firstLines = logs.filter((m) => m.includes('offer-candidate'));
+    expect(firstLines).toHaveLength(1);
+    expect(firstLines[0]).toContain('(first)');
+
+    dispose();
+    expect(logs.some((m) => m.includes('diagnostics detached') && m.includes('offer-candidate=3'))).toBe(
+      true,
+    );
+  });
+
+  it('detaches every listener on dispose so a reused client does not accumulate handlers', () => {
+    const client = createFakeSignalClient();
+
+    const dispose = attachSignalingDiagnostics(client as any, 'req-1', () => {});
+    expect(client.listenerCount('answer-description')).toBe(1);
+
+    dispose();
+    expect(client.listenerCount('answer-description')).toBe(0);
+    expect(client.listenerCount('offer-description')).toBe(0);
+    expect(client.listenerCount('data-channel')).toBe(0);
   });
 });
 
