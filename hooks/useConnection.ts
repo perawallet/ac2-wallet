@@ -276,6 +276,10 @@ export function useConnection(
   // Disposer for the socket-level `presence` subscription (lives with the
   // socket, not the transport).
   const presenceUnsubRef = useRef<(() => void) | null>(null);
+  // Disposer for the transport-level `onPresence` listener (`createAc2Transport`).
+  // The listener sits on the long-lived signaling socket, so it is torn down
+  // with the socket rather than per negotiation.
+  const transportPresenceUnsubRef = useRef<(() => void) | null>(null);
   // True once the persistent socket is established AND connected, so p2p
   // negotiation may be attempted (subject to the both-peers-present gate).
   const socketReadyRef = useRef(false);
@@ -429,6 +433,14 @@ export function useConnection(
         /* noop */
       }
       presenceUnsubRef.current = null;
+    }
+    if (transportPresenceUnsubRef.current) {
+      try {
+        transportPresenceUnsubRef.current();
+      } catch {
+        /* noop */
+      }
+      transportPresenceUnsubRef.current = null;
     }
     socketReadyRef.current = false;
     setIsSocketConnected(false);
@@ -1363,7 +1375,7 @@ export function useConnection(
 
         // Presence is subscribed on the persistent socket (socket effect), so it
         // is intentionally NOT re-subscribed here.
-        const { datachannel } = await createAc2Transport({
+        const { datachannel, disposePresence } = await createAc2Transport({
           requestId,
           signalClient: client,
           signal: runAbort.signal,
@@ -1400,6 +1412,18 @@ export function useConnection(
             }
           },
         });
+
+        // The transport's `onPresence` listener lives on the persistent socket,
+        // so track its disposer for the socket teardown path (`closeSocket`).
+        // Replace any prior disposer first so a superseded run cannot leak one.
+        if (transportPresenceUnsubRef.current) {
+          try {
+            transportPresenceUnsubRef.current();
+          } catch {
+            /* noop */
+          }
+        }
+        transportPresenceUnsubRef.current = disposePresence;
 
         if (!active) {
           // This run was superseded while negotiation was still winding down.

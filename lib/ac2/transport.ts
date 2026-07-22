@@ -46,6 +46,13 @@ export interface Ac2TransportSetup {
   client: SignalClient;
   /** The control plane DataChannel (`ac2-v1`). */
   datachannel: RTCDataChannel;
+  /**
+   * Removes the `onPresence` listener from the (long-lived) signaling socket.
+   * Call it when tearing down this transport so successive negotiations for the
+   * same `requestId` do not accumulate presence listeners. No-op when
+   * `onPresence` was not supplied.
+   */
+  disposePresence: () => void;
 }
 
 export interface CreateAc2TransportOptions {
@@ -104,12 +111,18 @@ export async function createAc2Transport(
   // we sent with NO following `answer-description` (see the helper's docs).
   const disposeSignalingDiagnostics = attachSignalingDiagnostics(signalClient, requestId);
 
+  // The `onPresence` listener lives on the long-lived signaling socket, which is
+  // reused across socket.io reconnects and across successive negotiations for
+  // the same `requestId`. Own its unsubscribe so it can be released with the
+  // connection (returned below) instead of leaking a listener per negotiation.
+  let disposePresence: () => void = () => {};
+
   try {
     // Presence is handled outside the SignalClient, directly on the socket: keep
     // the caller informed of how many devices are connected for this requestId.
     if (onPresence) {
       const socket = (signalClient as any).socket;
-      if (socket) subscribeToPresence(socket, onPresence);
+      if (socket) disposePresence = subscribeToPresence(socket, onPresence);
     }
 
     const peerPromise = signalClient.peer(
@@ -205,7 +218,12 @@ export async function createAc2Transport(
       throw err;
     }
 
-    return { client: signalClient, datachannel };
+    return { client: signalClient, datachannel, disposePresence };
+  } catch (err) {
+    // On a failed negotiation nothing downstream owns the disposer (the setup is
+    // never returned), so release the presence listener here to avoid a leak.
+    disposePresence();
+    throw err;
   } finally {
     disposeSignalingDiagnostics();
   }
