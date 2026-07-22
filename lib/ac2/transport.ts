@@ -4,7 +4,7 @@
  * SDK and the controller UI consume.
  */
 
-import { SignalClient } from '@algorandfoundation/liquid-client';
+import { LinkError, SignalClient } from '@algorandfoundation/liquid-client';
 
 import { subscribeToPresence, type PresenceResult } from './presence';
 
@@ -116,6 +116,9 @@ export async function createAc2Transport(
   // the same `requestId`. Own its unsubscribe so it can be released with the
   // connection (returned below) instead of leaking a listener per negotiation.
   let disposePresence: () => void = () => {};
+  // Same for the one-shot `link-error` listener installed below: own its
+  // detacher so it never outlives this negotiation.
+  let disposeLinkError: () => void = () => {};
 
   try {
     // Presence is handled outside the SignalClient, directly on the socket: keep
@@ -153,6 +156,40 @@ export async function createAc2Transport(
 
     const racers: Promise<RTCDataChannel>[] = [peerPromise, timeoutPromise];
 
+    // A room refusal under the two-peer lockdown (the session already holds its
+    // one wallet + one peer, or the same role twice) is delivered by the
+    // gateway as a generic `exception` event on the signaling socket, NOT as an
+    // `answer-description`. Watch for it (scoped to THIS requestId) and reject
+    // immediately with the client's typed `LinkError`, so a full session fails
+    // in <1s with an actionable "session full" message instead of hanging out
+    // the 30s answer-description timeout and being misread as "peer offline".
+    const socket = (signalClient as any).socket;
+    if (socket && typeof socket.on === 'function') {
+      let linkErrorReject: (err: Error) => void = () => {};
+      const linkErrorPromise = new Promise<RTCDataChannel>((_, reject) => {
+        linkErrorReject = reject;
+      });
+      const onException = (payload: any) => {
+        if (payload?.event !== 'link-error' || payload?.requestId !== requestId) return;
+        signalClient.peerClient?.close();
+        linkErrorReject(
+          new LinkError(payload?.message ?? 'Liquid Auth refused the link for this requestId', {
+            reason: payload?.reason,
+            requestId,
+          }),
+        );
+      };
+      socket.on('exception', onException);
+      disposeLinkError = () => {
+        try {
+          socket.off?.('exception', onException);
+        } catch {
+          /* noop */
+        }
+      };
+      racers.push(linkErrorPromise);
+    }
+
     // Track the abort listener so it can be removed in `finally` regardless of
     // which racer wins — prevents a dangling listener from firing later and
     // inadvertently closing a healthy peer connection.
@@ -188,6 +225,9 @@ export async function createAc2Transport(
     const datachannel = await Promise.race(racers).finally(() => {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+      // The link-refusal watcher is only relevant while negotiating; detach it
+      // regardless of which racer won so it can't fire against a later run.
+      disposeLinkError();
     });
 
     // Surface the negotiated peer connection so the caller can watch it for
@@ -220,9 +260,11 @@ export async function createAc2Transport(
 
     return { client: signalClient, datachannel, disposePresence };
   } catch (err) {
-    // On a failed negotiation nothing downstream owns the disposer (the setup is
-    // never returned), so release the presence listener here to avoid a leak.
+    // On a failed negotiation nothing downstream owns the disposers (the setup
+    // is never returned), so release both the presence and link-refusal
+    // listeners here to avoid a leak.
     disposePresence();
+    disposeLinkError();
     throw err;
   } finally {
     disposeSignalingDiagnostics();

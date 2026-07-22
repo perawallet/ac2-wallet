@@ -27,6 +27,7 @@ export type {
 export {
   hasPeerPresence,
   isPeerOffline,
+  isPeerRejectedError,
   isPeerUnreachableError,
   normalizePresence,
   PRESENCE_EVENT,

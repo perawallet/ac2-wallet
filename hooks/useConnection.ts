@@ -15,6 +15,7 @@ import {
   describeSelectedCandidatePair,
   generateThid,
   isPeerOffline,
+  isPeerRejectedError,
   isPeerUnreachableError,
   isRegistrationBlockingNotice,
   monitorPeerConnection,
@@ -594,6 +595,23 @@ export function useConnection(
       // Drop every stale transport ref so the next reconnect isn't blocked by
       // the connection effect's guard.
       clearTransport();
+      // A room refusal (two-peer lockdown: the session already has its two
+      // devices) is TERMINAL — retrying can't free a slot, so short-circuit the
+      // auto-reconnect budget and surface an actionable "session full" message
+      // at once instead of hammering the server with rejected attempts.
+      if (isPeerRejectedError(error)) {
+        setIsReconnecting(false);
+        setIsLoading(false);
+        setPeerOffline(false);
+        if (error) setError(error);
+        Alert.alert(
+          'Session Full',
+          error?.message ||
+            'This session already has the maximum number of devices connected. Ask the other device to disconnect and try again.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
       // Kick off (or continue) the bounded, serialized retry sequence. Once the
       // budget is spent, fall back to the manual Reconnect bar (surfacing the
       // terminal error only for a setup failure).

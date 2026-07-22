@@ -154,6 +154,23 @@ export function isPeerUnreachableError(error?: { message?: unknown } | null): bo
 }
 
 /**
+ * Classify a connection failure as a signaling-server ROOM REFUSAL (the
+ * two-peer lockdown: the `requestId` session already holds its one wallet + one
+ * peer, or a device of the same role). The client library rejects with a
+ * `LinkError` (name `'LinkError'`), which `createAc2Transport` surfaces fast
+ * instead of the answer-description timeout.
+ *
+ * Detected by error name rather than `instanceof` so it stays correct even when
+ * the error crosses a module/realm boundary (Metro bundling, re-thrown copies).
+ * Unlike {@link isPeerUnreachableError}, this failure is TERMINAL — retrying
+ * cannot free a slot — so callers should surface it immediately rather than
+ * burning the auto-reconnect budget.
+ */
+export function isPeerRejectedError(error?: { name?: unknown } | null): boolean {
+  return typeof error?.name === 'string' && error.name === 'LinkError';
+}
+
+/**
  * Convenience wrapper for the reconnect decision: resolves `true` when at
  * least one device is connected for `requestId`. Swallows query errors and
  * timeouts into `false` so an offline client simply declines to reconnect
