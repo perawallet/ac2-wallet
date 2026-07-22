@@ -34,8 +34,21 @@ export {
   subscribeToPresence,
 } from './presence';
 export type { PresenceResult, PresenceSocket } from './presence';
-export { parseStreamControlFrame, STX } from './stream';
-export type { AgentPresence, StreamControlFrame } from './stream';
+export {
+  isRegistrationBlockingNotice,
+  normalizeNoticeFrame,
+  parseStreamControlFrame,
+  REGISTRATION_BLOCKING_NOTICE_CODES,
+  selectConnectionNoticeForRequest,
+  STX,
+} from './stream';
+export type {
+  AgentPresence,
+  ConnectionNotice,
+  NoticeLevel,
+  ScopedConnectionNotice,
+  StreamControlFrame,
+} from './stream';
 export { createAc2Transport, waitForSignalSocketConnected } from './transport';
 export type { Ac2TransportSetup, CreateAc2TransportOptions } from './transport';
 

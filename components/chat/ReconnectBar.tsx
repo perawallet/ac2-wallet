@@ -31,7 +31,7 @@ function ReconnectBar({ onReconnect, isError, peerOffline, serviceUnavailable }:
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const message = serviceUnavailable
-    ? 'Service unavailable. Not connected to the signaling service — retrying…'
+    ? 'Service unavailable. Not connected to the signaling service — tap Reconnect to try again.'
     : peerOffline
       ? "Can't reach the chat. Check your remote device is online, then tap Reconnect."
       : isError

@@ -45,7 +45,22 @@ consume.
   sender + active `thid` bookkeeping.
 - `stream.ts` — STX-prefixed control-frame parser for `ac2-stream`
   (`preview` / `finalize` / `discard` / `conversations` / `tool` /
-  `history`).
+  `history` / `notice`). A `notice` frame is an out-of-band advisory
+  (`normalizeNoticeFrame`) rendered by `components/chat/ConnectionNoticeBanner.tsx`
+  as a dismissible banner — e.g. the agent's "a different wallet is
+  connecting and cannot take over" warning. The banner is scoped to the
+  connection it was raised on (`selectConnectionNoticeForRequest` matches the
+  stored `requestId`), so it disappears when the user switches to another
+  connection — which may be a new registration or a previously-paired wallet.
+  A subset of notice codes (`isRegistrationBlockingNotice` —
+  `controller_locked` and `identity_missing`) also means the wallet is **not
+  registered** with the agent: `hooks/useConnection.ts` tracks this per
+  connection and exposes `isRegistered`. While not registered the connection is
+  made **inert** — `send`, `sendAc2`, and `openConversation` are hard-blocked in
+  `useConnection` (not just the disabled composer), so nothing can be sent over
+  a connection that wasn't paired properly. `ChatScreen` also prompts the user
+  to delete the connection (re-pairing generates a new `requestId`, so the old
+  one is dead).
 - `heartbeat.ts` — `ac2-heartbeat` channel handlers.
 
 ## Message flow at a glance
@@ -60,6 +75,17 @@ consume.
    account, and returns `ac2/SigningResponse` (or `SigningRejected`).
 4. Free-text chat + tool/preview frames flow on `ac2-stream`; liveness
    on `ac2-heartbeat`.
+5. If a *different* wallet connects to an already-registered agent, the
+   agent refuses the takeover (it will not reuse or regenerate its key)
+   and pushes a `notice` frame; the wallet shows the banner explaining
+   the operator must clear the agent's keys (`ac2 forget`) before a new
+   wallet can register. The banner belongs to that connection's
+   `requestId` and clears automatically when a different connection is
+   opened. While the wallet is not registered (locked out, or no identity
+   granted yet) the connection is inert — the composer is disabled and
+   `send`/`sendAc2`/`openConversation` are hard-blocked — and the app prompts
+   the user to delete the connection, since re-pairing generates a new
+   `requestId`.
 
 For the agent-side counterpart see
 [`ac2-open-claw-reference`](https://github.com/algorandfoundation/ac2/tree/master/packages/ac2-open-claw-reference).
