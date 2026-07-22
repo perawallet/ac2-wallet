@@ -1,5 +1,11 @@
 import { useProvider } from '@/hooks/useProvider';
-import type { HeartbeatMonitor, MonitoredPeerConnection, PresenceResult } from '@/lib/ac2';
+import type {
+  ConnectionNotice,
+  HeartbeatMonitor,
+  MonitoredPeerConnection,
+  PresenceResult,
+  ScopedConnectionNotice,
+} from '@/lib/ac2';
 import {
   attachHeartbeatChannel,
   createAc2Client,
@@ -10,8 +16,10 @@ import {
   generateThid,
   isPeerOffline,
   isPeerUnreachableError,
+  isRegistrationBlockingNotice,
   monitorPeerConnection,
   queryPresence,
+  selectConnectionNoticeForRequest,
   sendConversationClose,
   sendConversationOpen,
   subscribeToPresence,
@@ -133,6 +141,21 @@ interface UseConnectionResult {
   closeConversation: (thid: string) => void;
   /** Threads the agent advertised on connect (`conversations` control frame). */
   remoteThreads: { thid: string; title?: string; updatedAt?: number }[];
+  /**
+   * Out-of-band advisory the agent pushed (e.g. a warning that a *different*
+   * wallet is connecting to an already-registered agent). `null` when none.
+   */
+  connectionNotice: ConnectionNotice | null;
+  /** Dismiss the current `connectionNotice` banner. */
+  dismissConnectionNotice: () => void;
+  /**
+   * Whether the wallet is registered with the agent for the current connection.
+   * `false` once the agent pushes a registration-blocking notice (a foreign
+   * wallet locked out, or no identity granted yet); the chat composer is
+   * disabled while this is `false` so no new messages can be sent. Unlike the
+   * dismissible `connectionNotice` banner, this is not cleared by dismissing it.
+   */
+  isRegistered: boolean;
 }
 
 interface UseConnectionOptions {
@@ -263,6 +286,36 @@ export function useConnection(
   const [remoteThreads, setRemoteThreads] = useState<
     { thid: string; title?: string; updatedAt?: number }[]
   >([]);
+  // Out-of-band advisory the agent pushed (e.g. the locked/new-wallet warning),
+  // surfaced as a banner in the chat screen. It is bound to the `requestId` it
+  // was raised on: the chat surface is reused across connection switches (this
+  // hook is not remounted per connection), so tagging the notice with its
+  // connection is what keeps a banner from one wallet from bleeding onto
+  // another. `null` when there is nothing to show for the current connection.
+  const [connectionNoticeState, setConnectionNoticeState] =
+    useState<ScopedConnectionNotice | null>(null);
+  // Only surface the notice for the connection it belongs to. Starting a new
+  // connection (a new registration or a previously-paired wallet reconnecting)
+  // has a different `requestId`, so the banner disappears automatically.
+  const connectionNotice = selectConnectionNoticeForRequest(connectionNoticeState, requestId);
+  const dismissConnectionNotice = useCallback(() => setConnectionNoticeState(null), []);
+  // Whether the wallet is registered with the agent for the connection on
+  // screen. Set to "not registered" (scoped to the `requestId`) when the agent
+  // pushes a registration-blocking notice (a foreign wallet locked out, or no
+  // identity granted yet). Kept SEPARATE from the dismissible banner so
+  // dismissing the notice hides the banner but still blocks new messages. It is
+  // reset at the start of each negotiation so a reconnect that succeeds in
+  // registering re-enables the composer.
+  const [notRegisteredState, setNotRegisteredState] = useState<{ requestId: string } | null>(null);
+  const isRegistered = !(notRegisteredState && notRegisteredState.requestId === requestId);
+  // Mirror `isRegistered` into a ref so the stable `send`/`sendAc2`/conversation
+  // callbacks (which close over refs, not render state) can HARD-BLOCK every
+  // outbound action while the connection is not properly paired. Disabling the
+  // composer alone is only a UI gate — this ref makes the connection truly
+  // inert so nothing can be sent over a connection that wasn't paired properly
+  // (no identity granted, or a controller/identity mismatch that locked it out).
+  const isRegisteredRef = useRef(true);
+  isRegisteredRef.current = isRegistered;
 
   // AC2 SDK client; bound once the `ac2-v1` DataChannel opens.
   const [ac2Client, setAc2Client] = useState<Ac2Client | null>(null);
@@ -580,16 +633,46 @@ export function useConnection(
   // When the peer is absent it simply waits — the next `presence` broadcast (or
   // a manual Reconnect) re-invokes this once both parties are back in the room.
   const maybeNegotiate = useCallback(() => {
-    if (userStoppedRef.current) return;
-    if (!socketReadyRef.current) return;
-    if (isConnectedRef.current || transportInFlightRef.current) return;
-    if (autoReconnectTimerRef.current) return;
+    // Log why a negotiation attempt is (or isn't) started. When the app is
+    // stuck on "Connecting…" after the agent restarts, this pinpoints whether
+    // the wallet even TRIED to negotiate — and if not, exactly which gate held
+    // it back (socket not ready, already connecting, peer not present, etc.).
+    if (userStoppedRef.current) {
+      console.log('[ac2] maybeNegotiate: skipped — user stopped the session');
+      return;
+    }
+    if (!socketReadyRef.current) {
+      console.log('[ac2] maybeNegotiate: skipped — signaling socket not ready');
+      return;
+    }
+    if (isConnectedRef.current || transportInFlightRef.current) {
+      console.log(
+        `[ac2] maybeNegotiate: skipped — ${
+          isConnectedRef.current ? 'already connected' : 'a negotiation is already in flight'
+        }`,
+      );
+      return;
+    }
+    if (autoReconnectTimerRef.current) {
+      console.log('[ac2] maybeNegotiate: skipped — an auto-reconnect is already pending');
+      return;
+    }
     // Both peers must be present (deviceCount >= 2) before we negotiate p2p.
     if (isPeerOffline(peerPresenceRef.current)) {
+      console.log(
+        `[ac2] maybeNegotiate: waiting — peer not present (deviceCount=${
+          peerPresenceRef.current?.deviceCount ?? 'unknown'
+        }); will retry on the next presence broadcast`,
+      );
       setIsLoading(false);
       setPeerOffline(true);
       return;
     }
+    console.log(
+      `[ac2] maybeNegotiate: peer present (deviceCount=${
+        peerPresenceRef.current?.deviceCount ?? 'unknown'
+      }) — starting p2p (re)negotiation`,
+    );
     performReconnectRef.current();
   }, []);
   const maybeNegotiateRef = useRef(maybeNegotiate);
@@ -606,6 +689,11 @@ export function useConnection(
   const handlePeerOffline = useCallback(() => {
     // Respect an explicit user disconnect — nothing to keep present for.
     if (userStoppedRef.current) return;
+    console.log(
+      `[ac2] handlePeerOffline: peer left the room (deviceCount=${
+        peerPresenceRef.current?.deviceCount ?? 'unknown'
+      }) — tearing down p2p, keeping socket; awaiting peer to return`,
+    );
     // Cancel any pending automatic reconnect: retrying is pointless while the
     // peer is absent and would otherwise flip the UI back into "Connecting…".
     if (autoReconnectTimerRef.current) {
@@ -687,6 +775,13 @@ export function useConnection(
 
   const send = useCallback(
     (text: string) => {
+      // Hard-block: a connection that wasn't paired properly (no identity, or a
+      // controller/identity mismatch that locked it out) is inert — never put a
+      // message on the wire, regardless of any UI gate.
+      if (!isRegisteredRef.current) {
+        console.warn('Refusing to send message: connection is not registered.');
+        return;
+      }
       const channel = streamChannelRef.current || dataChannelRef.current;
       if (text.trim() && channel && channel.readyState === 'open' && address) {
         const thid = activeThidRef.current;
@@ -722,6 +817,12 @@ export function useConnection(
   // envelopes (see `lib/ac2/conversations.ts`) and tracks the active `thid`.
   const openConversation = useCallback(
     (thid?: string, title?: string): string => {
+      // Hard-block: don't drive the conversation control-plane on a connection
+      // that wasn't paired properly. Return the requested/active thid unchanged.
+      if (!isRegisteredRef.current) {
+        console.warn('Refusing to open conversation: connection is not registered.');
+        return thid && thid.length > 0 ? thid : activeThidRef.current;
+      }
       const nextThid = thid && thid.length > 0 ? thid : generateThid();
       sendConversationOpen(
         { getClient: () => ac2ClientRef.current, getAddress: () => address },
@@ -757,6 +858,12 @@ export function useConnection(
 
   const sendAc2 = useCallback(
     (message: Ac2Message) => {
+      // Hard-block: an unregistered/locked connection must not emit protocol
+      // envelopes either (e.g. approvals, conversation control). Throw so the
+      // caller doesn't record the envelope as sent.
+      if (!isRegisteredRef.current) {
+        throw new Error('Connection is not registered; refusing to send AC2 envelope.');
+      }
       const client = ac2ClientRef.current;
       if (!client) {
         throw new Error('AC2 client not ready (DataChannel not open)');
@@ -1099,14 +1206,30 @@ export function useConnection(
           setPeerPresence(presence);
           peerPresenceRef.current = presence;
           if (isPeerOffline(presence)) {
-            // The peer isn't in the requestId room. Presence is authoritative
-            // and immediate, so react now whether or not a chat is live: if we
-            // were connected, the peer just left, so proactively tear the
-            // transport down and show "Peer offline" instead of waiting out the
-            // heartbeat/ICE watchdog; if we weren't, surface the same clean
-            // inline notice rather than an endless "Connecting…". Only progress
+            // The peer isn't in the requestId room — but the WebRTC data channel
+            // is the source of truth for an established p2p connection, and it
+            // survives signaling-server loss. If a chat is currently live
+            // (`isConnectedRef`), a presence drop is almost always a signaling
+            // artifact (most commonly the signaling server restarting and not
+            // yet re-counting the still-connected peer), NOT a real departure.
+            // Tearing down here would needlessly restart a healthy p2p
+            // connection on every signaling blip, so ignore it: a genuinely gone
+            // peer is caught by the data channel's own detectors (the heartbeat
+            // watchdog and ICE connectivity monitor), which is the standard
+            // "drop only when the data channel fails" behavior.
+            //
+            // When NOT connected there is no live p2p connection to trust, so a
+            // presence drop is authoritative and immediate: proactively tear
+            // down any half-open transport and surface a clean inline "Peer
+            // offline" notice instead of an endless "Connecting…". Only progress
             // to connecting again once the peer is back (the else branch).
-            handlePeerOfflineRef.current();
+            if (isConnectedRef.current) {
+              console.log(
+                '[ac2] presence shows peer offline but the p2p data channel is live — ignoring (the data channel is authoritative; a real drop is handled by the heartbeat/ICE monitors)',
+              );
+            } else {
+              handlePeerOfflineRef.current();
+            }
           } else {
             // Both peers are present: (re)negotiate the p2p transport.
             setPeerOffline(false);
@@ -1184,14 +1307,28 @@ export function useConnection(
       if (!client) return;
       // Peers must both be present (deviceCount >= 2) before negotiating p2p.
       if (isPeerOffline(peerPresenceRef.current)) {
+        console.log(
+          `[ac2] negotiateTransport: aborted — peer not present (deviceCount=${
+            peerPresenceRef.current?.deviceCount ?? 'unknown'
+          })`,
+        );
         setIsLoading(false);
         setPeerOffline(true);
         return;
       }
 
+      console.log(
+        `[ac2] negotiateTransport: opening p2p transport (nonce=${reconnectNonce}, deviceCount=${
+          peerPresenceRef.current?.deviceCount ?? 'unknown'
+        })`,
+      );
       transportInFlightRef.current = true;
       setIsLoading(true);
       setError(null);
+      // Clear any prior "not registered" state so a reconnect that succeeds in
+      // registering re-enables the composer. If the agent is still unregistered
+      // it re-pushes the blocking notice on connect, which re-sets the flag.
+      setNotRegisteredState(null);
 
       try {
         // Apply one STX-prefixed control frame from the agent's stream channel.
@@ -1209,6 +1346,19 @@ export function useConnection(
           setActiveStreamText,
           setLastHeartbeat,
           setRemoteThreads,
+          // Tag every pushed notice with the connection it was raised on so the
+          // banner is scoped to this `requestId` and can't leak onto another
+          // connection the user later switches to.
+          setConnectionNotice: (notice) => {
+            setConnectionNoticeState(notice ? { notice, requestId } : null);
+            // A registration-blocking notice (foreign wallet locked out, or no
+            // identity granted yet) means the wallet is not registered: flag it
+            // scoped to this connection so the composer stays disabled even if
+            // the user dismisses the banner.
+            if (notice && isRegistrationBlockingNotice(notice.code)) {
+              setNotRegisteredState({ requestId });
+            }
+          },
         });
 
         // Presence is subscribed on the persistent socket (socket effect), so it
@@ -1514,5 +1664,8 @@ export function useConnection(
     openConversation,
     closeConversation,
     remoteThreads,
+    connectionNotice,
+    dismissConnectionNotice,
+    isRegistered,
   };
 }

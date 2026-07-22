@@ -13,16 +13,24 @@ export interface Message {
    * Message kind. `'text'` (default) is a normal chat bubble. `'tool'` is a
    * durable record of one tool/exec step the agent ran during a turn, rendered
    * as a distinct "tool card" (with the command + output) rather than a chat
-   * bubble. Legacy messages persisted before tool cards carry no `kind` and are
-   * treated as `'text'`.
+   * bubble. `'task'` is a self-contained background-task card. Legacy messages
+   * persisted before tool cards carry no `kind` and are treated as `'text'`.
    */
-  kind?: 'text' | 'tool';
+  kind?: 'text' | 'tool' | 'task';
   /** Tool name for a `kind: 'tool'` card (e.g. `exec`, `write`). */
   tool?: string;
   /** The command/invocation the agent ran, when the runtime surfaces it. */
   command?: string;
   /** The (possibly truncated) tool output/result text. */
   output?: string;
+  /** Title for a `kind: 'task'` card. */
+  taskTitle?: string;
+  /** The prompt/input that started the background task. */
+  taskPrompt?: string;
+  /** Current lifecycle status of the task. */
+  taskStatus?: 'running' | 'completed' | 'failed' | 'stopped';
+  /** The final result or error message from the task. */
+  taskResult?: string;
   /**
    * Conversation/thread id this message belongs to. A single connection can
    * multiplex several conversations (see `ac2/ConversationOpen`); messages are
@@ -136,6 +144,60 @@ export function addToolActivity(activity: {
 }
 
 /**
+ * Upsert a durable background-task card on a conversation thread, keyed by the
+ * agent-supplied `taskId`. Background tasks emit status changes and results
+ * incrementally: the agent re-emits the same `taskId` to flip a card from
+ * `running` to a terminal status and attach the result.
+ */
+export function addTaskActivity(activity: {
+  taskId: string;
+  address: string;
+  origin: string;
+  requestId: string;
+  thid: string;
+  title?: string;
+  prompt?: string;
+  status?: Message['taskStatus'];
+  result?: string;
+}) {
+  messagesStore.setState((state) => {
+    const id = `task-${activity.requestId}-${activity.taskId}`;
+    const existingIndex = state.messages.findIndex((m) => m.id === id);
+    if (existingIndex !== -1) {
+      // Refresh the existing card in place: only overwrite fields the new
+      // frame actually carries, so a status-only refresh doesn't wipe an
+      // earlier title/prompt.
+      const messages = [...state.messages];
+      const prev = messages[existingIndex];
+      messages[existingIndex] = {
+        ...prev,
+        ...(activity.title ? { taskTitle: activity.title } : {}),
+        ...(activity.prompt ? { taskPrompt: activity.prompt } : {}),
+        ...(activity.status ? { taskStatus: activity.status } : {}),
+        ...(activity.result !== undefined ? { taskResult: activity.result } : {}),
+      };
+      return { ...state, messages };
+    }
+    const card: Message = {
+      id,
+      text: '',
+      sender: 'peer',
+      timestamp: Date.now(),
+      address: activity.address,
+      origin: activity.origin,
+      requestId: activity.requestId,
+      thid: activity.thid,
+      kind: 'task',
+      ...(activity.title ? { taskTitle: activity.title } : {}),
+      ...(activity.prompt ? { taskPrompt: activity.prompt } : {}),
+      ...(activity.status ? { taskStatus: activity.status } : {}),
+      ...(activity.result !== undefined ? { taskResult: activity.result } : {}),
+    };
+    return { ...state, messages: [...state.messages, card] };
+  });
+}
+
+/**
  * Replace the locally-stored history for a single conversation thread with the
  * agent-supplied history, restoring a conversation the wallet may not have
  * stored locally (new device, cleared store). Idempotent: existing messages
@@ -148,7 +210,7 @@ export function setThreadHistory(
   requestId: string,
   thid: string,
   history: {
-    role: 'user' | 'assistant' | 'tool';
+    role: 'user' | 'assistant' | 'tool' | 'task';
     text: string;
     at?: number;
     // Tool-card fields, present only for `role: 'tool'` entries.
@@ -156,18 +218,24 @@ export function setThreadHistory(
     tool?: string;
     command?: string;
     output?: string;
+    // Task-card fields, present only for `role: 'task'` entries.
+    id?: string;
+    title?: string;
+    prompt?: string;
+    status?: string;
+    result?: string;
   }[],
 ) {
   messagesStore.setState((state) => {
-    // When the replayed history itself carries tool cards (a fresh device /
+    // When the replayed history itself carries tool/task cards (a fresh device /
     // cleared store recovering everything from the agent), we replace the whole
-    // thread — chat *and* tool cards. Otherwise the agent only sent chat text,
-    // so we must keep any tool cards already collected live on this device,
-    // since wiping them would drop exec activity the replay can't restore.
-    const historyHasTools = history.some((h) => h.role === 'tool');
+    // thread — chat, tool and task cards. Otherwise the agent only sent chat text,
+    // so we must keep any durable cards already collected live on this device,
+    // since wiping them would drop activity the replay can't restore.
+    const historyHasTools = history.some((h) => h.role === 'tool' || h.role === 'task');
     const retained = state.messages.filter(
       (m) =>
-        (!historyHasTools && m.kind === 'tool') ||
+        (!historyHasTools && (m.kind === 'tool' || m.kind === 'task')) ||
         m.address !== address ||
         m.origin !== origin ||
         m.requestId !== requestId ||
@@ -192,6 +260,24 @@ export function setThreadHistory(
           ...(h.tool ? { tool: h.tool } : {}),
           ...(h.command ? { command: h.command } : {}),
           ...(h.output !== undefined ? { output: h.output } : {}),
+        };
+      }
+      if (h.role === 'task') {
+        const taskId = h.id ?? `restored-${index}`;
+        return {
+          id: `task-${requestId}-${taskId}`,
+          text: '',
+          sender: 'peer',
+          timestamp: typeof h.at === 'number' ? h.at : Date.now() + index,
+          address,
+          origin,
+          requestId,
+          thid,
+          kind: 'task',
+          taskTitle: h.title,
+          taskPrompt: h.prompt,
+          taskStatus: h.status as Message['taskStatus'],
+          taskResult: h.result,
         };
       }
       return {

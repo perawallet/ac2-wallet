@@ -1,6 +1,7 @@
 import { Modal } from '@/components/Modal';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ChatTimeline, type TimelineEntry } from '@/components/chat/ChatTimeline';
+import { ConnectionNoticeBanner } from '@/components/chat/ConnectionNoticeBanner';
 import { ConnectionStatusBar } from '@/components/chat/ConnectionStatusBar';
 import { ReconnectBar } from '@/components/chat/ReconnectBar';
 import { ThreadBar } from '@/components/chat/ThreadBar';
@@ -65,6 +66,9 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     openConversation,
     closeConversation,
     remoteThreads,
+    connectionNotice,
+    dismissConnectionNotice,
+    isRegistered,
   } = useConnection(origin, requestId, { allowPasskeyCreation });
 
   const { approveSigning, rejectSigning, approveKey, rejectKey } = useAc2Responders({
@@ -234,27 +238,54 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     ]);
   }, [origin, requestId, address]);
 
+  // Permanently remove this connection: messages, agent identities, session
+  // data, and tear down the transport. Shared by the manual "Forget" action and
+  // the "not registered" prompt below.
+  const deleteConnection = React.useCallback(() => {
+    clearMessagesByConnection(origin, requestId);
+    clearAc2MessagesByConnection(origin, requestId);
+    clearAgentIdentitiesByConnection(origin, requestId);
+    removeSession(requestId, origin);
+    clearCurrentConnection();
+    reset();
+  }, [origin, requestId, reset]);
+
   const handleForget = React.useCallback(() => {
     Alert.alert(
       'Forget connection?',
       'This permanently removes all messages, agent identities, and session data for this connection.',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Forget',
-          style: 'destructive',
-          onPress: () => {
-            clearMessagesByConnection(origin, requestId);
-            clearAc2MessagesByConnection(origin, requestId);
-            clearAgentIdentitiesByConnection(origin, requestId);
-            removeSession(requestId, origin);
-            clearCurrentConnection();
-            reset();
-          },
-        },
+        { text: 'Forget', style: 'destructive', onPress: deleteConnection },
       ],
     );
-  }, [origin, requestId, reset]);
+  }, [deleteConnection]);
+
+  // When the connection isn't paired properly (a foreign wallet was locked out,
+  // or no identity was granted), the agent will only ever re-pair under a NEW
+  // `requestId` — this connection is dead. Prompt the user (once per
+  // occurrence) to delete this thread so it doesn't linger unusable. The
+  // composer is already disabled and sending is hard-blocked in `useConnection`.
+  const promptedDeleteRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (isConnected && !isRegistered) {
+      if (promptedDeleteRef.current === requestId) return;
+      promptedDeleteRef.current = requestId;
+      Alert.alert(
+        'Connection not registered',
+        'This wallet isn\u2019t paired with the agent, so it can\u2019t send messages. ' +
+          'Re-pairing creates a new connection, so this one can be deleted.',
+        [
+          { text: 'Keep', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: deleteConnection },
+        ],
+      );
+    } else if (isRegistered) {
+      // Registration recovered (or a different connection is on screen): allow
+      // the prompt to fire again if this connection later becomes unregistered.
+      if (promptedDeleteRef.current === requestId) promptedDeleteRef.current = null;
+    }
+  }, [isConnected, isRegistered, requestId, deleteConnection]);
 
   return (
     <KeyboardAvoidingView
@@ -280,6 +311,9 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
           onClose={closeConversation}
         />
       </ConnectionStatusBar>
+      {connectionNotice ? (
+        <ConnectionNoticeBanner notice={connectionNotice} onDismiss={dismissConnectionNotice} />
+      ) : null}
       <View className="flex-1">
         <ChatTimeline
           timeline={timeline}
@@ -292,7 +326,12 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
           rejectKey={rejectKey}
         />
       </View>
-      {isConnected ? (
+      {isConnected && !isRegistered ? (
+        // Connected but the wallet is not registered with the agent (a foreign
+        // wallet was locked out, or no identity has been granted yet): block
+        // new messages until registration completes.
+        <ChatComposer onSend={send} enabled={false} placeholder="Not registered — can't send messages" />
+      ) : isConnected ? (
         <ChatComposer onSend={send} enabled placeholder="Message" />
       ) : isReconnecting ? (
         <ChatComposer

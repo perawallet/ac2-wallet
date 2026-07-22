@@ -7,8 +7,9 @@
  * never rendered as a chat message. The returned function applies one frame and
  * reports whether `raw` was a control frame (recognized or malformed).
  */
-import { parseStreamControlFrame } from '@/lib/ac2';
-import { addMessage, addToolActivity, setThreadHistory } from '@/stores/messages';
+import { normalizeNoticeFrame, parseStreamControlFrame } from '@/lib/ac2';
+import type { ConnectionNotice } from '@/lib/ac2';
+import { addMessage, addToolActivity, addTaskActivity, setThreadHistory } from '@/stores/messages';
 import { updateSessionActivity } from '@/stores/sessions';
 import type { MutableRefObject } from 'react';
 
@@ -31,6 +32,11 @@ export interface ControlFrameContext {
   setActiveStreamText: (text: string) => void;
   setLastHeartbeat: (at: number) => void;
   setRemoteThreads: (threads: RemoteThread[]) => void;
+  /**
+   * Surface an out-of-band advisory the agent pushed (e.g. a locked/new-wallet
+   * warning) as a banner. `null` clears it.
+   */
+  setConnectionNotice: (notice: ConnectionNotice | null) => void;
 }
 
 export function createControlFrameHandler(ctx: ControlFrameContext): (raw: string) => boolean {
@@ -45,6 +51,7 @@ export function createControlFrameHandler(ctx: ControlFrameContext): (raw: strin
     setActiveStreamText,
     setLastHeartbeat,
     setRemoteThreads,
+    setConnectionNotice,
   } = ctx;
 
   return (raw: string): boolean => {
@@ -146,6 +153,34 @@ export function createControlFrameHandler(ctx: ControlFrameContext): (raw: strin
         }
         break;
       }
+      case 'task': {
+        // Durable background-task card: a record of one background sub-agent run.
+        // Persist it (de-duped by the agent-supplied id) so it renders as a
+        // distinct "task card" in the thread's timeline.
+        if (typeof frame.id === 'string' && addressRef.current) {
+          addTaskActivity({
+            taskId: frame.id,
+            address: addressRef.current,
+            origin,
+            requestId,
+            thid: fthid,
+            ...(typeof frame.title === 'string' ? { title: frame.title } : {}),
+            ...(typeof frame.prompt === 'string' ? { prompt: frame.prompt } : {}),
+            ...(typeof frame.status === 'string' ? { status: frame.status } : {}),
+            ...(typeof frame.result === 'string' ? { result: frame.result } : {}),
+          });
+          updateSessionActivity(requestId, origin);
+        }
+        break;
+      }
+      case 'notice': {
+        // Out-of-band advisory (never a chat bubble): surface it as a banner so
+        // the user is alerted even though the agent isn't replying in-thread.
+        // Used for the "a different wallet is connecting" lock warning.
+        const notice = normalizeNoticeFrame(frame);
+        if (notice) setConnectionNotice(notice);
+        break;
+      }
       case 'history': {
         if (typeof frame.thid === 'string' && Array.isArray(frame.messages) && addressRef.current) {
           // The agent replayed an existing conversation's history (e.g.
@@ -154,8 +189,11 @@ export function createControlFrameHandler(ctx: ControlFrameContext): (raw: strin
           const history = frame.messages
             .filter(
               (m: any) =>
-                (m?.role === 'user' || m?.role === 'assistant' || m?.role === 'tool') &&
-                (typeof m?.text === 'string' || m?.role === 'tool'),
+                (m?.role === 'user' ||
+                  m?.role === 'assistant' ||
+                  m?.role === 'tool' ||
+                  m?.role === 'task') &&
+                (typeof m?.text === 'string' || m?.role === 'tool' || m?.role === 'task'),
             )
             .map((m: any) => {
               if (m.role === 'tool') {
@@ -169,6 +207,18 @@ export function createControlFrameHandler(ctx: ControlFrameContext): (raw: strin
                   ...(typeof m.name === 'string' ? { tool: m.name } : {}),
                   ...(typeof m.command === 'string' ? { command: m.command } : {}),
                   ...(typeof m.output === 'string' ? { output: m.output } : {}),
+                  ...(typeof m.at === 'number' ? { at: m.at } : {}),
+                };
+              }
+              if (m.role === 'task') {
+                return {
+                  role: 'task' as const,
+                  text: '',
+                  ...(typeof m.id === 'string' ? { id: m.id } : {}),
+                  ...(typeof m.title === 'string' ? { title: m.title } : {}),
+                  ...(typeof m.prompt === 'string' ? { prompt: m.prompt } : {}),
+                  ...(typeof m.status === 'string' ? { status: m.status } : {}),
+                  ...(typeof m.result === 'string' ? { result: m.result } : {}),
                   ...(typeof m.at === 'number' ? { at: m.at } : {}),
                 };
               }
