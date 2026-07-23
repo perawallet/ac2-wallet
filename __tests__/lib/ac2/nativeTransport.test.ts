@@ -3,6 +3,7 @@ import {
   AC2_CONTROL_CHANNEL,
   createNativeAc2Transport,
   type LiquidAuthNativeApi,
+  nativeAuthFetch,
 } from '@/lib/ac2/nativeTransport';
 
 /** Flush pending microtasks so awaited `start()`/`connect()` progress. */
@@ -50,6 +51,7 @@ function createFakeNative(): FakeNative {
         }),
     ),
     cancel: jest.fn(async () => {}),
+    setActive: jest.fn(() => {}),
     sendToChannel: jest.fn((channel: string, m: string) => {
       sent.push([channel, m]);
     }),
@@ -59,6 +61,7 @@ function createFakeNative(): FakeNative {
     addConnectionStateListener: (l) => sub(conn, l),
     addPresenceListener: (l) => sub(presence, l),
     addLinkErrorListener: (l) => sub(link, l),
+    request: jest.fn(async () => ({ ok: true, status: 200, statusText: 'OK', body: '' })),
   };
 
   return {
@@ -96,6 +99,9 @@ describe('createNativeAc2Transport', () => {
     expect(connectArgs[0]).toBe('req-1');
     expect(connectArgs[1]).toBe('answer');
     expect(connectArgs[3].dataChannels).toHaveProperty(AC2_CONTROL_CHANNEL);
+    // Deliverable channels are buffered natively while the app is offline;
+    // pure control (`ac2-heartbeat`) is intentionally excluded.
+    expect(connectArgs[3].queueChannels).toEqual(['ac2-v1', 'ac2-stream']);
 
     // Side channels are surfaced before negotiation completes.
     expect(sideChannels.map((c) => c.label).sort()).toEqual(['ac2-heartbeat', 'ac2-stream']);
@@ -236,5 +242,72 @@ describe('createNativeAc2Transport', () => {
     expect(fake.api.cancel).toHaveBeenCalled();
     expect(fake.activeMessageListeners()).toBe(0);
   });
+});
 
+describe('nativeAuthFetch', () => {
+  it('maps a JSON POST onto the native request and returns a Response', async () => {
+    const fake = createFakeNative();
+    (fake.api.request as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      body: '{"authenticated":true}',
+    });
+
+    const res = await nativeAuthFetch(
+      'https://signal.example/attestation/response',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"a":1}' },
+      fake.api,
+    );
+
+    expect(fake.api.request).toHaveBeenCalledWith(
+      'https://signal.example/attestation/response',
+      'POST',
+      { 'Content-Type': 'application/json' },
+      '{"a":1}',
+    );
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ authenticated: true });
+  });
+
+  it('defaults to GET with no body and surfaces non-ok status', async () => {
+    const fake = createFakeNative();
+    (fake.api.request as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      body: '',
+    });
+
+    const res = await nativeAuthFetch('https://signal.example/auth/session', {}, fake.api);
+
+    expect(fake.api.request).toHaveBeenCalledWith(
+      'https://signal.example/auth/session',
+      'GET',
+      undefined,
+      undefined,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(401);
+  });
+
+  it('flattens a Headers instance into a plain string map', async () => {
+    const fake = createFakeNative();
+    (fake.api.request as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      body: '',
+    });
+
+    await nativeAuthFetch(
+      'https://signal.example/assertion/response',
+      { method: 'POST', headers: new Headers({ 'Content-Type': 'application/json' }), body: '{}' },
+      fake.api,
+    );
+
+    const headersArg = (fake.api.request as jest.Mock).mock.calls[0][2];
+    expect(headersArg).toMatchObject({ 'content-type': 'application/json' });
+  });
 });

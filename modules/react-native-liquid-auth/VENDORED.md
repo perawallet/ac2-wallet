@@ -19,6 +19,21 @@ make behavioral edits to the native Kotlin/Swift or the `src/` TypeScript here;
 change upstream first, then re-vendor. Consistent with the vendor-a-copy
 convention (consolidation decisions D1/D7).
 
+### Intentional local divergence (build config only, not behavior)
+
+- **`android/build.gradle` — WebRTC is `compileOnly`.** Upstream declares
+  `implementation "io.getstream:stream-webrtc-android:1.1.3"` so the standalone
+  package ships its own `org.webrtc.*`. In this wallet, `react-native-webrtc`
+  already ships the same `org.webrtc` API (`org.jitsi:webrtc:124.+`), so two
+  implementations on the app classpath fail the Android build with
+  `Duplicate class org.webrtc.*` (63 collisions). The dependency is changed to
+  `compileOnly` here so the module compiles against `org.webrtc` but the app's
+  WebRTC provides those classes at runtime. The module only imports standard
+  `org.webrtc.*` types (verified), so this is safe. Do **not** back-port this
+  upstream — the standalone package still needs `implementation`; it is a
+  consumption-side adjustment specific to the wallet (which also depends on
+  `react-native-webrtc`).
+
 ## What was copied / trimmed
 
 Copied from upstream (verbatim):
@@ -52,9 +67,16 @@ import resolves unchanged. The vendored tree is excluded from the wallet's
 
 ## Known caveat
 
-The iOS podspec pulls `WebRTC-lib`, which can clash with the wallet's
-`react-native-webrtc` at `pod install`. This is not introduced by vendoring; it
-is resolved when the in-process WebRTC path is retired (Phase 4 cleanup).
+**Android (resolved):** the module's `org.webrtc` provider (`stream-webrtc-android`)
+collided with the wallet's `react-native-webrtc` (`org.jitsi:webrtc`), failing
+`expo run:android` / `:app:assembleDebug` with `Duplicate class org.webrtc.*`.
+Fixed by declaring the module's WebRTC dependency `compileOnly` (see "Intentional
+local divergence" above) — `:app:assembleDebug` now `BUILD SUCCESSFUL`.
+
+**iOS (open):** the iOS podspec pulls `WebRTC-lib`, which can similarly clash
+with the wallet's `react-native-webrtc` at `pod install`. This is not introduced
+by vendoring; it is resolved when the in-process WebRTC path is retired (Phase 4
+cleanup).
 
 ## Upgrade path (removing this copy)
 

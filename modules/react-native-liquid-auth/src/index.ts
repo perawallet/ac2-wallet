@@ -7,6 +7,7 @@ import type {
   LiquidAuthMessageEvent,
   LiquidAuthPeerType,
   LiquidAuthPresenceEvent,
+  LiquidAuthResponse,
   LiquidAuthStateChangeEvent,
   LiquidAuthTrackEvent,
 } from './LiquidAuthNative.types';
@@ -53,6 +54,11 @@ export function start(url: string): Promise<void> {
  *
  * Pass `options.dataChannels` to open multiple named data channels (e.g.
  * `ac2-v1`, `ac2-stream`) when acting as the offerer (`type: 'answer'`).
+ * Pass `options.notifications` to customize (or suppress) the per-message-type
+ * notifications the background service shows while the app is backgrounded.
+ * Pass `options.queueChannels` to choose which channels the service buffers
+ * while the app is offline (replayed via `onMessage` once online; see
+ * {@link setActive}).
  */
 export function connect(
   requestId: string,
@@ -69,6 +75,17 @@ export function connect(
  */
 export function cancel(): Promise<void> {
   return LiquidAuthNativeModule.cancel();
+}
+
+/**
+ * Set whether the app is currently online (foregrounded, with its JS listeners
+ * attached). When set active, any messages the background service buffered
+ * while the app was offline are replayed through the `onMessage` event in
+ * arrival order. Drive this from the app's foreground/background lifecycle so
+ * the app — not the library — controls the signaling delivery state.
+ */
+export function setActive(active: boolean): void {
+  return LiquidAuthNativeModule.setActive(active);
 }
 
 /**
@@ -90,6 +107,24 @@ export function sendToChannel(channel: string, message: string): void {
  */
 export function disconnect(): Promise<void> {
   return LiquidAuthNativeModule.disconnect();
+}
+
+/**
+ * Perform an authenticated HTTP request through the native module's shared
+ * cookie-jar client (the same client that backs the background signaling
+ * socket). Session cookies set by the response (e.g. `connect.sid`) are
+ * captured natively, so a subsequent {@link start} authenticates
+ * transparently. Use this to run the whole Liquid Auth HTTP exchange
+ * (attestation/assertion options + response, `/auth/session`) natively so the
+ * background service shares the wallet's session.
+ */
+export function request(
+  url: string,
+  method: string = 'GET',
+  headers?: Record<string, string>,
+  body?: string
+): Promise<LiquidAuthResponse> {
+  return LiquidAuthNativeModule.request(url, method, headers, body);
 }
 
 /**

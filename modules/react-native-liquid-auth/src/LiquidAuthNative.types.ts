@@ -30,6 +30,41 @@ export interface DataChannelInit {
 }
 
 /**
+ * A single notification template the native background service uses to render
+ * a per-message-type notification while the app is backgrounded.
+ */
+export interface NotificationTemplate {
+  /** Notification title. When omitted, the ongoing notification's title is kept. */
+  title?: string;
+  /** Notification body text. When omitted, the raw message is used. */
+  body?: string;
+}
+
+/**
+ * Configuration for the per-message notifications the native background
+ * service shows while the app is backgrounded (or its JS runtime is
+ * suspended/killed). The consumer owns all copy; the native service renders
+ * from this map, so notifications work even when the JS runtime is not
+ * running. Content is keyed by the message's `type` (see {@link typeKey}).
+ */
+export interface NotificationConfig {
+  /**
+   * Channel labels to never notify for (e.g. `ac2-heartbeat` / `ac2-stream`
+   * control traffic).
+   */
+  suppressChannels?: string[];
+  /** JSON field in the message used to select a template (default `type`). */
+  typeKey?: string;
+  /** Per-message-type templates, keyed by the value of {@link typeKey}. */
+  templates?: Record<string, NotificationTemplate>;
+  /**
+   * Fallback template used when the message's type matches no entry in
+   * {@link templates}. Omit to suppress unmatched messages entirely.
+   */
+  fallback?: NotificationTemplate;
+}
+
+/**
  * Extra options for {@link connect}, mirroring the `options` argument of the
  * `SignalClient.peer()` method in `liquid-auth-js`.
  */
@@ -40,6 +75,21 @@ export interface LiquidAuthConnectOptions {
    * Defaults to a single `liquid` channel.
    */
   dataChannels?: Record<string, DataChannelInit>;
+  /**
+   * Per-message-type notification content shown natively while the app is
+   * backgrounded. When omitted, the native service falls back to showing the
+   * raw message text for every channel.
+   */
+  notifications?: NotificationConfig;
+  /**
+   * Data-channel labels whose inbound messages the background service buffers
+   * while the app is offline (its JS listener is not attached) and replays via
+   * `onMessage` once it comes back online (see `setActive`). When omitted,
+   * messages on every channel are buffered; pass an explicit list to buffer
+   * only the channels that carry deliverable app requests (e.g. `ac2-v1`,
+   * `ac2-stream`) and skip pure control traffic (e.g. `ac2-heartbeat`).
+   */
+  queueChannels?: string[];
 }
 
 /**
@@ -111,6 +161,19 @@ export interface LiquidAuthLinkErrorEvent {
  */
 export interface LiquidAuthConnectionStateEvent {
   state: string;
+}
+
+/**
+ * The result of an authenticated {@link request} performed through the native
+ * module's shared cookie-jar HTTP client (the same client that backs the
+ * background signaling socket). `body` is the raw response text; callers parse
+ * JSON themselves.
+ */
+export interface LiquidAuthResponse {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  body: string;
 }
 
 /**

@@ -47,6 +47,65 @@ export interface NativeDataChannelInit {
   id?: number;
 }
 
+/** A single notification template (mirrors the module's `NotificationTemplate`). */
+export interface NativeNotificationTemplate {
+  title?: string;
+  body?: string;
+}
+
+/**
+ * Per-message-type notification config passed to the native service (mirrors
+ * the module's `NotificationConfig`). The native service renders these while
+ * the app is backgrounded — even when the JS runtime is suspended/killed — so
+ * the copy must live here (wallet-owned), not in the shared library.
+ */
+export interface NativeNotificationConfig {
+  /** Channel labels to never notify for (control traffic). */
+  suppressChannels?: string[];
+  /** JSON field in the message used to select a template (default `type`). */
+  typeKey?: string;
+  /** Per-message-type templates, keyed by the message's `type`. */
+  templates?: Record<string, NativeNotificationTemplate>;
+  /** Fallback template used when no `type` matches; omit to suppress. */
+  fallback?: NativeNotificationTemplate;
+}
+
+/**
+ * The wallet's default per-message-type notifications for the background
+ * service. Heartbeat/stream control channels never notify; AC2 signing/key
+ * requests get tailored copy; anything else (chat, unknown) falls back to a
+ * generic "new message" banner. The type keys are the AC2 message-type URIs
+ * (`AC2MessageTypes` in `@ac2/ac2-sdk`).
+ */
+export const DEFAULT_AC2_NOTIFICATIONS: NativeNotificationConfig = {
+  suppressChannels: ['ac2-heartbeat', 'ac2-stream'],
+  typeKey: 'type',
+  templates: {
+    'ac2/SigningRequest': {
+      title: 'Signature request',
+      body: 'A request is waiting for your approval. Tap to review.',
+    },
+    'ac2/KeyRequest': {
+      title: 'Key request',
+      body: 'A request for account access is waiting. Tap to review.',
+    },
+  },
+  fallback: {
+    title: 'AC2 Wallet',
+    body: 'You have a new message. Tap to open.',
+  },
+};
+
+/**
+ * The wallet's default set of channels the native service buffers while the
+ * app is offline (and replays via `onMessage` once it comes back online). The
+ * deliverable channels carry app requests: `ac2-v1` (the SDK control plane)
+ * and `ac2-stream` (control frames / messages to deliver). `ac2-heartbeat` is
+ * intentionally excluded — it is pure liveness ping/pong, not a deliverable
+ * request. Any inbound activity on ANY channel still counts as liveness.
+ */
+export const DEFAULT_AC2_QUEUE_CHANNELS: string[] = ['ac2-v1', 'ac2-stream'];
+
 /** Native-broadcast presence payload (mirrors {@link PresenceResult}). */
 export interface NativePresenceEvent {
   requestId: string;
@@ -78,18 +137,31 @@ export interface LiquidAuthNativeApi {
     requestId: string,
     type: 'offer' | 'answer',
     iceServers?: NativeIceServer[],
-    options?: { dataChannels?: Record<string, NativeDataChannelInit> },
+    options?: {
+      dataChannels?: Record<string, NativeDataChannelInit>;
+      notifications?: NativeNotificationConfig;
+      queueChannels?: string[];
+    },
   ): Promise<void>;
   cancel(): Promise<void>;
+  setActive(active: boolean): void;
   sendToChannel(channel: string, message: string): void;
   disconnect(): Promise<void>;
-  addMessageListener(listener: (e: { channel: string; message: string }) => void): NativeSubscription;
+  addMessageListener(
+    listener: (e: { channel: string; message: string }) => void,
+  ): NativeSubscription;
   addStateChangeListener(
     listener: (e: { channel: string; state: string | null }) => void,
   ): NativeSubscription;
   addConnectionStateListener(listener: (e: { state: string }) => void): NativeSubscription;
   addPresenceListener(listener: (e: NativePresenceEvent) => void): NativeSubscription;
   addLinkErrorListener(listener: (e: NativeLinkErrorEvent) => void): NativeSubscription;
+  request(
+    url: string,
+    method: string,
+    headers?: Record<string, string>,
+    body?: string,
+  ): Promise<{ ok: boolean; status: number; statusText: string; body: string }>;
 }
 
 export interface CreateNativeAc2TransportOptions {
@@ -113,6 +185,16 @@ export interface CreateNativeAc2TransportOptions {
   iceServers?: NativeIceServer[];
   /** Named data channels to open; defaults to the AC2 spec set. */
   dataChannels?: Record<string, NativeDataChannelInit>;
+  /**
+   * Per-message-type notification content the native service shows while the
+   * app is backgrounded; defaults to {@link DEFAULT_AC2_NOTIFICATIONS}.
+   */
+  notifications?: NativeNotificationConfig;
+  /**
+   * Channels the native service buffers while the app is offline (replayed via
+   * `onMessage` once online); defaults to {@link DEFAULT_AC2_QUEUE_CHANNELS}.
+   */
+  queueChannels?: string[];
   /** Injected native module (defaults to the real `react-native-liquid-auth`). */
   native?: LiquidAuthNativeApi;
 }
@@ -150,7 +232,46 @@ function getDefaultNativeApi(): LiquidAuthNativeApi {
     addConnectionStateListener: mod.addConnectionStateListener,
     addPresenceListener: mod.addPresenceListener,
     addLinkErrorListener: mod.addLinkErrorListener,
+    request: mod.request,
+    setActive: mod.setActive,
   };
+}
+
+/** Flatten a `HeadersInit` into the plain string map the native `request` takes. */
+function normalizeHeaders(headers?: HeadersInit): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+    const out: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      out[key] = value;
+    });
+    return out;
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers as [string, string][]);
+  }
+  return { ...(headers as Record<string, string>) };
+}
+
+/**
+ * `fetch`-shaped wrapper that routes an HTTP request through the native
+ * module's shared cookie-jar client, so the Liquid Auth session cookie
+ * (`connect.sid`) is captured natively and rides the background signaling
+ * socket (D9). Returns a standard {@link Response} so existing consumers
+ * (`.ok`/`.status`/`.json()`) are unchanged. The native module is injectable
+ * for tests.
+ */
+export async function nativeAuthFetch(
+  input: string,
+  init: RequestInit = {},
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): Promise<Response> {
+  const method = (init.method ?? 'GET').toString().toUpperCase();
+  const headers = normalizeHeaders(init.headers);
+  const body =
+    init.body == null ? undefined : typeof init.body === 'string' ? init.body : String(init.body);
+  const res = await native.request(input, method, headers, body);
+  return new Response(res.body, { status: res.status, statusText: res.statusText });
 }
 
 /**
@@ -189,6 +310,20 @@ export async function cancelNativeNegotiation(
 }
 
 /**
+ * Tell the native background service whether the app is currently online
+ * (foregrounded, with its JS listeners attached). When set active, any
+ * messages the service buffered while the app was offline are replayed through
+ * the `onMessage` event in arrival order. Drive this from the app's
+ * foreground/background lifecycle so the app owns the signaling delivery state.
+ */
+export function setNativeActive(
+  active: boolean,
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): void {
+  native.setActive(active);
+}
+
+/**
  * Subscribe to server-broadcast presence for the connected `requestId`. Lives
  * with the persistent service (not a single negotiation), mirroring how the JS
  * path subscribed presence on the long-lived signaling socket.
@@ -219,6 +354,8 @@ export async function createNativeAc2Transport(
     onLinkError,
     iceServers = DEFAULT_ICE_SERVERS,
     dataChannels = DEFAULT_DATA_CHANNELS,
+    notifications = DEFAULT_AC2_NOTIFICATIONS,
+    queueChannels = DEFAULT_AC2_QUEUE_CHANNELS,
     native = getDefaultNativeApi(),
   } = opts;
 
@@ -235,7 +372,10 @@ export async function createNativeAc2Transport(
   // The control channel must always exist even if a caller passed a custom map
   // that omitted it, since the SDK client binds to it.
   if (!channels.has(AC2_CONTROL_CHANNEL)) {
-    channels.set(AC2_CONTROL_CHANNEL, new NativeDataChannel(AC2_CONTROL_CHANNEL, native.sendToChannel));
+    channels.set(
+      AC2_CONTROL_CHANNEL,
+      new NativeDataChannel(AC2_CONTROL_CHANNEL, native.sendToChannel),
+    );
   }
 
   const peerConnection = new NativePeerConnection();
@@ -286,7 +426,11 @@ export async function createNativeAc2Transport(
     // Race the native negotiation against the abort signal; on abort, ask the
     // native service to cancel the in-flight negotiation.
     let onAbort: (() => void) | undefined;
-    const connectPromise = native.connect(requestId, 'answer', iceServers, { dataChannels });
+    const connectPromise = native.connect(requestId, 'answer', iceServers, {
+      dataChannels,
+      notifications,
+      queueChannels,
+    });
 
     if (signal) {
       const abortPromise = new Promise<never>((_, reject) => {

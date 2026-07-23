@@ -6,6 +6,7 @@ import {
   LiquidAuthMessage,
   LiquidAuthNativeModuleEvents,
   LiquidAuthPeerType,
+  LiquidAuthResponse,
 } from './LiquidAuthNative.types';
 
 const UNSUPPORTED = 'LiquidAuthNative is not supported on web';
@@ -36,6 +37,10 @@ class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> 
     throw new Error(UNSUPPORTED);
   }
 
+  setActive(_active: boolean): void {
+    throw new Error(UNSUPPORTED);
+  }
+
   send(_message: string): void {
     throw new Error(UNSUPPORTED);
   }
@@ -45,6 +50,15 @@ class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> 
   }
 
   async disconnect(): Promise<void> {
+    throw new Error(UNSUPPORTED);
+  }
+
+  async request(
+    _url: string,
+    _method: string,
+    _headers?: Record<string, string>,
+    _body?: string
+  ): Promise<LiquidAuthResponse> {
     throw new Error(UNSUPPORTED);
   }
 }

@@ -20,9 +20,11 @@ import {
   isPeerUnreachableError,
   isRegistrationBlockingNotice,
   monitorPeerConnection,
+  nativeAuthFetch,
   selectConnectionNoticeForRequest,
   sendConversationClose,
   sendConversationOpen,
+  setNativeActive,
   startNativeService,
   stopNativeService,
 } from '@/lib/ac2';
@@ -34,6 +36,7 @@ import {
   sessionAddressFromData,
   sessionAlreadyAuthenticatedForRequest,
 } from '@/lib/liquid-auth/helpers';
+import { ensureNotificationPermission } from '@/lib/notifications';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
 import { accountsStore } from '@/stores/accounts';
 import { keyStore } from '@/stores/keystore';
@@ -301,8 +304,9 @@ export function useConnection(
   // hook is not remounted per connection), so tagging the notice with its
   // connection is what keeps a banner from one wallet from bleeding onto
   // another. `null` when there is nothing to show for the current connection.
-  const [connectionNoticeState, setConnectionNoticeState] =
-    useState<ScopedConnectionNotice | null>(null);
+  const [connectionNoticeState, setConnectionNoticeState] = useState<ScopedConnectionNotice | null>(
+    null,
+  );
   // Only surface the notice for the connection it belongs to. Starting a new
   // connection (a new registration or a previously-paired wallet reconnecting)
   // has a different `requestId`, so the banner disappears automatically.
@@ -746,6 +750,20 @@ export function useConnection(
         wasBackgroundedRef.current = true;
       }
 
+      // Keep the native background service's delivery gate in sync with our
+      // foreground state. Going background flips it offline, so inbound
+      // requests are buffered natively (and surfaced as notifications) instead
+      // of dropped; returning to the foreground flips it online, replaying any
+      // buffered requests through the message listeners in arrival order. The
+      // service itself keeps running regardless (it survives app close).
+      if (nativeStartedRef.current) {
+        try {
+          setNativeActive(nextState === 'active');
+        } catch {
+          /* native module may not implement setActive on every platform yet */
+        }
+      }
+
       // Only react to a genuine (background|inactive) -> active transition.
       if (nextState !== 'active' || prevState === 'active') return;
 
@@ -965,9 +983,18 @@ export function useConnection(
     // attempt can't linger and race a fresh one.
     const runAbort = new AbortController();
 
-    // `fetch` with a per-request timeout, also wired to this run's abort signal.
-    // A timeout or supersession rejects the request so the outer catch can hand
-    // off to the bounded auto-reconnect scheduler instead of hanging.
+    // Liquid Auth HTTP with a per-request timeout, also wired to this run's
+    // abort signal. A timeout or supersession rejects the request so the outer
+    // catch can hand off to the bounded auto-reconnect scheduler instead of
+    // hanging.
+    //
+    // Requests are routed through the native background service's shared
+    // cookie-jar client (`nativeAuthFetch`) rather than JS `fetch`, so the
+    // `connect.sid` session cookie set by the FIDO ceremony is captured
+    // natively and authenticates the signaling socket (D9). The native call has
+    // no abort signal of its own, so the timeout/supersession is enforced here
+    // by racing it against an abort rejection; the abandoned native request's
+    // result is simply ignored.
     const fetchWithTimeout = (
       input: string,
       init: RequestInit = {},
@@ -978,7 +1005,16 @@ export function useConnection(
       if (runAbort.signal.aborted) controller.abort();
       else runAbort.signal.addEventListener('abort', onRunAbort);
       const timer = setTimeout(() => controller.abort(), timeoutMs);
-      return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+      const aborted = new Promise<never>((_, reject) => {
+        const fail = () => {
+          const err = new Error('The operation was aborted.');
+          err.name = 'AbortError';
+          reject(err);
+        };
+        if (controller.signal.aborted) fail();
+        else controller.signal.addEventListener('abort', fail);
+      });
+      return Promise.race([nativeAuthFetch(input, init), aborted]).finally(() => {
         clearTimeout(timer);
         runAbort.signal.removeEventListener('abort', onRunAbort);
       });
@@ -1148,6 +1184,13 @@ export function useConnection(
           console.log('Session validation failed (ignored for debugging)');
         }
 
+        // Ensure the runtime notification permission (Android 13+ / iOS) BEFORE
+        // starting the foreground service, so its ongoing "connected" banner and
+        // the per-message notifications can actually be shown. Non-fatal: if the
+        // user denies it the service still runs, just silently.
+        await ensureNotificationPermission();
+        if (!active) return;
+
         // Start (or reuse) the native foreground signaling service. It owns the
         // signaling socket + WebRTC peer inside a background service, so the
         // connection no longer goes stale when the app is backgrounded (the old
@@ -1158,6 +1201,18 @@ export function useConnection(
         await startNativeService(origin);
         if (!active) return;
         nativeStartedRef.current = true;
+
+        // We are in the foreground here (setup runs from a user action / an
+        // active-app resume), so mark the service online. This also sets the
+        // baseline after a relaunch: the persistent service may have been
+        // buffering requests while the app was closed, and going online now
+        // replays them through the message listeners. From here the AppState
+        // handler keeps this flag in sync with foreground/background.
+        try {
+          setNativeActive(true);
+        } catch {
+          /* native module may not implement setActive on every platform yet */
+        }
 
         // Presence lives with the persistent service (outside a single p2p
         // negotiation) so it keeps working across chat drops and drives

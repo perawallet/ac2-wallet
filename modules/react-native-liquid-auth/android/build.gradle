@@ -20,8 +20,13 @@ android {
 dependencies {
   // Signaling transport
   implementation "io.socket:socket.io-client:2.1.0"
-  // Native WebRTC
-  implementation "io.getstream:stream-webrtc-android:1.1.3"
+  // Native WebRTC — provides the `org.webrtc.*` API used by the signaling code.
+  // In this wallet, `react-native-webrtc` already ships the same `org.webrtc`
+  // API (via `org.jitsi:webrtc:124.+`), so this is declared `compileOnly` to
+  // avoid two implementations of `org.webrtc.*` on the app classpath (which
+  // otherwise fails the build with "Duplicate class org.webrtc.*"). The app's
+  // WebRTC provides these classes at runtime. See VENDORED.md ("Known caveat").
+  compileOnly "io.getstream:stream-webrtc-android:1.1.3"
   // HTTP client shared with the signaling socket
   implementation "com.squareup.okhttp3:okhttp:4.12.0"
   // Coroutines used by the signaling client

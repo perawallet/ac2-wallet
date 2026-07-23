@@ -57,6 +57,9 @@ export {
   addNativePresenceListener,
   cancelNativeNegotiation,
   createNativeAc2Transport,
+  DEFAULT_AC2_QUEUE_CHANNELS,
+  nativeAuthFetch,
+  setNativeActive,
   startNativeService,
   stopNativeService,
 } from './nativeTransport';

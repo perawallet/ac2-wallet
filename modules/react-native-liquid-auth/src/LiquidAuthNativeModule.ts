@@ -6,6 +6,7 @@ import {
   LiquidAuthMessage,
   LiquidAuthNativeModuleEvents,
   LiquidAuthPeerType,
+  LiquidAuthResponse,
 } from './LiquidAuthNative.types';
 
 declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> {
@@ -47,6 +48,14 @@ declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModule
   cancel(): Promise<void>;
 
   /**
+   * Set whether the app is currently online (foregrounded, with its JS
+   * listeners attached). When set active, any messages the background service
+   * buffered while the app was offline are replayed through the `onMessage`
+   * event in arrival order. The app owns this signal.
+   */
+  setActive(active: boolean): void;
+
+  /**
    * Send a message over the primary (`liquid`) data channel.
    */
   send(message: string): void;
@@ -60,6 +69,26 @@ declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModule
    * Stop the signaling client and unbind/stop the background service.
    */
   disconnect(): Promise<void>;
+
+  /**
+   * Perform an authenticated HTTP request through the module's shared
+   * cookie-jar client (the same client that backs the background signaling
+   * socket). Session cookies set by the response (e.g. `connect.sid`) are
+   * captured natively, so a subsequent {@link start} authenticates
+   * transparently. Lets a consumer run the whole Liquid Auth HTTP exchange
+   * (attestation/assertion options + response, `/auth/session`) natively.
+   *
+   * @param url absolute request URL
+   * @param method HTTP method (`GET`, `POST`, ...)
+   * @param headers optional request headers
+   * @param body optional request body (already serialized, e.g. JSON string)
+   */
+  request(
+    url: string,
+    method: string,
+    headers?: Record<string, string>,
+    body?: string
+  ): Promise<LiquidAuthResponse>;
 }
 
 // This call loads the native module object from the JSI.

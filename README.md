@@ -154,6 +154,23 @@ buildable app — no external workspace or sibling checkout required.
 - **Provenance:** `modules/react-native-liquid-auth/VENDORED.md` records the
   upstream repo/commit and the one-way (upstream → copy) sync direction.
 
+### Background-service notifications
+
+The native background service shows an ongoing "connected" notification plus a
+per-message notification while the app is backgrounded (rendered natively so it
+works even when the JS runtime is suspended/killed).
+
+- **Runtime permission:** on Android 13+ (`POST_NOTIFICATIONS`) the app must
+  request the permission at runtime. The wallet depends on `expo-notifications`
+  and requests it via `lib/notifications.ts` (`ensureNotificationPermission`)
+  just before starting the service — non-fatal if denied. Adding this native
+  dependency requires an `expo prebuild` + rebuild to link it.
+- **Custom content:** the per-message copy is defined in
+  `DEFAULT_AC2_NOTIFICATIONS` (`lib/ac2/nativeTransport.ts`) and passed to the
+  native service via `connect(options.notifications)`. Heartbeat/stream control
+  channels are suppressed; `ac2/SigningRequest` / `ac2/KeyRequest` get tailored
+  copy; anything else falls back to a generic banner.
+
 ### Remaining on-device (Mac) steps
 
 Native linking and a device/simulator run require a macOS host and are **not**

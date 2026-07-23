@@ -143,6 +143,10 @@ module.exports = {
           cameraPermission: cameraUsageDescription,
         },
       ],
+      // Links expo-notifications so the app can request the POST_NOTIFICATIONS
+      // runtime permission (Android 13+) needed for the native Liquid Auth
+      // foreground-service notifications (ongoing banner + per-message alerts).
+      'expo-notifications',
       [
         'expo-build-properties',
         {

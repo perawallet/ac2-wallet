@@ -54,3 +54,40 @@ the one-way sync direction:
 
 These are byte-for-byte the same additions in both trees; only the upstream's
 `@Inject` constructor on `SignalClient` differs (not mirrored here).
+
+## Notification presenter seam (kept in sync, upstream → copy)
+
+`SignalService.handleMessages` gained an optional `NotificationPresenter`
+parameter (`(label, message) -> NotificationContent?`, `null` suppresses) plus
+the top-level `NotificationContent` / `NotificationPresenter` declarations, so
+the *content* of a backgrounded per-message notification is decided by the
+consumer (the RN module builds a presenter from `connect(options.notifications)`)
+rather than hardcoded in the shared library. With no presenter the legacy
+raw-message behavior is preserved. These are byte-for-byte the same additions in
+`liquid-auth-android`, `react-native-liquid-auth`, and the wallet's vendored copy
+(only the two pre-existing comment lines in `liquid-auth-android`'s
+`handleMessages` doc differ).
+
+## Survive-app-close & offline message queue (kept in sync, upstream → copy)
+
+`SignalService` was extended so the connection survives the app being closed and
+so requests are delivered when the app comes back online:
+
+- **Lifecycle:** `onStartCommand` returns `START_STICKY` and `onTaskRemoved`
+  keeps the service alive (does not `stopSelf`), so the started foreground
+  service outlives the app's task. The RN module now only *unbinds* on JS
+  `OnDestroy` (`unbindOnly`); the service is stopped solely by an explicit
+  `disconnect()`.
+- **Offline queue:** a generic message buffer (`messageQueue`) + app-controlled
+  online flag. `setActive(active)` (exposed to JS) flips the flag and, when set
+  active, replays buffered messages to the current sink in arrival order.
+  `handleMessages` gained a `queueChannels: Set<String>?` parameter (which
+  labels to buffer while offline; `null` = all). `onUnbind` nulls the stale sink
+  so buffered messages are never replayed to a dead listener, and `drainQueue`
+  is exception-safe (a throwing sink stops the drain, keeping the rest queued).
+
+The library stays label-agnostic — it never inspects message contents and the
+consumer passes the channel labels — keeping `liquid` pure while the app controls
+the signaling delivery state. Byte-for-byte identical across the three trees
+(only the two pre-existing `handleMessages` doc-comment lines in
+`liquid-auth-android` differ).
