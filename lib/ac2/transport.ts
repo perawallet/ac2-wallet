@@ -9,7 +9,7 @@ import { LinkError, SignalClient } from '@algorandfoundation/liquid-client';
 import { subscribeToPresence, type PresenceResult } from './presence';
 
 /** Default ICE config for the Liquid Auth signaling pair. */
-const DEFAULT_ICE_SERVERS = [
+export const DEFAULT_ICE_SERVERS = [
   {
     urls: ['stun:geo.turn.algonode.xyz:80', 'stun:global.turn.nodely.io:443'],
   },
@@ -24,7 +24,7 @@ const DEFAULT_ICE_SERVERS = [
 ];
 
 /** DataChannel labels requested on the peer (AC2 spec mandated). */
-const DEFAULT_DATA_CHANNELS = {
+export const DEFAULT_DATA_CHANNELS = {
   'ac2-v1': { ordered: true },
   'ac2-stream': { ordered: true },
   'ac2-heartbeat': { ordered: true },
@@ -37,7 +37,7 @@ const SOCKET_CONNECT_TIMEOUT_MS = 10000;
 // for it to reach `open`, so a peer whose ICE never establishes (a STUN/TURN
 // stall) turns into a fast rejection the caller can retry rather than an
 // indefinite hang.
-const CHANNEL_OPEN_TIMEOUT_MS = 15000;
+export const CHANNEL_OPEN_TIMEOUT_MS = 15000;
 const SIGNAL_CANDIDATE_NORMALIZER = Symbol('ac2.signalCandidateNormalizer');
 const SIGNAL_CANDIDATE_EVENTS = new Set(['offer-candidate', 'answer-candidate']);
 
