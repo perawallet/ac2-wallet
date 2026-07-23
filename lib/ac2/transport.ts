@@ -1,12 +1,17 @@
 /**
- * Liquid Auth + WebRTC pairing for the AC2 controller. Negotiates the
- * `ac2-v1` / `ac2-stream` / `ac2-heartbeat` DataChannels that the AC2
- * SDK and the controller UI consume.
+ * Shared transport helpers + constants for the AC2 controller.
+ *
+ * Historically this module also hosted `createAc2Transport`, the *in-process*
+ * `SignalClient` + `react-native-webrtc` negotiator. That path has been retired
+ * in favour of the native background service (`./nativeTransport`,
+ * `createNativeAc2Transport`), so the wallet no longer runs signaling/WebRTC
+ * inside the JS runtime. What remains here is transport-agnostic and reused by
+ * the native path: the AC2 ICE/data-channel constants and the
+ * `waitForChannelOpen` guard, plus a handful of socket.io helpers kept for
+ * their unit coverage.
  */
 
-import { LinkError, SignalClient } from '@algorandfoundation/liquid-client';
-
-import { subscribeToPresence, type PresenceResult } from './presence';
+import type { SignalClient } from '@algorandfoundation/liquid-client';
 
 /** Default ICE config for the Liquid Auth signaling pair. */
 export const DEFAULT_ICE_SERVERS = [
@@ -30,9 +35,8 @@ export const DEFAULT_DATA_CHANNELS = {
   'ac2-heartbeat': { ordered: true },
 };
 
-const SIGNALING_TIMEOUT_MS = 30000;
 const SOCKET_CONNECT_TIMEOUT_MS = 10000;
-// `signalClient.peer()` resolves once the remote description is applied, long
+// The native negotiation resolves once the remote description is applied, long
 // before the `ac2-v1` channel is actually usable. Bound how long we then wait
 // for it to reach `open`, so a peer whose ICE never establishes (a STUN/TURN
 // stall) turns into a fast rejection the caller can retry rather than an
@@ -40,236 +44,6 @@ const SOCKET_CONNECT_TIMEOUT_MS = 10000;
 export const CHANNEL_OPEN_TIMEOUT_MS = 15000;
 const SIGNAL_CANDIDATE_NORMALIZER = Symbol('ac2.signalCandidateNormalizer');
 const SIGNAL_CANDIDATE_EVENTS = new Set(['offer-candidate', 'answer-candidate']);
-
-export interface Ac2TransportSetup {
-  /** Active Liquid Auth `SignalClient` (already authenticated). */
-  client: SignalClient;
-  /** The control plane DataChannel (`ac2-v1`). */
-  datachannel: RTCDataChannel;
-  /**
-   * Removes the `onPresence` listener from the (long-lived) signaling socket.
-   * Call it when tearing down this transport so successive negotiations for the
-   * same `requestId` do not accumulate presence listeners. No-op when
-   * `onPresence` was not supplied.
-   */
-  disposePresence: () => void;
-}
-
-export interface CreateAc2TransportOptions {
-  requestId: string;
-  signalClient: SignalClient;
-  /** Called for each negotiated side-channel (`ac2-stream`, `ac2-heartbeat`). */
-  onSideChannel: (channel: RTCDataChannel) => void;
-  /**
-   * Called once with the negotiated `RTCPeerConnection` (the SDK's
-   * `peerClient`) as soon as negotiation resolves, so the caller can attach a
-   * connectivity monitor — the SDK never does. `peerClient` is guaranteed set
-   * at this point.
-   */
-  onPeerConnection?: (peerConnection: RTCPeerConnection) => void;
-  /**
-   * Optional abort signal. When fired the pending negotiation is torn down
-   * immediately and the returned promise rejects with an `AbortError`.
-   */
-  signal?: AbortSignal;
-  /**
-   * Optional presence listener. When provided, server-broadcast `presence`
-   * updates for the `requestId` are forwarded here so the caller can track how
-   * many devices are connected (and decide whether reconnecting is worthwhile).
-   * Handled outside `SignalClient`, directly on the signaling socket.
-   */
-  onPresence?: (presence: PresenceResult) => void;
-}
-
-/**
- * Open the AC2 control plane DataChannel against an already-authenticated
- * `SignalClient`. Side-channels (`ac2-stream`, `ac2-heartbeat`) are
- * surfaced via `onSideChannel`.
- */
-export async function createAc2Transport(
-  opts: CreateAc2TransportOptions,
-): Promise<Ac2TransportSetup> {
-  const { requestId, signalClient, onSideChannel, onPeerConnection, signal, onPresence } = opts;
-
-  if (signal?.aborted) {
-    const err = new Error('Aborted');
-    err.name = 'AbortError';
-    throw err;
-  }
-
-  signalClient.on('data-channel', (channel: RTCDataChannel) => {
-    if (channel.label === 'ac2-v1') return; // owned by datachannel below
-    onSideChannel(channel);
-  });
-
-  await waitForSignalSocketConnected(signalClient);
-  installSignalCandidateNormalizer(signalClient);
-
-  // Make the signaling handshake observable for the duration of this one
-  // negotiation. When a (re)connect stalls at "Connecting…", the logs show
-  // exactly which step never arrived — most tellingly an `offer-description`
-  // we sent with NO following `answer-description` (see the helper's docs).
-  const disposeSignalingDiagnostics = attachSignalingDiagnostics(signalClient, requestId);
-
-  // The `onPresence` listener lives on the long-lived signaling socket, which is
-  // reused across socket.io reconnects and across successive negotiations for
-  // the same `requestId`. Own its unsubscribe so it can be released with the
-  // connection (returned below) instead of leaking a listener per negotiation.
-  let disposePresence: () => void = () => {};
-  // Same for the one-shot `link-error` listener installed below: own its
-  // detacher so it never outlives this negotiation.
-  let disposeLinkError: () => void = () => {};
-
-  try {
-    // Presence is handled outside the SignalClient, directly on the socket: keep
-    // the caller informed of how many devices are connected for this requestId.
-    if (onPresence) {
-      const socket = (signalClient as any).socket;
-      if (socket) disposePresence = subscribeToPresence(socket, onPresence);
-    }
-
-    const peerPromise = signalClient.peer(
-      requestId,
-      'answer',
-      {
-        iceServers: DEFAULT_ICE_SERVERS,
-      },
-      {
-        dataChannels: DEFAULT_DATA_CHANNELS,
-      },
-    );
-
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<RTCDataChannel>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        console.warn(
-          `[ac2][signal] negotiate: TIMEOUT after ${SIGNALING_TIMEOUT_MS}ms — no answer-description arrived; the peer never answered our offer (it likely wasn't linked/armed when we sent it).`,
-        );
-        signalClient.peerClient?.close();
-        reject(
-          new Error(
-            'Timed out waiting for Liquid Auth answer-description. Check that the signaling socket is authenticated and the OpenClaw peer is still linked to this requestId.',
-          ),
-        );
-      }, SIGNALING_TIMEOUT_MS);
-    });
-
-    const racers: Promise<RTCDataChannel>[] = [peerPromise, timeoutPromise];
-
-    // A room refusal under the two-peer lockdown (the session already holds its
-    // one wallet + one peer, or the same role twice) is delivered by the
-    // gateway as a generic `exception` event on the signaling socket, NOT as an
-    // `answer-description`. Watch for it (scoped to THIS requestId) and reject
-    // immediately with the client's typed `LinkError`, so a full session fails
-    // in <1s with an actionable "session full" message instead of hanging out
-    // the 30s answer-description timeout and being misread as "peer offline".
-    const socket = (signalClient as any).socket;
-    if (socket && typeof socket.on === 'function') {
-      let linkErrorReject: (err: Error) => void = () => {};
-      const linkErrorPromise = new Promise<RTCDataChannel>((_, reject) => {
-        linkErrorReject = reject;
-      });
-      const onException = (payload: any) => {
-        if (payload?.event !== 'link-error' || payload?.requestId !== requestId) return;
-        signalClient.peerClient?.close();
-        linkErrorReject(
-          new LinkError(payload?.message ?? 'Liquid Auth refused the link for this requestId', {
-            reason: payload?.reason,
-            requestId,
-          }),
-        );
-      };
-      socket.on('exception', onException);
-      disposeLinkError = () => {
-        try {
-          socket.off?.('exception', onException);
-        } catch {
-          /* noop */
-        }
-      };
-      racers.push(linkErrorPromise);
-    }
-
-    // Track the abort listener so it can be removed in `finally` regardless of
-    // which racer wins — prevents a dangling listener from firing later and
-    // inadvertently closing a healthy peer connection.
-    let onAbort: (() => void) | undefined;
-
-    if (signal) {
-      const abortPromise = new Promise<RTCDataChannel>((_, reject) => {
-        const abort = () => {
-          if (timeoutId !== undefined) clearTimeout(timeoutId);
-          // Do NOT hard-close the native peer on abort. On Android,
-          // `react-native-webrtc` can still be asynchronously applying the
-          // remote description when a superseded run is cancelled; tearing the
-          // peer down here races that in-flight work and can crash with
-          // `peerConnectionSetRemoteDescription(...getPeerConnection() == null)`.
-          // The caller's normal transport cleanup will detach the obsolete
-          // SignalClient/socket without forcing this unsafe native transition.
-          // Use a plain Error with name 'AbortError' rather than DOMException
-          // for broadest compatibility across Hermes versions.
-          const err = new Error('Aborted');
-          err.name = 'AbortError';
-          reject(err);
-        };
-        if (signal.aborted) {
-          abort();
-          return;
-        }
-        onAbort = abort;
-        signal.addEventListener('abort', onAbort);
-      });
-      racers.push(abortPromise);
-    }
-
-    const datachannel = await Promise.race(racers).finally(() => {
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
-      // The link-refusal watcher is only relevant while negotiating; detach it
-      // regardless of which racer won so it can't fire against a later run.
-      disposeLinkError();
-    });
-
-    // Surface the negotiated peer connection so the caller can watch it for
-    // connectivity loss. The SDK attaches no ICE/connection state handlers, so
-    // this is the only seam for detecting a post-negotiation drop.
-    if (signalClient.peerClient) onPeerConnection?.(signalClient.peerClient);
-
-    // The negotiation above resolves once the remote description is applied, but
-    // the `ac2-v1` channel is still `connecting` at that point. Block until it
-    // actually opens so a peer whose ICE never completes (STUN/TURN stall) fails
-    // fast into the caller's retry path instead of hanging forever waiting for an
-    // `onOpen` that never arrives.
-    try {
-      await waitForChannelOpen(datachannel, CHANNEL_OPEN_TIMEOUT_MS, signal);
-    } catch (err: any) {
-      // A non-abort failure (open timeout / early close) leaves a half-open peer
-      // whose ICE machinery would otherwise keep running; close it promptly,
-      // mirroring the signaling-timeout cleanup above. An abort intentionally
-      // does NOT hard-close the native peer here (see the abort handler's note
-      // about Android's in-flight setRemoteDescription).
-      if (err?.name !== 'AbortError') {
-        try {
-          signalClient.peerClient?.close();
-        } catch {
-          /* noop */
-        }
-      }
-      throw err;
-    }
-
-    return { client: signalClient, datachannel, disposePresence };
-  } catch (err) {
-    // On a failed negotiation nothing downstream owns the disposers (the setup
-    // is never returned), so release both the presence and link-refusal
-    // listeners here to avoid a leak.
-    disposePresence();
-    disposeLinkError();
-    throw err;
-  } finally {
-    disposeSignalingDiagnostics();
-  }
-}
 
 /**
  * Attach lightweight, additive diagnostics to a `SignalClient` for the duration

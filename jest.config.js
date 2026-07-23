@@ -8,6 +8,12 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
     '^@algorandfoundation/(.*)$': '<rootDir>/node_modules/@algorandfoundation/$1',
+    // `react-native-liquid-auth` is vendored as an Expo local module under
+    // `modules/` and resolved at runtime via a Metro alias; mirror that here so
+    // the specifier resolves in Jest too. (Harmless in practice — the hook is
+    // factory-mocked and the transport takes an injected fake, so the real
+    // module is never imported by the suite.)
+    '^react-native-liquid-auth$': '<rootDir>/modules/react-native-liquid-auth/src',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
 };

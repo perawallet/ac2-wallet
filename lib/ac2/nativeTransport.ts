@@ -154,6 +154,53 @@ function getDefaultNativeApi(): LiquidAuthNativeApi {
 }
 
 /**
+ * Start the native foreground signaling service and connect its signaling
+ * socket. Idempotent on the native side (a running foreground service is
+ * reused), so it is safe to call once when the persistent service comes up and
+ * again per negotiation. The native module is injectable for tests.
+ */
+export async function startNativeService(
+  url: string,
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): Promise<void> {
+  await native.start(url);
+}
+
+/**
+ * Fully tear down the native foreground service (disconnects the signaling
+ * socket and the WebRTC peer). The native analog of dropping the persistent
+ * `SignalClient` socket — use it only on an explicit disconnect / unmount.
+ */
+export async function stopNativeService(
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): Promise<void> {
+  await native.disconnect();
+}
+
+/**
+ * Cancel the in-flight (or established) native peer negotiation without
+ * tearing the service down, so the persistent signaling socket survives a p2p
+ * drop and the next negotiation can reuse it. Best-effort.
+ */
+export async function cancelNativeNegotiation(
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): Promise<void> {
+  await native.cancel();
+}
+
+/**
+ * Subscribe to server-broadcast presence for the connected `requestId`. Lives
+ * with the persistent service (not a single negotiation), mirroring how the JS
+ * path subscribed presence on the long-lived signaling socket.
+ */
+export function addNativePresenceListener(
+  listener: (e: NativePresenceEvent) => void,
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): NativeSubscription {
+  return native.addPresenceListener(listener);
+}
+
+/**
  * Open the AC2 control plane over the native background service. Side-channels
  * (`ac2-stream`, `ac2-heartbeat`) are surfaced via `onSideChannel`. Resolves
  * once `ac2-v1` is `open`; rejects with an `AbortError` if `signal` fires or

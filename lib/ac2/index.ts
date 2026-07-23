@@ -50,7 +50,25 @@ export type {
   ScopedConnectionNotice,
   StreamControlFrame,
 } from './stream';
-export { createAc2Transport, waitForSignalSocketConnected } from './transport';
-export type { Ac2TransportSetup, CreateAc2TransportOptions } from './transport';
+export { NativeDataChannel, NativePeerConnection } from './nativeChannel';
+export type { DataChannelMessageEvent, DataChannelReadyState } from './nativeChannel';
+export {
+  AC2_CONTROL_CHANNEL,
+  addNativePresenceListener,
+  cancelNativeNegotiation,
+  createNativeAc2Transport,
+  startNativeService,
+  stopNativeService,
+} from './nativeTransport';
+export type {
+  CreateNativeAc2TransportOptions,
+  LiquidAuthNativeApi,
+  NativeAc2TransportSetup,
+  NativeDataChannelInit,
+  NativeIceServer,
+  NativeLinkErrorEvent,
+  NativePresenceEvent,
+  NativeSubscription,
+} from './nativeTransport';
 
 export type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';

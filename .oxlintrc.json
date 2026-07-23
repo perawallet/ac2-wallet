@@ -25,5 +25,5 @@
       "rules": {}
     }
   ],
-  "ignorePatterns": ["dist/", "node_modules/", ".expo/", "android/", "ios/"]
+  "ignorePatterns": ["dist/", "node_modules/", ".expo/", "android/", "ios/", "modules/"]
 }

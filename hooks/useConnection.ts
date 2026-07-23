@@ -7,25 +7,24 @@ import type {
   ScopedConnectionNotice,
 } from '@/lib/ac2';
 import {
+  addNativePresenceListener,
   attachHeartbeatChannel,
+  cancelNativeNegotiation,
   createAc2Client,
-  createAc2Transport,
   createHeartbeatMonitor,
+  createNativeAc2Transport,
   DEFAULT_THID,
-  describeSelectedCandidatePair,
   generateThid,
   isPeerOffline,
   isPeerRejectedError,
   isPeerUnreachableError,
   isRegistrationBlockingNotice,
   monitorPeerConnection,
-  queryPresence,
   selectConnectionNoticeForRequest,
   sendConversationClose,
   sendConversationOpen,
-  subscribeToPresence,
-  summarizeSelectedCandidatePair,
-  waitForSignalSocketConnected,
+  startNativeService,
+  stopNativeService,
 } from '@/lib/ac2';
 import { createControlFrameHandler } from '@/lib/ac2/streamControlFrame';
 import { findWalletAccount } from '@/lib/keystore/wallet-account';
@@ -49,11 +48,9 @@ import {
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
 import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
 import { encodeAddress } from '@algorandfoundation/keystore';
-import { SignalClient } from '@algorandfoundation/liquid-client';
 import { useStore } from '@tanstack/react-store';
-import { XHR as EngineIoXHR } from 'engine.io-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, type AppStateStatus, NativeModules, Platform } from 'react-native';
+import { Alert, AppState, type AppStateStatus } from 'react-native';
 
 const AUTO_RECONNECT_DELAY_MS = 3000;
 // Bounded auto-reconnect budget. After this many failed automatic attempts we
@@ -217,7 +214,13 @@ export function useConnection(
   // Heartbeat liveness watchdog (ping/pong over `ac2-heartbeat`). Started in
   // `onOpen`, stopped in `clearTransport` / effect cleanup.
   const heartbeatMonitorRef = useRef<HeartbeatMonitor | null>(null);
-  const clientRef = useRef<SignalClient | null>(null);
+  // True once the native foreground signaling service has been started (the
+  // analog of the persistent `SignalClient` socket). Kept alive across p2p chat
+  // drops; only `stopNativeService` (an explicit disconnect / unmount) clears it.
+  const nativeStartedRef = useRef(false);
+  // Detaches the CURRENT negotiation's native listeners (message/state/ICE).
+  // Set once a negotiation's transport is established; cleared on teardown.
+  const transportDisposeRef = useRef<(() => void) | null>(null);
   // Last time we observed inbound traffic from the peer (frames, envelopes,
   // heartbeat pongs) vs. the last local user action. Kept separate so an
   // outbound keepalive can never be mistaken for peer presence.
@@ -277,9 +280,10 @@ export function useConnection(
   // Disposer for the socket-level `presence` subscription (lives with the
   // socket, not the transport).
   const presenceUnsubRef = useRef<(() => void) | null>(null);
-  // Disposer for the transport-level `onPresence` listener (`createAc2Transport`).
-  // The listener sits on the long-lived signaling socket, so it is torn down
-  // with the socket rather than per negotiation.
+  // Disposer for the transport-level presence listener. With the native path
+  // presence is subscribed on the persistent service (socket effect), so the
+  // per-negotiation transport's presence disposer is a no-op; this ref is kept
+  // only for symmetry with the socket teardown path.
   const transportPresenceUnsubRef = useRef<(() => void) | null>(null);
   // True once the persistent socket is established AND connected, so p2p
   // negotiation may be attempted (subject to the both-peers-present gate).
@@ -381,44 +385,31 @@ export function useConnection(
       }
       heartbeatChannelRef.current = null;
     }
-    // Tear down ONLY the p2p peer, keeping the persistent signaling socket
-    // (and its presence subscription) alive so the app stays connected to the
-    // service after a chat drop — enabling presence checks and renegotiation
-    // over the same socket without a fresh auth/passkey. The socket itself is
-    // owned by the socket effect (see `closeSocket`).
-    const client = clientRef.current;
-    if (client) {
+    // Tear down ONLY the p2p peer, keeping the persistent native signaling
+    // service (and its presence subscription) alive so the app stays connected
+    // to the service after a chat drop — enabling presence checks and
+    // renegotiation without a fresh auth/passkey. The service itself is owned
+    // by the socket effect (see `closeSocket`).
+    //
+    // Detach this negotiation's native listeners (message/state/ICE) so reusing
+    // the service for the next attempt doesn't accumulate duplicate handlers.
+    if (transportDisposeRef.current) {
       try {
-        // `SignalClient.close()` never tears down the WebRTC peer connection, so
-        // close it explicitly. A leaked `RTCPeerConnection` keeps the ICE
-        // session to the agent alive, so the agent still treats the old peer as
-        // active for this requestId and ignores the fresh offer a reconnect
-        // sends — leaving negotiation hung after `setLocalDescription`.
-        client.peerClient?.close();
+        transportDisposeRef.current();
       } catch {
         /* noop */
       }
-      // Allow a fresh `peer()` on the reused SignalClient (it refuses to run
-      // while a peer/requestId is still in progress).
-      client.peerClient = undefined;
-      // Detach the per-negotiation listeners the SDK (`peer()`/`signal()`) and
-      // `createAc2Transport` add on each negotiation, so reusing this socket
-      // for the next attempt doesn't accumulate duplicate `data-channel` /
-      // candidate / description handlers that would double-apply signaling.
-      try {
-        client.off('data-channel');
-      } catch {
-        /* noop */
-      }
-      const socket = client.socket as any;
-      try {
-        socket?.off?.('offer-candidate');
-        socket?.off?.('answer-candidate');
-        socket?.off?.('offer-description');
-        socket?.off?.('answer-description');
-      } catch {
-        /* noop */
-      }
+      transportDisposeRef.current = null;
+    }
+    // Ask the native service to cancel the (in-flight or established) peer
+    // negotiation WITHOUT dropping the signaling socket, so the next attempt
+    // reuses the same service. A leaked native peer would keep the ICE session
+    // to the agent alive, so the agent would ignore the fresh offer a reconnect
+    // sends. Best-effort; a fresh negotiation supersedes any lingering peer.
+    if (nativeStartedRef.current) {
+      cancelNativeNegotiation().catch(() => {
+        /* best-effort */
+      });
     }
   }, []);
 
@@ -445,34 +436,24 @@ export function useConnection(
     }
     socketReadyRef.current = false;
     setIsSocketConnected(false);
-    if (clientRef.current) {
-      try {
-        // `close(true)` detaches listeners AND disconnects the underlying
-        // socket.io connection.
-        clientRef.current.close(true);
-      } catch {
-        /* noop */
-      }
-      clientRef.current = null;
+    if (nativeStartedRef.current) {
+      nativeStartedRef.current = false;
+      // Fully tears down the native foreground service: disconnects the
+      // signaling socket and the WebRTC peer.
+      stopNativeService().catch(() => {
+        /* best-effort teardown */
+      });
     }
   }, []);
 
   // Best-effort, read-only diagnostic: log which ICE path the peer selected
   // (direct `host` / STUN `srflx` / TURN `relay`). Never logs addresses. Call
   // before teardown — it reads the peer synchronously and resolves async.
-  const logCandidatePair = useCallback((context: string) => {
-    const pc = clientRef.current?.peerClient;
-    if (!pc || typeof pc.getStats !== 'function') return;
-    pc.getStats()
-      .then((report: any) => {
-        const summary = summarizeSelectedCandidatePair(report);
-        if (summary) {
-          console.log(`[ac2] ${context} path: ${describeSelectedCandidatePair(summary)}`);
-        }
-      })
-      .catch(() => {
-        /* diagnostics only */
-      });
+  const logCandidatePair = useCallback((_context: string) => {
+    // The native background service owns the WebRTC peer, so per-session ICE
+    // candidate-pair stats (`getStats`) are not available to JS. Kept as a
+    // no-op so the established call sites (connect / failure) stay in place,
+    // ready to re-enable if the native module later surfaces peer stats.
   }, []);
   const logCandidatePairRef = useRef(logCandidatePair);
   logCandidatePairRef.current = logCandidatePair;
@@ -534,10 +515,11 @@ export function useConnection(
     reconnectAttemptRef.current = 0;
     setReconnectAttempt(0);
     setIsReconnecting(false);
-    if (!clientRef.current) {
-      // The persistent socket was fully torn down (an explicit disconnect):
-      // rebuild it. The socket effect re-authenticates, reconnects, and drives
-      // presence-gated p2p negotiation once both peers are present again.
+    if (!nativeStartedRef.current) {
+      // The persistent native service was fully torn down (an explicit
+      // disconnect): rebuild it. The socket effect re-authenticates, restarts
+      // the service, and drives presence-gated p2p negotiation once both peers
+      // are present again.
       setError(null);
       setPeerOffline(false);
       setIsConnected(false);
@@ -1021,9 +1003,9 @@ export function useConnection(
         return;
       }
 
-      // The persistent socket is already established for this session — the
-      // socket effect only builds it once (it survives p2p chat drops).
-      if (clientRef.current) {
+      // The persistent native service is already started for this session — the
+      // socket effect only starts it once (it survives p2p chat drops).
+      if (nativeStartedRef.current) {
         return;
       }
       // Never resurrect a session the user explicitly disconnected.
@@ -1166,70 +1148,32 @@ export function useConnection(
           console.log('Session validation failed (ignored for debugging)');
         }
 
-        let options: any = {
-          autoConnect: true,
-          transportOptions: {},
-          withCredentials: true,
-        };
-
-        if (Platform.OS === 'ios') {
-          options.transports = [EngineIoXHR];
-        } else if (NativeModules.CookieModule) {
-          const cookie = await NativeModules.CookieModule.getCookie(origin);
-
-          if (!active) return;
-
-          if (cookie) {
-            options.extraHeaders = { Cookie: cookie };
-            options.transports = ['polling'];
-            options.transportOptions = {
-              polling: { extraHeaders: { Cookie: cookie } },
-            };
-          }
-        }
-
-        const client = new SignalClient(origin, options);
-
+        // Start (or reuse) the native foreground signaling service. It owns the
+        // signaling socket + WebRTC peer inside a background service, so the
+        // connection no longer goes stale when the app is backgrounded (the old
+        // in-process socket.io client did). The auth phase above has already
+        // established the Liquid Auth session server-side; the native service
+        // connects using it. Idempotent on the native side, so a reused service
+        // is fine.
+        await startNativeService(origin);
         if (!active) return;
+        nativeStartedRef.current = true;
 
-        clientRef.current = client;
-        //@ts-ignore
-        client.authenticated = true;
-
-        // Wait for the socket to actually connect before wiring any listeners.
-        // `SignalClient` initializes its socket asynchronously (it dynamically
-        // imports socket.io-client), so `client.socket` is `undefined` right
-        // after construction — subscribing to presence or connect/disconnect
-        // events before this point throws "Cannot read property 'on' of
-        // undefined". Awaiting here guarantees `client.socket` exists.
-        await waitForSignalSocketConnected(client);
-        if (!active) return;
-
-        // Track socket connectivity so the chat surface can show "Service
-        // unavailable" while the signaling service is unreachable. The socket is
-        // kept alive across p2p chat drops; socket.io auto-reconnects transient
-        // drops without rebuilding the client, and on each (re)connect the
-        // server rejoins us to the requestId room and rebroadcasts presence.
-        const socket = client.socket as any;
-        const onSocketConnect = () => {
+        // Presence lives with the persistent service (outside a single p2p
+        // negotiation) so it keeps working across chat drops and drives
+        // presence-gated renegotiation: peers must both be present in the
+        // requestId room before negotiating. The native service forwards the
+        // server's `presence` broadcasts (and re-broadcasts on its own socket
+        // reconnect). NOTE: unlike the old socket path there is no active
+        // presence *query*, so the first negotiation decision is made once the
+        // first broadcast arrives rather than being seeded up-front.
+        const presenceSub = addNativePresenceListener((e) => {
           if (!active) return;
-          setIsSocketConnected(true);
-          socketReadyRef.current = true;
-          maybeNegotiateRef.current();
-        };
-        const onSocketDisconnect = () => {
-          if (!active) return;
-          setIsSocketConnected(false);
-          socketReadyRef.current = false;
-        };
-        socket?.on?.('connect', onSocketConnect);
-        socket?.on?.('disconnect', onSocketDisconnect);
-
-        // Presence lives with the socket (outside the p2p transport) so it keeps
-        // working across chat drops and drives presence-gated renegotiation:
-        // peers must both be present in the requestId room before negotiating.
-        presenceUnsubRef.current = subscribeToPresence(socket, (presence) => {
-          if (!active) return;
+          const presence: PresenceResult = {
+            requestId: e.requestId,
+            deviceCount: e.deviceCount,
+            online: e.online,
+          };
           console.log(
             `[ac2] presence for ${presence.requestId}: ${presence.deviceCount} device(s), online=${presence.online}`,
           );
@@ -1266,23 +1210,19 @@ export function useConnection(
             maybeNegotiateRef.current();
           }
         });
+        presenceUnsubRef.current = () => presenceSub.remove();
 
+        // The native service is up; treat that as "socket connected" for the
+        // chat surface. (The native module does not expose signaling-socket
+        // connect/disconnect events, so this stays true until the service is
+        // explicitly stopped; a transient native reconnect is transparent and
+        // re-drives negotiation via the presence broadcast above.)
         setIsSocketConnected(true);
         socketReadyRef.current = true;
         console.log(`[ac2] socket phase done in ${Date.now() - setupStartedAt}ms`);
 
-        // Seed presence so the first negotiation decision is based on a real
-        // room count instead of an unknown; broadcasts drive it afterwards. A
-        // failed query is non-fatal (fall back to broadcasts).
-        try {
-          const seeded = await queryPresence(socket, requestId);
-          if (!active) return;
-          setPeerPresence(seeded);
-          peerPresenceRef.current = seeded;
-        } catch (err) {
-          console.log('[ac2] initial presence query failed (will rely on broadcasts)', err);
-        }
-        // Attempt the first p2p negotiation (gated on both peers being present).
+        // Attempt the first p2p negotiation (gated on both peers being present;
+        // if presence is not yet known it waits for the first broadcast).
         maybeNegotiateRef.current();
       } catch (err: any) {
         // A superseded run (cleanup fired, or a request was aborted) must do
@@ -1316,14 +1256,14 @@ export function useConnection(
     };
   }, [origin, requestId, accounts.length > 0, keys.length > 0, socketNonce]);
 
-  // Negotiate (and re-negotiate) the p2p transport over the PERSISTENT socket.
-  // Keyed on the reconnect nonce so each manual/auto/presence-driven attempt
-  // runs as its own superseded-safe run. Reuses `clientRef.current` (the
-  // socket) and NEVER closes it on teardown — only the peer/data-channels are
+  // Negotiate (and re-negotiate) the p2p transport over the PERSISTENT native
+  // service. Keyed on the reconnect nonce so each manual/auto/presence-driven
+  // attempt runs as its own superseded-safe run. Reuses the started native
+  // service and NEVER stops it on teardown — only the peer/data-channels are
   // torn down, so the app stays connected to the service between chats.
   useEffect(() => {
-    // Nothing to negotiate until the persistent socket exists and is connected.
-    if (!clientRef.current || !socketReadyRef.current) return;
+    // Nothing to negotiate until the persistent native service is started.
+    if (!nativeStartedRef.current || !socketReadyRef.current) return;
     if (isConnectedRef.current) return;
 
     let active = true;
@@ -1333,8 +1273,7 @@ export function useConnection(
     async function negotiateTransport() {
       if (userStoppedRef.current) return;
       if (transportInFlightRef.current) return;
-      const client = clientRef.current;
-      if (!client) return;
+      if (!nativeStartedRef.current) return;
       // Peers must both be present (deviceCount >= 2) before negotiating p2p.
       if (isPeerOffline(peerPresenceRef.current)) {
         console.log(
@@ -1391,11 +1330,16 @@ export function useConnection(
           },
         });
 
-        // Presence is subscribed on the persistent socket (socket effect), so it
-        // is intentionally NOT re-subscribed here.
-        const { datachannel, disposePresence } = await createAc2Transport({
+        // Presence is subscribed on the persistent native service (socket
+        // effect), so it is intentionally NOT re-subscribed per negotiation.
+        // `createNativeAc2Transport` drives the native background service
+        // (`start` -> `connect('answer', { dataChannels })` -> wait for `ac2-v1`
+        // open) and routes native events into `RTCDataChannel`-shaped shims, so
+        // the wiring below is unchanged from the old in-process path aside from
+        // the shim casts at the `RTCDataChannel`-typed helper boundaries.
+        const transport = await createNativeAc2Transport({
+          url: origin,
           requestId,
-          signalClient: client,
           signal: runAbort.signal,
           onPeerConnection: (pc) => {
             // Stash the peer connection; the connectivity monitor is attached in
@@ -1406,19 +1350,22 @@ export function useConnection(
           onSideChannel: (channel) => {
             console.log(`[ac2] Discovered channel: ${channel.label}`);
             if (channel.label === 'ac2-heartbeat') {
-              heartbeatChannelRef.current = attachHeartbeatChannel(channel, {
-                onInbound: () => {
-                  if (!active) return;
-                  wasBackgroundedRef.current = false;
-                  lastInboundActivityRef.current = Date.now();
-                  heartbeatMonitorRef.current?.noteInbound();
-                  setLastHeartbeat(Date.now());
+              heartbeatChannelRef.current = attachHeartbeatChannel(
+                channel as unknown as RTCDataChannel,
+                {
+                  onInbound: () => {
+                    if (!active) return;
+                    wasBackgroundedRef.current = false;
+                    lastInboundActivityRef.current = Date.now();
+                    heartbeatMonitorRef.current?.noteInbound();
+                    setLastHeartbeat(Date.now());
+                  },
                 },
-              });
+              );
               return;
             }
             if (channel.label === 'ac2-stream') {
-              streamChannelRef.current = channel;
+              streamChannelRef.current = channel as unknown as RTCDataChannel;
               channel.onmessage = (event) => {
                 if (!active) return;
                 // Any inbound stream frame is proof of peer liveness.
@@ -1430,18 +1377,23 @@ export function useConnection(
             }
           },
         });
+        const { datachannel } = transport;
 
-        // The transport's `onPresence` listener lives on the persistent socket,
-        // so track its disposer for the socket teardown path (`closeSocket`).
+        // Track this negotiation's listener disposer so `clearTransport` / the
+        // effect cleanup can detach the native message/state/ICE listeners.
         // Replace any prior disposer first so a superseded run cannot leak one.
-        if (transportPresenceUnsubRef.current) {
+        if (transportDisposeRef.current) {
           try {
-            transportPresenceUnsubRef.current();
+            transportDisposeRef.current();
           } catch {
             /* noop */
           }
         }
-        transportPresenceUnsubRef.current = disposePresence;
+        transportDisposeRef.current = transport.dispose;
+        // The native presence listener is persistent (socket effect); the
+        // transport's own presence disposer is a no-op here, tracked only for
+        // symmetry with the socket teardown path.
+        transportPresenceUnsubRef.current = transport.disposePresence;
 
         if (!active) {
           // This run was superseded while negotiation was still winding down.
@@ -1452,7 +1404,7 @@ export function useConnection(
           return;
         }
 
-        dataChannelRef.current = datachannel;
+        dataChannelRef.current = datachannel as unknown as RTCDataChannel;
         console.log(`[ac2] transport negotiated in ${Date.now() - setupStartedAt}ms`);
 
         // Wallet-side responders (`onSigningRequest` / `onKeyRequest`) are
@@ -1460,7 +1412,7 @@ export function useConnection(
         // `ac2MessagesStore` by `createAc2Client` and `app/chat.tsx` handles
         // approve/reject interactively against the visible store entry.
         const { client: ac2 } = createAc2Client({
-          datachannel,
+          datachannel: datachannel as unknown as RTCDataChannel,
           origin,
           requestId,
           getAddress: () => addressRef.current,
@@ -1645,37 +1597,28 @@ export function useConnection(
         }
         heartbeatChannelRef.current = null;
       }
-      const client = clientRef.current;
-      if (client) {
-        // Only hard-close the peer once this run owned an established transport.
-        // For a superseded run, `runAbort.abort()` above already cancelled the
-        // logical attempt; force-closing the native peer here can race
-        // Android's in-flight `setRemoteDescription` and crash. NEVER close the
-        // socket here — it is owned by the socket effect and must stay alive.
-        if (hadEstablishedTransport) {
-          try {
-            client.peerClient?.close();
-          } catch {
-            /* noop */
-          }
-        }
-        client.peerClient = undefined;
-        // Detach the per-negotiation listeners so reusing this socket for the
-        // next attempt doesn't accumulate duplicate handlers.
+      // Detach this negotiation's native listeners (message/state/ICE) so
+      // reusing the service for the next attempt doesn't accumulate duplicate
+      // handlers. Own-disposer, set once the transport was established.
+      if (transportDisposeRef.current) {
         try {
-          client.off('data-channel');
+          transportDisposeRef.current();
         } catch {
           /* noop */
         }
-        const s = client.socket as any;
-        try {
-          s?.off?.('offer-candidate');
-          s?.off?.('answer-candidate');
-          s?.off?.('offer-description');
-          s?.off?.('answer-description');
-        } catch {
-          /* noop */
-        }
+        transportDisposeRef.current = null;
+      }
+      // Only cancel the native peer once this run owned an established
+      // transport. For a superseded run, `runAbort.abort()` above already
+      // cancelled the in-flight native negotiation (`createNativeAc2Transport`
+      // races the abort signal and calls `cancel()` itself), so cancelling
+      // again is unnecessary. NEVER stop the service here — it is owned by the
+      // socket effect and must stay alive so the app remains connected between
+      // chats.
+      if (hadEstablishedTransport && nativeStartedRef.current) {
+        cancelNativeNegotiation().catch(() => {
+          /* best-effort */
+        });
       }
     };
   }, [origin, requestId, reconnectNonce]);
