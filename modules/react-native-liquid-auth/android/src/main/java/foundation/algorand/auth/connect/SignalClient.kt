@@ -69,6 +69,20 @@ class SignalClient(
     var onPresence: ((JSONObject) -> Unit)? = null
 
     /**
+     * The most recent server `presence` broadcast, cached so a consumer that
+     * (re)attaches AFTER the broadcast fired can still read it (via
+     * [SignalService.getConnectionState]). The server broadcasts presence when
+     * this socket joins the `requestId` room — during service start, before
+     * the consumer's JS listener is attached — and then stays silent until a
+     * device joins or leaves, so without this cache a launch against an
+     * offline peer never learns the peer is absent. Cleared on an explicit
+     * [disconnect]; kept across socket blips (the server rebroadcasts on
+     * reconnect, overwriting it).
+     */
+    var lastPresence: JSONObject? = null
+        private set
+
+    /**
      * Signaling `exception` events (e.g. a `link-error` room refusal under the
      * two-peer lockdown, carrying `event`/`reason`/`requestId`). Set before
      * [peer] so the listener is registered when the socket is created.
@@ -426,7 +440,12 @@ class SignalClient(
         // Forward server-broadcast presence updates and signaling exceptions
         // (e.g. link-error room refusals) to the registered callbacks.
         socket?.on("presence") { args ->
-            (args.getOrNull(0) as? JSONObject)?.let { onPresence?.invoke(it) }
+            (args.getOrNull(0) as? JSONObject)?.let {
+                // Cache before forwarding so getConnectionState() reflects this
+                // broadcast even when no consumer listener is attached yet.
+                lastPresence = it
+                onPresence?.invoke(it)
+            }
         }
         socket?.on("exception") { args ->
             (args.getOrNull(0) as? JSONObject)?.let { onLinkError?.invoke(it) }
@@ -449,6 +468,7 @@ class SignalClient(
         socket?.close()
         socket?.disconnect()
         socket = null
+        lastPresence = null
         peerClient?.destroy()
         peerClient = null
     }

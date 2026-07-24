@@ -15,6 +15,13 @@ sibling repo.
   `cancel()` that no longer tears the socket down) and the new
   `onSignalingStateChange` event / `signalingConnected` snapshot field, applied
   from the upstream working tree alongside the same wallet-side changes.
+- **Re-synced on:** 2026-07-24 (later same day) — cached `lastPresence` on the
+  persistent socket (Android/iOS `SignalClient`), exposed via
+  `getConnectionState()` (Android/iOS `SignalService`, TS
+  `LiquidAuthConnectionState.lastPresence`, web stub), applied from the
+  upstream working tree. Lets a launching wallet learn its peer is offline
+  from the room-join presence broadcast that fires before the JS listener
+  attaches.
 
 ## Sync direction (one-way: upstream → copy)
 

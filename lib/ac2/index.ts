@@ -65,6 +65,7 @@ export {
   getNativeConnectionState,
   isSnapshotChannelOpen,
   nativeAuthFetch,
+  presenceFromSnapshot,
   setNativeActive,
   startNativeService,
   stopNativeService,

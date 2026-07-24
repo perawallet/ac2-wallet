@@ -41,6 +41,7 @@ class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> 
       iceConnectionState: null,
       channels: {},
       signalingConnected: false,
+      lastPresence: null,
     };
   }
 

@@ -180,6 +180,16 @@ export interface NativeConnectionStateSnapshot {
    * (treat `undefined` as unknown).
    */
   signalingConnected?: boolean;
+  /**
+   * The last server `presence` broadcast the persistent socket received, or
+   * `null` before the first one. Optional so older native binaries / test
+   * fakes without the field keep working (treat `undefined` as unknown). The
+   * server broadcasts presence when the socket joins the `requestId` room —
+   * typically during service start, BEFORE the JS presence listener is
+   * attached — so this is the only way a launching app can learn its peer is
+   * offline (see {@link presenceFromSnapshot}).
+   */
+  lastPresence?: NativePresenceEvent | null;
 }
 
 /**
@@ -448,6 +458,37 @@ export function isSnapshotChannelOpen(
   channel: string = AC2_CONTROL_CHANNEL,
 ): boolean {
   return snapshot.channels?.[channel]?.toLowerCase() === 'open';
+}
+
+/**
+ * Extract the cached last `presence` broadcast from a
+ * {@link getNativeConnectionState} snapshot, normalized and scoped to
+ * `requestId`. Returns `null` when the native side has no cached presence
+ * (older binary, no broadcast yet) or when it belongs to a DIFFERENT
+ * `requestId` (a stale cache from a previous session must not gate this one).
+ *
+ * Why this exists: the server broadcasts presence when the wallet's socket
+ * joins the `requestId` room — during native service start, before the JS
+ * presence listener is attached — and then stays silent until a device joins
+ * or leaves. At a cold launch against an offline peer that one broadcast is
+ * the ONLY presence signal, so without reading it back from the snapshot the
+ * connection machine's presence gate stays "unknown" and the wallet
+ * negotiates forever into a peer that is not there (instead of parking in
+ * `waiting` and showing the peer-offline notice).
+ */
+export function presenceFromSnapshot(
+  snapshot: NativeConnectionStateSnapshot,
+  requestId: string,
+): NativePresenceEvent | null {
+  const presence = snapshot.lastPresence;
+  if (!presence) return null;
+  if (typeof presence.requestId !== 'string' || presence.requestId !== requestId) return null;
+  const deviceCount =
+    typeof presence.deviceCount === 'number' && Number.isFinite(presence.deviceCount)
+      ? presence.deviceCount
+      : 0;
+  const online = typeof presence.online === 'boolean' ? presence.online : deviceCount > 0;
+  return { requestId: presence.requestId, deviceCount, online };
 }
 
 /**

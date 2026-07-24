@@ -240,6 +240,17 @@ export interface LiquidAuthConnectionState {
    * event arrives.
    */
   signalingConnected: boolean;
+  /**
+   * The last server `presence` broadcast the persistent socket received, or
+   * `null`/absent before the first one (or on an older native binary). The
+   * server broadcasts presence when this socket joins the `requestId` room —
+   * typically during service start, BEFORE the consumer's JS `onPresence`
+   * listener is attached — and then stays silent until a device joins or
+   * leaves, so this snapshot field is the only way a launching app can learn
+   * its peer is offline. Cleared on an explicit stop; survives socket blips
+   * (the server rebroadcasts on reconnect, overwriting it).
+   */
+  lastPresence?: LiquidAuthPresenceEvent | null;
 }
 
 /**

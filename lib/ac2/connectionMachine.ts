@@ -23,7 +23,13 @@
  *   and start a fresh connect immediately. This is the fix for the
  *   stuck-"Connecting" bug on suspend → resume.
  * - **Retry policy.** Exponential backoff (2s → 4s → 8s → 16s → 30s cap),
- *   unlimited attempts while foregrounded, paused while backgrounded.
+ *   unlimited attempts while foregrounded, paused while backgrounded. A gate
+ *   REOPENING mid-backoff (peer returns to presence, signaling socket
+ *   reconnects) short-circuits the remaining delay: the backoff throttles
+ *   repeated failures against an unchanged world, but a gate transition is
+ *   fresh evidence the world just changed — the peer coming back online is
+ *   exactly the moment a retry is most likely to succeed, and waiting out a
+ *   30s delay there reads as "Reconnecting…" against a visibly-online peer.
  *
  * Pure TypeScript: no React, no react-native, no native modules. All timing
  * is injected via events — the owning hook runs the timers and feeds
@@ -506,6 +512,25 @@ function transitionConnected(
   }
 }
 
+/**
+ * A closed gate reopening (peer absent→present, socket down→up) while waiting
+ * out a backoff delay retries immediately instead of sitting out the rest of
+ * the delay. Only a genuine false→true transition qualifies: repeated
+ * broadcasts of an unchanged gate (true→true) and the first report of an
+ * unknown one (null→true) keep the throttle intact, and a paused (background)
+ * backoff stays paused — the foreground snapshot reconcile owns resumption.
+ */
+function reopenGate(
+  state: Extract<ConnectionState, { phase: 'backoff' }>,
+  changes: Partial<ConnectionContext>,
+): TransitionResult {
+  if (state.pausedInBackground) return patch(state, changes);
+  return withEffects(
+    [{ type: 'cancelTimers' }],
+    beginFreshAttempt({ ...contextOf(state), ...changes }),
+  );
+}
+
 function transitionBackoff(
   state: Extract<ConnectionState, { phase: 'backoff' }>,
   event: ConnectionEvent,
@@ -532,10 +557,16 @@ function transitionBackoff(
         beginFreshAttempt({ ...contextOf(state), retryCount: 0 }),
       );
     case 'SOCKET_UP':
+      if (!state.socketReady) return reopenGate(state, { socketReady: true });
       return patch(state, { socketReady: true });
     case 'SOCKET_DOWN':
       return patch(state, { socketReady: false });
     case 'PEER_PRESENT':
+      // Only the absent→present transition fast-paths: the peer just came
+      // back online (e.g. the agent restarted), so retry NOW rather than
+      // waiting out a delay computed while it was gone. `null` (unknown) was
+      // never a closed gate — its first broadcast doesn't bypass the throttle.
+      if (state.peerPresent === false) return reopenGate(state, { peerPresent: true });
       return patch(state, { peerPresent: true });
     case 'PEER_ABSENT':
       return patch(state, { peerPresent: false });

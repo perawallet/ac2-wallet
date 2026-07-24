@@ -364,6 +364,20 @@ public class SignalService {
     public func getConnectionState() -> [String: Any?] {
         let peer = signalClient?.peerClient
         let channels = namedDataChannels.mapValues { $0.readyState.stateDescription }
+        // The last server `presence` broadcast (`{ requestId, deviceCount,
+        // online }`), or nil before the first one. The broadcast fired at
+        // room join typically lands during service start — before the
+        // consumer's JS listener is attached — so the snapshot is the only
+        // way a launching app can learn its peer is offline.
+        var lastPresence: [String: Any]?
+        if let presence = signalClient?.lastPresence {
+            let deviceCount = presence["deviceCount"] as? Int ?? 0
+            lastPresence = [
+                "requestId": presence["requestId"] as? String ?? "",
+                "deviceCount": deviceCount,
+                "online": presence["online"] as? Bool ?? (deviceCount > 0),
+            ]
+        }
         return [
             "connected": peer != nil && !namedDataChannels.isEmpty,
             "requestId": connectedRequestId,
@@ -373,6 +387,7 @@ public class SignalService {
             // independent of the p2p state above (data channels deliberately
             // survive signaling disruptions).
             "signalingConnected": signalClient?.isSignalingConnected() ?? false,
+            "lastPresence": lastPresence,
         ]
     }
 }

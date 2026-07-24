@@ -120,6 +120,34 @@ describe('connectionMachine', () => {
       expect(negotiating.mode).toBe('connect');
       expect(effectsOfType(result.effects, 'negotiate')).toHaveLength(1);
     });
+
+    it('parks in waiting when the presence seed marks the peer absent DURING starting (cold launch, peer offline)', () => {
+      // Regression: at a cold launch the room-join `presence` broadcast fires
+      // while the native service starts, so the hook seeds PEER_ABSENT while
+      // the machine is still `starting` — before SERVICE_READY. Without the
+      // seed the gate stayed `null` ("unknown → allowed to try") and the
+      // wallet negotiated forever into an offline peer, never showing the
+      // peer-offline notice. SERVICE_READY must respect the already-closed
+      // gate and park in `waiting` with no negotiation attempt.
+      const { state, effects } = run([
+        { type: 'START' },
+        { type: 'PEER_ABSENT' },
+        { type: 'SOCKET_UP' },
+        { type: 'SERVICE_READY' },
+      ]);
+      const waiting = expectPhase(state, 'waiting');
+      expect(waiting.peerPresent).toBe(false);
+      expect(effectsOfType(effects, 'negotiate')).toEqual([]);
+      // `waiting` + peerPresent === false is exactly what the hook surfaces
+      // as the peer-offline notice (not the loading spinner).
+      expect(deriveUiState(state)).toMatchObject({ isConnected: false, isReconnecting: false });
+
+      // The peer coming online resumes the parked machine immediately.
+      const result = transition(waiting, { type: 'PEER_PRESENT' });
+      const negotiating = expectPhase(result.state, 'negotiating');
+      expect(negotiating.mode).toBe('connect');
+      expect(effectsOfType(result.effects, 'negotiate')).toHaveLength(1);
+    });
   });
 
   describe('suspend → resume (the stuck-"Connecting" bug)', () => {
@@ -281,6 +309,114 @@ describe('connectionMachine', () => {
       const ok = transition(second, { type: 'ATTEMPT_OK', attemptId: second.attemptId });
       const lost = transition(ok.state, { type: 'CONNECTION_LOST', reason: 'ice failed' });
       expect(expectPhase(lost.state, 'backoff').delayMs).toBe(BACKOFF_BASE_MS);
+    });
+  });
+
+  describe('gate reopen during backoff (agent restart)', () => {
+    /** connected → CONNECTION_LOST → PEER_ABSENT: backoff with a known-absent peer. */
+    function backoffWithPeerAbsent() {
+      const connected = bootToConnected();
+      const { state } = run(
+        [{ type: 'CONNECTION_LOST', reason: 'data channel closed' }, { type: 'PEER_ABSENT' }],
+        connected,
+      );
+      const backoff = expectPhase(state, 'backoff');
+      expect(backoff.peerPresent).toBe(false);
+      return backoff;
+    }
+
+    it('retries immediately when the peer returns mid-backoff instead of waiting out the delay', () => {
+      // Regression: the agent restarts → data channel closes → backoff. The
+      // doomed retry parks the delay while presence drops, and when the agent
+      // came back the old machine just patched `peerPresent` and sat out the
+      // remaining (up to 30s) delay — "Reconnecting…" against a visibly-online
+      // peer. The absent→present transition must retry NOW.
+      const backoff = backoffWithPeerAbsent();
+      const result = transition(backoff, { type: 'PEER_PRESENT' });
+      const negotiating = expectPhase(result.state, 'negotiating');
+      expect(negotiating.mode).toBe('connect');
+      expect(effectsOfType(result.effects, 'cancelTimers')).toHaveLength(1);
+      expect(effectsOfType(result.effects, 'negotiate')).toEqual([
+        { type: 'negotiate', attemptId: negotiating.attemptId, mode: 'connect' },
+      ]);
+    });
+
+    it('keeps the throttle for repeated broadcasts of an unchanged present peer', () => {
+      const connected = bootToConnected();
+      const { state } = run(
+        [{ type: 'PEER_PRESENT' }, { type: 'CONNECTION_LOST', reason: 'data channel closed' }],
+        connected,
+      );
+      const backoff = expectPhase(state, 'backoff');
+      expect(backoff.peerPresent).toBe(true);
+      const result = transition(backoff, { type: 'PEER_PRESENT' });
+      expectPhase(result.state, 'backoff');
+      expect(result.effects).toEqual([]);
+    });
+
+    it('does not fast-path the first presence report of an unknown peer (null → true)', () => {
+      const { state } = run([{ type: 'START' }]);
+      const starting = expectPhase(state, 'starting');
+      const timedOut = transition(starting, { type: 'DEADLINE', attemptId: starting.attemptId });
+      const backoff = expectPhase(timedOut.state, 'backoff');
+      expect(backoff.peerPresent).toBeNull();
+      const result = transition(backoff, { type: 'PEER_PRESENT' });
+      expectPhase(result.state, 'backoff');
+      expect(result.effects).toEqual([]);
+    });
+
+    it('stays paused when the peer returns while backgrounded (snapshot reconcile owns resume)', () => {
+      const backoff = backoffWithPeerAbsent();
+      const paused = expectPhase(transition(backoff, { type: 'APP_BACKGROUND' }).state, 'backoff');
+      const result = transition(paused, { type: 'PEER_PRESENT' });
+      const still = expectPhase(result.state, 'backoff');
+      expect(still.pausedInBackground).toBe(true);
+      expect(still.peerPresent).toBe(true);
+      expect(result.effects).toEqual([]);
+    });
+
+    it('parks in waiting (no negotiate) when the peer returns but the socket is down', () => {
+      const connected = bootToConnected();
+      const { state } = run(
+        [
+          { type: 'SOCKET_DOWN' },
+          { type: 'CONNECTION_LOST', reason: 'heartbeat missed' },
+          { type: 'PEER_ABSENT' },
+        ],
+        connected,
+      );
+      const backoff = expectPhase(state, 'backoff');
+      const result = transition(backoff, { type: 'PEER_PRESENT' });
+      expectPhase(result.state, 'waiting');
+      expect(effectsOfType(result.effects, 'negotiate')).toEqual([]);
+    });
+
+    it('retries immediately when the signaling socket reconnects mid-backoff', () => {
+      const connected = bootToConnected();
+      const { state } = run(
+        [{ type: 'SOCKET_DOWN' }, { type: 'CONNECTION_LOST', reason: 'heartbeat missed' }],
+        connected,
+      );
+      const backoff = expectPhase(state, 'backoff');
+      expect(backoff.socketReady).toBe(false);
+      const result = transition(backoff, { type: 'SOCKET_UP' });
+      const negotiating = expectPhase(result.state, 'negotiating');
+      expect(negotiating.mode).toBe('connect');
+      expect(effectsOfType(result.effects, 'cancelTimers')).toHaveLength(1);
+      expect(effectsOfType(result.effects, 'negotiate')).toHaveLength(1);
+    });
+
+    it('keeps the failure count: a failed fast-path retry backs off on schedule', () => {
+      const backoff = backoffWithPeerAbsent();
+      expect(backoff.attempt).toBe(1);
+      const result = transition(backoff, { type: 'PEER_PRESENT' });
+      const negotiating = expectPhase(result.state, 'negotiating');
+      const failed = transition(negotiating, {
+        type: 'ATTEMPT_FAILED',
+        attemptId: negotiating.attemptId,
+        reason: 'boom',
+      });
+      expect(expectPhase(failed.state, 'backoff').delayMs).toBe(backoffDelayMs(2));
     });
   });
 
@@ -633,5 +769,4 @@ describe('connectionMachine', () => {
       expect(result.effects).toEqual([]);
     });
   });
-
 });

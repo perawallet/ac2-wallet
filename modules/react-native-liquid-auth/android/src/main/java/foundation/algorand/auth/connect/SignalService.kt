@@ -393,7 +393,20 @@ class SignalService : Service() {
             // Whether the persistent signaling socket is currently connected,
             // independent of the p2p state above (data channels deliberately
             // survive signaling disruptions).
-            "signalingConnected" to (signalClient?.isSignalingConnected() == true)
+            "signalingConnected" to (signalClient?.isSignalingConnected() == true),
+            // The last server `presence` broadcast (`{ requestId, deviceCount,
+            // online }`), or null before the first one. The broadcast fired at
+            // room join typically lands during service start — before the
+            // consumer's JS listener is attached — so the snapshot is the only
+            // way a launching app can learn its peer is offline.
+            "lastPresence" to signalClient?.lastPresence?.let {
+                val deviceCount = it.optInt("deviceCount", 0)
+                mapOf(
+                    "requestId" to it.optString("requestId", ""),
+                    "deviceCount" to deviceCount,
+                    "online" to if (it.has("online")) it.optBoolean("online") else deviceCount > 0
+                )
+            }
         )
     }
 

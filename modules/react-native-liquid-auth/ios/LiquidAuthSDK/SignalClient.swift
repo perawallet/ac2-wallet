@@ -41,6 +41,17 @@ public class SignalClient {
     /// the socket listener is registered when the socket is created. Mirrors
     /// `SignalClient.onPresence` in the Android SDK.
     var onPresence: (([String: Any]) -> Void)?
+    /// The most recent server `presence` broadcast, cached so a consumer that
+    /// (re)attaches AFTER the broadcast fired can still read it (via
+    /// ``SignalService/getConnectionState()``). The server broadcasts presence
+    /// when this socket joins the `requestId` room — during service start,
+    /// before the consumer's JS listener is attached — and then stays silent
+    /// until a device joins or leaves, so without this cache a launch against
+    /// an offline peer never learns the peer is absent. Cleared on an explicit
+    /// ``disconnectSocket()``; kept across socket blips (the server
+    /// rebroadcasts on reconnect, overwriting it). Mirrors
+    /// `SignalClient.lastPresence` in the Android SDK.
+    private(set) var lastPresence: [String: Any]?
     /// Forwarded to ``PeerApi/onConnectionStateChange`` when the peer is created,
     /// so callers can observe ICE connection state without a native handle.
     var onConnectionStateChange: ((String) -> Void)?
@@ -264,6 +275,7 @@ public class SignalClient {
         socket.disconnect()
         peerClient?.close()
         peerClient = nil
+        lastPresence = nil
         handleDisconnect()
     }
 
@@ -378,6 +390,9 @@ public class SignalClient {
         socket.on("presence") { [weak self] data, _ in
             guard let self, let eventData = data.first as? [String: Any] else { return }
             Logger.debug("Received presence: \(eventData)")
+            // Cache before forwarding so getConnectionState() reflects this
+            // broadcast even when no consumer listener is attached yet.
+            lastPresence = eventData
             onPresence?(eventData)
         }
 

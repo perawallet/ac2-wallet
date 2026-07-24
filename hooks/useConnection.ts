@@ -26,6 +26,7 @@ import {
   isSnapshotChannelOpen,
   monitorPeerConnection,
   nativeAuthFetch,
+  presenceFromSnapshot,
   selectConnectionNoticeForRequest,
   sendConversationClose,
   sendConversationOpen,
@@ -1053,9 +1054,11 @@ export function useConnection(
       // machine's presence gate: peers must both be present in the requestId
       // room before negotiating. The native service forwards the server's
       // `presence` broadcasts (and re-broadcasts on its own socket reconnect).
-      // NOTE: there is no active presence *query*, so the first negotiation
-      // decision is made once the first broadcast arrives (`peerPresent ===
-      // null` means "unknown" and is allowed to try).
+      // NOTE: there is no active presence *query* — but the broadcast fired at
+      // room join lands during the native start above, BEFORE this listener is
+      // attached, so the first gate decision is seeded from the service's
+      // cached copy of it (the snapshot read below) rather than waiting for a
+      // broadcast that may never repeat.
       const presenceSub = addNativePresenceListener((e) => {
         const presence: PresenceResult = {
           requestId: e.requestId,
@@ -1097,13 +1100,16 @@ export function useConnection(
       });
       signalingUnsubRef.current = () => signalingSub.remove();
 
-      // Seed the signaling state from the service snapshot (the events above
-      // keep it fresh from here on). An older native binary that doesn't
-      // report `signalingConnected` (undefined) is treated as connected,
-      // matching the previous always-optimistic behavior.
+      // Seed the signaling + presence gates from the service snapshot (the
+      // events above keep them fresh from here on). An older native binary
+      // that doesn't report `signalingConnected` (undefined) is treated as
+      // connected, matching the previous always-optimistic behavior.
       let signalingConnected = true;
+      let seededPresence: PresenceResult | null = null;
       try {
-        signalingConnected = getNativeConnectionState().signalingConnected !== false;
+        const snapshot = getNativeConnectionState();
+        signalingConnected = snapshot.signalingConnected !== false;
+        seededPresence = presenceFromSnapshot(snapshot, requestId);
       } catch {
         /* native module unavailable (tests / web) — stay optimistic */
       }
@@ -1113,6 +1119,26 @@ export function useConnection(
           signalingConnected ? 'connected' : 'connecting…'
         })`,
       );
+
+      // The room-join `presence` broadcast fires while the native service is
+      // starting — before the listener above is attached — and the server then
+      // stays silent until a device joins or leaves. At a launch against an
+      // offline peer that one broadcast is the ONLY presence signal, so
+      // without this seed the machine's gate stays "unknown", it negotiates
+      // into a peer that is not there, and the peer-offline notice never
+      // shows. Seeding PEER_ABSENT before SERVICE_READY parks the machine in
+      // `waiting` instead — the presence listener resumes it the moment the
+      // peer actually comes online.
+      if (seededPresence) {
+        console.log(
+          `[ac2] presence (seeded from native snapshot) for ${seededPresence.requestId}: ${seededPresence.deviceCount} device(s), online=${seededPresence.online}`,
+        );
+        setPeerPresence(seededPresence);
+        peerPresenceRef.current = seededPresence;
+        dispatchRef.current({
+          type: isPeerOffline(seededPresence) ? 'PEER_ABSENT' : 'PEER_PRESENT',
+        });
+      }
 
       dispatchRef.current({ type: signalingConnected ? 'SOCKET_UP' : 'SOCKET_DOWN' });
       dispatchRef.current({ type: 'SERVICE_READY' });

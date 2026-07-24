@@ -7,6 +7,7 @@ import {
   isSnapshotChannelOpen,
   type LiquidAuthNativeApi,
   nativeAuthFetch,
+  presenceFromSnapshot,
   type NativeSignalingStateEvent,
 } from '@/lib/ac2/nativeTransport';
 
@@ -414,6 +415,54 @@ describe('isSnapshotChannelOpen', () => {
 
   it('checks a custom channel label when given one', () => {
     expect(isSnapshotChannelOpen(snapshot({ 'ac2-stream': 'OPEN' }), 'ac2-stream')).toBe(true);
+  });
+});
+
+describe('presenceFromSnapshot', () => {
+  const snapshot = (lastPresence?: any) => ({
+    connected: false,
+    requestId: null,
+    iceConnectionState: null,
+    channels: {},
+    lastPresence,
+  });
+
+  it('returns the cached presence for the matching requestId', () => {
+    // Regression: at a cold launch against an offline peer the room-join
+    // `presence` broadcast (deviceCount=1 — just the wallet) fires while the
+    // native service is starting, BEFORE the JS listener attaches, and the
+    // server then stays silent. Without reading it back from the snapshot the
+    // machine's presence gate stayed "unknown" and the wallet negotiated
+    // forever into a peer that was not there — never showing the peer-offline
+    // notice.
+    expect(
+      presenceFromSnapshot(snapshot({ requestId: 'req-1', deviceCount: 1, online: true }), 'req-1'),
+    ).toEqual({ requestId: 'req-1', deviceCount: 1, online: true });
+  });
+
+  it('ignores a cached presence from a DIFFERENT requestId (stale session)', () => {
+    expect(
+      presenceFromSnapshot(
+        snapshot({ requestId: 'req-old', deviceCount: 2, online: true }),
+        'req-1',
+      ),
+    ).toBeNull();
+  });
+
+  it('is null when the native side has no cached presence yet (or an older binary)', () => {
+    expect(presenceFromSnapshot(snapshot(null), 'req-1')).toBeNull();
+    expect(presenceFromSnapshot(snapshot(undefined), 'req-1')).toBeNull();
+  });
+
+  it('normalizes a partial payload (missing deviceCount / online)', () => {
+    expect(presenceFromSnapshot(snapshot({ requestId: 'req-1' }), 'req-1')).toEqual({
+      requestId: 'req-1',
+      deviceCount: 0,
+      online: false,
+    });
+    expect(presenceFromSnapshot(snapshot({ requestId: 'req-1', deviceCount: 2 }), 'req-1')).toEqual(
+      { requestId: 'req-1', deviceCount: 2, online: true },
+    );
   });
 });
 
