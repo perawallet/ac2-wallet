@@ -2,6 +2,7 @@ import { NativeModule, requireNativeModule } from 'expo';
 
 import {
   IceServer,
+  LiquidAuthConnectionState,
   LiquidAuthConnectOptions,
   LiquidAuthMessage,
   LiquidAuthNativeModuleEvents,
@@ -42,6 +43,23 @@ declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModule
   ): Promise<void>;
 
   /**
+   * Snapshot the background service's CURRENT connection so a re-attaching app
+   * can hydrate instead of assuming a fresh start. Safe to call before the
+   * service is bound (returns `connected: false`).
+   */
+  getConnectionState(): LiquidAuthConnectionState;
+
+  /**
+   * Re-attach to the ALREADY-live connection without renegotiating: rebind the
+   * event listeners to this (fresh) JS runtime and re-emit the current channel
+   * + ICE state so the app hydrates. Use when {@link getConnectionState}
+   * reports `connected: true` (e.g. after a relaunch that reconnected to the
+   * still-running service). `options` carries the same
+   * `notifications`/`queueChannels`/`heartbeat` config as {@link connect}.
+   */
+  attach(options?: LiquidAuthConnectOptions): Promise<void>;
+
+  /**
    * Abort an in-flight {@link connect} negotiation. The pending `connect`
    * promise rejects with an `E_ABORTED` error.
    */
@@ -49,11 +67,20 @@ declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModule
 
   /**
    * Set whether the app is currently online (foregrounded, with its JS
-   * listeners attached). When set active, any messages the background service
-   * buffered while the app was offline are replayed through the `onMessage`
-   * event in arrival order. The app owns this signal.
+   * listeners attached). The app owns this signal. Deliberately does NOT
+   * replay the offline queue (a relaunching app flips active before its
+   * listeners are rewired); replay happens when a fresh sink attaches
+   * ({@link connect} / {@link attach}) or via an explicit {@link flushQueue}.
    */
   setActive(active: boolean): void;
+
+  /**
+   * Explicitly replay any messages the background service buffered while the
+   * app was offline, through the `onMessage` event in arrival order. Call it
+   * only once the JS message listeners are wired, so the replay can't race
+   * the listener setup. No-op when nothing is buffered.
+   */
+  flushQueue(): void;
 
   /**
    * Send a message over the primary (`liquid`) data channel.

@@ -54,45 +54,51 @@ export interface NativeNotificationTemplate {
 }
 
 /**
- * Per-message-type notification config passed to the native service (mirrors
- * the module's `NotificationConfig`). The native service renders these while
+ * Status copy for the single ongoing foreground-service notification (mirrors
+ * the module's `NotificationStatus`). The native service renders these while
  * the app is backgrounded — even when the JS runtime is suspended/killed — so
- * the copy must live here (wallet-owned), not in the shared library.
+ * the copy must live here (wallet-owned), not in the shared library. The
+ * notification text reflects the service state:
+ *  - `connected`: the app is foreground / attached.
+ *  - `idle`: the app is closed with nothing waiting ("tap to open").
+ *  - `messages`: message(s) arrived while the app was closed.
  */
 export interface NativeNotificationConfig {
-  /** Channel labels to never notify for (control traffic). */
+  /**
+   * Channel labels whose inbound messages do NOT flip the notification into
+   * the `messages` state (control traffic). They are still buffered/replayed,
+   * just not announced.
+   */
   suppressChannels?: string[];
-  /** JSON field in the message used to select a template (default `type`). */
-  typeKey?: string;
-  /** Per-message-type templates, keyed by the message's `type`. */
-  templates?: Record<string, NativeNotificationTemplate>;
-  /** Fallback template used when no `type` matches; omit to suppress. */
-  fallback?: NativeNotificationTemplate;
+  /** Ongoing notification while the app is foreground/connected. */
+  connected?: NativeNotificationTemplate;
+  /** Ongoing notification while the app is closed with no pending messages. */
+  idle?: NativeNotificationTemplate;
+  /** Ongoing notification while the app is closed with pending messages. */
+  messages?: NativeNotificationTemplate;
 }
 
 /**
- * The wallet's default per-message-type notifications for the background
- * service. Heartbeat/stream control channels never notify; AC2 signing/key
- * requests get tailored copy; anything else (chat, unknown) falls back to a
- * generic "new message" banner. The type keys are the AC2 message-type URIs
- * (`AC2MessageTypes` in `@ac2/ac2-sdk`).
+ * The wallet's default notification copy for the background service. The
+ * ongoing notification reflects the service state: connected (app open),
+ * "Tap to open the app" (closed, idle), or "You have new messages" (closed,
+ * message[s] arrived). Only `ac2-heartbeat` is suppressed (it is pure liveness
+ * ping/pong); inbound traffic on ANY other channel (`ac2-v1`, `ac2-stream`, …)
+ * flips the notification into the "new messages" state.
  */
 export const DEFAULT_AC2_NOTIFICATIONS: NativeNotificationConfig = {
-  suppressChannels: ['ac2-heartbeat', 'ac2-stream'],
-  typeKey: 'type',
-  templates: {
-    'ac2/SigningRequest': {
-      title: 'Signature request',
-      body: 'A request is waiting for your approval. Tap to review.',
-    },
-    'ac2/KeyRequest': {
-      title: 'Key request',
-      body: 'A request for account access is waiting. Tap to review.',
-    },
-  },
-  fallback: {
+  suppressChannels: ['ac2-heartbeat'],
+  connected: {
     title: 'AC2 Wallet',
-    body: 'You have a new message. Tap to open.',
+    body: 'Connected to the signaling service',
+  },
+  idle: {
+    title: 'AC2 Wallet',
+    body: 'Tap to open the app.',
+  },
+  messages: {
+    title: 'AC2 Wallet',
+    body: 'You have new messages.',
   },
 };
 
@@ -105,6 +111,28 @@ export const DEFAULT_AC2_NOTIFICATIONS: NativeNotificationConfig = {
  * request. Any inbound activity on ANY channel still counts as liveness.
  */
 export const DEFAULT_AC2_QUEUE_CHANNELS: string[] = ['ac2-v1', 'ac2-stream'];
+
+/** Heartbeat keep-alive configuration (mirrors the native `HeartbeatConfig`). */
+export interface NativeHeartbeatConfig {
+  channel: string;
+  ping?: string;
+  pong?: string;
+}
+
+/**
+ * The wallet's heartbeat keep-alive. While the app is offline (backgrounded /
+ * closed) the JS ping/pong reply in `attachHeartbeatChannel` is dead, so the
+ * native background service itself answers the agent's `ping` on the
+ * `ac2-heartbeat` channel with a `pong`. This keeps the agent's liveness
+ * watchdog satisfied so it does not close the p2p connection while the app is
+ * away — the whole point of the survive-app-close service. The JS path still
+ * handles ping/pong (and interval pinging) while the app is foregrounded.
+ */
+export const DEFAULT_AC2_HEARTBEAT: NativeHeartbeatConfig = {
+  channel: 'ac2-heartbeat',
+  ping: 'ping',
+  pong: 'pong',
+};
 
 /** Native-broadcast presence payload (mirrors {@link PresenceResult}). */
 export interface NativePresenceEvent {
@@ -127,6 +155,18 @@ export interface NativeSubscription {
 }
 
 /**
+ * A snapshot of the background service's CURRENT connection (mirrors the
+ * module's `LiquidAuthConnectionState`), so a re-attaching app can hydrate
+ * instead of assuming a fresh start / renegotiating.
+ */
+export interface NativeConnectionStateSnapshot {
+  connected: boolean;
+  requestId: string | null;
+  iceConnectionState: string | null;
+  channels: Record<string, string>;
+}
+
+/**
  * The subset of the `react-native-liquid-auth` module this factory uses.
  * Declared as an injectable interface so the transport is unit-testable with a
  * fake and does not hard-depend on the native package at module load time.
@@ -141,10 +181,24 @@ export interface LiquidAuthNativeApi {
       dataChannels?: Record<string, NativeDataChannelInit>;
       notifications?: NativeNotificationConfig;
       queueChannels?: string[];
+      heartbeat?: NativeHeartbeatConfig;
     },
   ): Promise<void>;
   cancel(): Promise<void>;
+  getConnectionState(): NativeConnectionStateSnapshot;
+  attach(options?: {
+    dataChannels?: Record<string, NativeDataChannelInit>;
+    notifications?: NativeNotificationConfig;
+    queueChannels?: string[];
+    heartbeat?: NativeHeartbeatConfig;
+  }): Promise<void>;
   setActive(active: boolean): void;
+  /**
+   * Explicitly replay the service's offline message queue through `onMessage`
+   * (in arrival order). Optional so older native binaries / test fakes without
+   * the method keep working.
+   */
+  flushQueue?(): void;
   sendToChannel(channel: string, message: string): void;
   disconnect(): Promise<void>;
   addMessageListener(
@@ -195,6 +249,12 @@ export interface CreateNativeAc2TransportOptions {
    * `onMessage` once online); defaults to {@link DEFAULT_AC2_QUEUE_CHANNELS}.
    */
   queueChannels?: string[];
+  /**
+   * Heartbeat keep-alive the native service performs while the app is offline
+   * (answers the peer's `ping` with a `pong`); defaults to
+   * {@link DEFAULT_AC2_HEARTBEAT}. Pass `null` to disable.
+   */
+  heartbeat?: NativeHeartbeatConfig | null;
   /** Injected native module (defaults to the real `react-native-liquid-auth`). */
   native?: LiquidAuthNativeApi;
 }
@@ -225,6 +285,8 @@ function getDefaultNativeApi(): LiquidAuthNativeApi {
     start: mod.start,
     connect: mod.connect,
     cancel: mod.cancel,
+    getConnectionState: mod.getConnectionState,
+    attach: mod.attach,
     sendToChannel: mod.sendToChannel,
     disconnect: mod.disconnect,
     addMessageListener: mod.addMessageListener,
@@ -234,6 +296,7 @@ function getDefaultNativeApi(): LiquidAuthNativeApi {
     addLinkErrorListener: mod.addLinkErrorListener,
     request: mod.request,
     setActive: mod.setActive,
+    flushQueue: mod.flushQueue,
   };
 }
 
@@ -311,16 +374,47 @@ export async function cancelNativeNegotiation(
 
 /**
  * Tell the native background service whether the app is currently online
- * (foregrounded, with its JS listeners attached). When set active, any
- * messages the service buffered while the app was offline are replayed through
- * the `onMessage` event in arrival order. Drive this from the app's
- * foreground/background lifecycle so the app owns the signaling delivery state.
+ * (foregrounded, with its JS listeners attached). Drive this from the app's
+ * foreground/background lifecycle so the app owns the signaling delivery
+ * state. Deliberately does NOT replay the offline queue — a relaunching app
+ * flips active before its listeners are rewired, so an automatic replay here
+ * would hand the buffered messages to the previous (stale) session's handlers
+ * and lose them. The replay happens when a fresh sink attaches (`connect` /
+ * `attach` inside {@link createNativeAc2Transport}) or when the app explicitly
+ * calls {@link flushNativeQueue} once its listeners are wired.
  */
 export function setNativeActive(
   active: boolean,
   native: LiquidAuthNativeApi = getDefaultNativeApi(),
 ): void {
   native.setActive(active);
+}
+
+/**
+ * Explicitly replay any messages the native background service buffered while
+ * the app was offline, through the `onMessage` event in arrival order. Call it
+ * only once the message consumers are wired (a live transport's channel
+ * handlers), so the replay can't race the listener setup — e.g. on a plain
+ * background -> foreground transition with a still-live transport, or right
+ * after a negotiation completes. No-op when nothing is buffered or the native
+ * module doesn't implement it.
+ */
+export function flushNativeQueue(
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): void {
+  native.flushQueue?.();
+}
+
+/**
+ * Query the background service's CURRENT connection so the app can hydrate its
+ * UI on reconnect/relaunch (whether a peer is live, which channels are open,
+ * and the bound `requestId`) instead of assuming a fresh start. Safe to call
+ * before the service is started (returns `connected: false`).
+ */
+export function getNativeConnectionState(
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): NativeConnectionStateSnapshot {
+  return native.getConnectionState();
 }
 
 /**
@@ -356,6 +450,7 @@ export async function createNativeAc2Transport(
     dataChannels = DEFAULT_DATA_CHANNELS,
     notifications = DEFAULT_AC2_NOTIFICATIONS,
     queueChannels = DEFAULT_AC2_QUEUE_CHANNELS,
+    heartbeat = DEFAULT_AC2_HEARTBEAT,
     native = getDefaultNativeApi(),
   } = opts;
 
@@ -384,8 +479,17 @@ export async function createNativeAc2Transport(
   // missed. Each subscription is detached by `dispose()` below.
   const subscriptions: NativeSubscription[] = [];
   subscriptions.push(
-    native.addMessageListener((e) => channels.get(e.channel)?.dispatchMessage(e.message)),
-    native.addStateChangeListener((e) => channels.get(e.channel)?.setState(e.state)),
+    native.addMessageListener((e) => {
+      const channel = channels.get(e.channel);
+      console.log(
+        `[ac2-native] onMessage received channel=${e.channel} hasShim=${channel != null}`,
+      );
+      channel?.dispatchMessage(e.message);
+    }),
+    native.addStateChangeListener((e) => {
+      console.log(`[ac2-native] onStateChange channel=${e.channel} state=${e.state}`);
+      channels.get(e.channel)?.setState(e.state);
+    }),
     native.addConnectionStateListener((e) => peerConnection.setConnectionState(e.state)),
   );
 
@@ -423,6 +527,29 @@ export async function createNativeAc2Transport(
     await native.start(url);
     if (signal?.aborted) throw makeAbortError();
 
+    // If the background service is ALREADY connected to this `requestId` (it
+    // kept the peer alive across a relaunch / foreground transition), re-attach
+    // to the live connection instead of renegotiating — this is what "the
+    // service stays connected and the frontend just connects when it's up"
+    // means. `attach()` rebinds the native event listeners to this fresh JS
+    // runtime and re-emits the current channel + ICE state, which the
+    // subscriptions above route into the shims so the control channel is seen
+    // as already open (hydration). No SDP/ICE renegotiation, so the live p2p
+    // connection is never torn down.
+    const existing = native.getConnectionState();
+    if (existing.connected && existing.requestId === requestId) {
+      await native.attach({
+        dataChannels,
+        notifications,
+        queueChannels,
+        ...(heartbeat ? { heartbeat } : {}),
+      });
+      if (signal?.aborted) throw makeAbortError();
+      await waitForChannelOpen(controlChannel as any, CHANNEL_OPEN_TIMEOUT_MS, signal);
+      onPeerConnection?.(peerConnection);
+      return { datachannel: controlChannel, channels, peerConnection, disposePresence, dispose };
+    }
+
     // Race the native negotiation against the abort signal; on abort, ask the
     // native service to cancel the in-flight negotiation.
     let onAbort: (() => void) | undefined;
@@ -430,6 +557,7 @@ export async function createNativeAc2Transport(
       dataChannels,
       notifications,
       queueChannels,
+      ...(heartbeat ? { heartbeat } : {}),
     });
 
     if (signal) {

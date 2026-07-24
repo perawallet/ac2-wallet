@@ -14,7 +14,9 @@ import {
   createHeartbeatMonitor,
   createNativeAc2Transport,
   DEFAULT_THID,
+  flushNativeQueue,
   generateThid,
+  getNativeConnectionState,
   isPeerOffline,
   isPeerRejectedError,
   isPeerUnreachableError,
@@ -343,7 +345,7 @@ export function useConnection(
   // after a drop is what previously wedged the connection effect's guard
   // (`if (clientRef.current || isConnected) return`) and left the UI stuck on
   // "Connecting…" with no way to recover.
-  const clearTransport = useCallback(() => {
+  const clearTransport = useCallback((options?: { preserveNativePeer?: boolean }) => {
     // Stop the liveness watchdog and detach the connectivity monitor before
     // anything closes the peer, so a deliberate teardown can't be misread as a
     // heartbeat timeout or an ICE failure.
@@ -410,7 +412,13 @@ export function useConnection(
     // reuses the same service. A leaked native peer would keep the ICE session
     // to the agent alive, so the agent would ignore the fresh offer a reconnect
     // sends. Best-effort; a fresh negotiation supersedes any lingering peer.
-    if (nativeStartedRef.current) {
+    //
+    // EXCEPTION — hydration: when re-attaching to a connection the background
+    // service kept alive across a relaunch/foreground (`preserveNativePeer`),
+    // we must NOT cancel it. Cancelling here is exactly what closed the live
+    // peer on relaunch and forced a full renegotiation instead of the cheap
+    // `attach()` hydrate path in `createNativeAc2Transport`.
+    if (nativeStartedRef.current && !options?.preserveNativePeer) {
       cancelNativeNegotiation().catch(() => {
         /* best-effort */
       });
@@ -490,13 +498,13 @@ export function useConnection(
   // effect's guard doesn't short-circuit), flip into the loading/connecting
   // state, and bump the nonce to re-run setup. Deliberately does NOT touch the
   // retry budget so it can back both manual and automatic reconnects.
-  const performReconnect = useCallback(() => {
+  const performReconnect = useCallback((options?: { preserveNativePeer?: boolean }) => {
     deliberateCloseRef.current = true;
     if (autoReconnectTimerRef.current) {
       clearTimeout(autoReconnectTimerRef.current);
       autoReconnectTimerRef.current = null;
     }
-    clearTransport();
+    clearTransport(options);
     authFlowInProgressRef.current = false;
     // Reset both liveness clocks so the fresh attempt isn't judged idle.
     lastInboundActivityRef.current = Date.now();
@@ -641,6 +649,11 @@ export function useConnection(
   isLoadingRef.current = isLoading;
   const isReconnectingRef = useRef(isReconnecting);
   isReconnectingRef.current = isReconnecting;
+  // Current `requestId`, mirrored so the stable (deps: []) `maybeNegotiate`
+  // callback can match the background service's live connection without a
+  // stale closure.
+  const requestIdRef = useRef(requestId);
+  requestIdRef.current = requestId;
 
   // Attempt a p2p (re)negotiation IFF it is safe and worthwhile. Peers must not
   // negotiate without knowing they both exist, so this only proceeds when the
@@ -672,6 +685,34 @@ export function useConnection(
     if (autoReconnectTimerRef.current) {
       console.log('[ac2] maybeNegotiate: skipped — an auto-reconnect is already pending');
       return;
+    }
+    // If the background service ALREADY holds a live connection for this
+    // `requestId` (it survived app close / backgrounding), re-attach to it
+    // immediately — regardless of the presence gate below. A live data channel
+    // is itself proof both peers are connected, and on a cold relaunch presence
+    // can't even reach us yet: the service's presence broadcasts only start
+    // routing to this fresh JS runtime once attach() rebinds the listener, so
+    // waiting for a presence broadcast here would deadlock the hydration and
+    // strand the UI on "Connecting…". createNativeAc2Transport takes the attach
+    // (no-renegotiate) path in this case, preserving the live p2p connection.
+    try {
+      const nativeState = getNativeConnectionState();
+      if (nativeState.connected && nativeState.requestId === requestIdRef.current) {
+        console.log(
+          '[ac2] maybeNegotiate: background service already holds a live connection — attaching (hydrate)',
+        );
+        setPeerOffline(false);
+        // Re-run setup so `negotiateTransport` -> `createNativeAc2Transport`
+        // takes the `attach()` (no-renegotiate) branch. Crucially, PRESERVE the
+        // live native peer: the default reconnect cancels it, which would close
+        // the very connection we want to hydrate and downgrade this into a full
+        // renegotiation (the relaunch "reconnect" symptom).
+        performReconnectRef.current({ preserveNativePeer: true });
+        return;
+      }
+    } catch {
+      // Native module unavailable (tests / web / not yet started) — fall through
+      // to the normal presence-gated negotiation.
     }
     // Both peers must be present (deviceCount >= 2) before we negotiate p2p.
     if (isPeerOffline(peerPresenceRef.current)) {
@@ -753,14 +794,28 @@ export function useConnection(
       // Keep the native background service's delivery gate in sync with our
       // foreground state. Going background flips it offline, so inbound
       // requests are buffered natively (and surfaced as notifications) instead
-      // of dropped; returning to the foreground flips it online, replaying any
-      // buffered requests through the message listeners in arrival order. The
-      // service itself keeps running regardless (it survives app close).
+      // of dropped. The service itself keeps running regardless (it survives
+      // app close).
       if (nativeStartedRef.current) {
         try {
           setNativeActive(nextState === 'active');
         } catch {
           /* native module may not implement setActive on every platform yet */
+        }
+        // Returning to the foreground with a live transport: its channel
+        // handlers are still wired in this same runtime, so ask the service to
+        // replay anything it buffered while we were backgrounded. `setActive`
+        // itself deliberately does NOT replay — on a relaunch it fires before
+        // the fresh listeners exist, and the replay would be swallowed by the
+        // previous session's stale handlers. Without a live transport we leave
+        // the queue buffered: the next negotiation replays it (see
+        // `negotiateTransport`) once fresh handlers are wired.
+        if (nextState === 'active' && isConnectedRef.current) {
+          try {
+            flushNativeQueue();
+          } catch {
+            /* best-effort; the post-negotiation flush also covers this */
+          }
         }
       }
 
@@ -1203,11 +1258,13 @@ export function useConnection(
         nativeStartedRef.current = true;
 
         // We are in the foreground here (setup runs from a user action / an
-        // active-app resume), so mark the service online. This also sets the
-        // baseline after a relaunch: the persistent service may have been
-        // buffering requests while the app was closed, and going online now
-        // replays them through the message listeners. From here the AppState
-        // handler keeps this flag in sync with foreground/background.
+        // active-app resume), so mark the service online. Note this does NOT
+        // replay any messages the service buffered while the app was closed —
+        // at this point the fresh runtime hasn't wired its channel handlers
+        // yet, and (because the JS VM can survive a relaunch) the previous
+        // session's stale handlers may still be attached and would swallow the
+        // replay. The buffered messages are replayed once a negotiation/attach
+        // completes and the fresh handlers are wired (see `negotiateTransport`).
         try {
           setNativeActive(true);
         } catch {
@@ -1235,30 +1292,30 @@ export function useConnection(
           setPeerPresence(presence);
           peerPresenceRef.current = presence;
           if (isPeerOffline(presence)) {
-            // The peer isn't in the requestId room — but the WebRTC data channel
-            // is the source of truth for an established p2p connection, and it
-            // survives signaling-server loss. If a chat is currently live
-            // (`isConnectedRef`), a presence drop is almost always a signaling
-            // artifact (most commonly the signaling server restarting and not
-            // yet re-counting the still-connected peer), NOT a real departure.
-            // Tearing down here would needlessly restart a healthy p2p
-            // connection on every signaling blip, so ignore it: a genuinely gone
-            // peer is caught by the data channel's own detectors (the heartbeat
-            // watchdog and ICE connectivity monitor), which is the standard
-            // "drop only when the data channel fails" behavior.
+            // A presence broadcast only reaches us while the signaling server is
+            // up and delivering, so when it is connected the server's view of
+            // who is in the requestId room is authoritative — more accurate than
+            // inferring liveness from the p2p data channel. Trust it: if the
+            // peer has dropped out of the room, bail out and tear down the p2p
+            // transport even if the data channel still looks live (a stale data
+            // channel to a departed peer is worse than reconnecting when they
+            // return). This holds whether or not a chat is currently live.
             //
-            // When NOT connected there is no live p2p connection to trust, so a
-            // presence drop is authoritative and immediate: proactively tear
-            // down any half-open transport and surface a clean inline "Peer
-            // offline" notice instead of an endless "Connecting…". Only progress
-            // to connecting again once the peer is back (the else branch).
-            if (isConnectedRef.current) {
-              console.log(
-                '[ac2] presence shows peer offline but the p2p data channel is live — ignoring (the data channel is authoritative; a real drop is handled by the heartbeat/ICE monitors)',
-              );
-            } else {
-              handlePeerOfflineRef.current();
-            }
+            // The ONE case we deliberately do NOT treat as a peer drop is the
+            // signaling server itself going down while we still have a live data
+            // channel: that is an infrastructure problem, not a real departure,
+            // and the p2p connection can happily outlive the signaling server.
+            // But a server-down scenario produces NO presence broadcast (the
+            // socket is gone), so it never enters this branch — the data channel
+            // simply keeps running and a genuine p2p failure is caught by its
+            // own detectors (the heartbeat watchdog and ICE connectivity
+            // monitor). So reacting here only to actual presence-offline
+            // broadcasts is exactly the "trust presence, ignore server
+            // disconnects" behavior we want.
+            console.log(
+              `[ac2] presence shows peer offline (deviceCount=${presence.deviceCount}) — tearing down p2p (the signaling server is connected, so presence is authoritative)`,
+            );
+            handlePeerOfflineRef.current();
           } else {
             // Both peers are present: (re)negotiate the p2p transport.
             setPeerOffline(false);
@@ -1303,9 +1360,31 @@ export function useConnection(
       active = false;
       // Release the auth lock before the new run starts so it isn't blocked.
       authFlowInProgressRef.current = false;
+      // If this cleanup fires because the app is being backgrounded / destroyed
+      // (swipe-away, screen off) rather than a genuine session change or
+      // explicit disconnect, PRESERVE the live connection: the background
+      // foreground-service keeps the peer alive so a relaunch/foreground can
+      // re-attach and hydrate from it (see the `attach()` path). Tearing the
+      // transport + service down here is exactly what dropped the connection on
+      // swipe-away. Only this run's JS-side presence subscription is detached —
+      // the JS VM can survive a relaunch, and leaving it subscribed would
+      // accumulate a dead (guarded, but still registered) listener per
+      // relaunch. A real teardown (deps changed while the app is active, or an
+      // explicit disconnect via `reset`) still runs the full teardown below.
+      if (AppState.currentState !== 'active') {
+        if (presenceUnsubRef.current) {
+          try {
+            presenceUnsubRef.current();
+          } catch {
+            /* noop */
+          }
+          presenceUnsubRef.current = null;
+        }
+        return;
+      }
       runAbort.abort();
-      // The socket is going away for good (session change / unmount / explicit
-      // rebuild): tear down the p2p transport too, then close the socket.
+      // The socket is going away for good (session change / explicit rebuild):
+      // tear down the p2p transport too, then close the socket.
       clearTransport();
       closeSocket();
     };
@@ -1473,6 +1552,7 @@ export function useConnection(
           getAddress: () => addressRef.current,
           getActiveThid: () => activeThidRef.current,
           onInboundEnvelope: () => {
+            console.log('[ac2] client received inbound AC2 envelope on ac2-v1');
             updateSessionActivity(requestId, origin);
             wasBackgroundedRef.current = false;
             lastInboundActivityRef.current = Date.now();
@@ -1480,6 +1560,7 @@ export function useConnection(
             setLastHeartbeat(Date.now());
           },
           onRawMessage: (raw: string) => {
+            console.log(`[ac2] client received raw message on ac2-v1 (len=${raw.length})`);
             if (applyControlFrame(raw)) return;
             if (!raw.trim() || !addressRef.current) return;
             addMessage({
@@ -1582,6 +1663,21 @@ export function useConnection(
           },
         });
         ac2ClientRef.current = ac2;
+
+        // Every channel consumer is wired now (the SDK client on `ac2-v1`, the
+        // stream/heartbeat handlers via `onSideChannel`), so ask the native
+        // service to replay anything it buffered while the app was offline.
+        // The replay is consumer-driven (it no longer piggybacks on
+        // `setActive(true)`) precisely so it can't fire before this point and
+        // be swallowed by a stale session's handlers; the channel shims buffer
+        // anything that arrives before `onmessage` is attached, so even a
+        // replay racing this wiring is preserved. No-op when nothing is
+        // buffered.
+        try {
+          flushNativeQueue();
+        } catch {
+          /* native module may not implement flushQueue on every platform yet */
+        }
       } catch (err: any) {
         // A superseded run (cleanup/reconnect fired, or the transport was
         // aborted) must do nothing: the newer run owns all recovery.
@@ -1606,6 +1702,38 @@ export function useConnection(
       // Release the negotiation lock before the next run starts (the `finally`
       // above is guarded by `active`, now false, so it won't reset it itself).
       transportInFlightRef.current = false;
+      // If this cleanup fires because the app is being backgrounded / destroyed
+      // (swipe-away, screen off) rather than a genuine renegotiation or explicit
+      // disconnect, PRESERVE the live peer: the background service keeps it alive
+      // so a relaunch/foreground re-attaches and hydrates. The native
+      // peer/channels must NOT be cancelled here (doing so is what dropped the
+      // connection on swipe-away). But DO detach this run's JS-side wiring: the
+      // JS VM can survive a relaunch (the next "Running main" reuses it), so a
+      // still-subscribed native message listener from this dead tree would
+      // swallow the offline-queue replay (its handlers bail on `active ===
+      // false`) and duplicate every event also delivered to the fresh session.
+      // The watchdog/ICE monitor are stopped for the same reason — a stale
+      // watchdog firing on the dead tree could cancel the very peer being
+      // preserved. A real teardown (deps changed while active) still runs below.
+      if (AppState.currentState !== 'active') {
+        if (heartbeatMonitorRef.current) {
+          heartbeatMonitorRef.current.stop();
+          heartbeatMonitorRef.current = null;
+        }
+        if (peerMonitorDisposeRef.current) {
+          peerMonitorDisposeRef.current();
+          peerMonitorDisposeRef.current = null;
+        }
+        if (transportDisposeRef.current) {
+          try {
+            transportDisposeRef.current();
+          } catch {
+            /* noop */
+          }
+          transportDisposeRef.current = null;
+        }
+        return;
+      }
       // Stop the watchdog and detach the connectivity monitor before the peer
       // is closed below, so neither observes the teardown as a failure and no
       // timers/listeners dangle.

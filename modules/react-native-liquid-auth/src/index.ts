@@ -1,5 +1,6 @@
 import type {
   IceServer,
+  LiquidAuthConnectionState,
   LiquidAuthConnectionStateEvent,
   LiquidAuthConnectOptions,
   LiquidAuthLinkErrorEvent,
@@ -54,11 +55,15 @@ export function start(url: string): Promise<void> {
  *
  * Pass `options.dataChannels` to open multiple named data channels (e.g.
  * `ac2-v1`, `ac2-stream`) when acting as the offerer (`type: 'answer'`).
- * Pass `options.notifications` to customize (or suppress) the per-message-type
- * notifications the background service shows while the app is backgrounded.
+ * Pass `options.notifications` to customize (or suppress) the ongoing
+ * notification, which reflects the connected / idle ("tap to open") /
+ * new-messages states.
  * Pass `options.queueChannels` to choose which channels the service buffers
  * while the app is offline (replayed via `onMessage` once online; see
  * {@link setActive}).
+ * Pass `options.heartbeat` to have the background service answer the peer's
+ * keepalive `ping` with a `pong` natively while the app is offline, so the
+ * connection survives being backgrounded.
  */
 export function connect(
   requestId: string,
@@ -67,6 +72,28 @@ export function connect(
   options?: LiquidAuthConnectOptions
 ): Promise<void> {
   return LiquidAuthNativeModule.connect(requestId, type, iceServers, options);
+}
+
+/**
+ * Snapshot the background service's CURRENT connection so a re-attaching app
+ * can hydrate its UI (instead of assuming a fresh start) when it reconnects to
+ * a still-running service. Safe to call before {@link start} (returns
+ * `connected: false`).
+ */
+export function getConnectionState(): LiquidAuthConnectionState {
+  return LiquidAuthNativeModule.getConnectionState();
+}
+
+/**
+ * Re-attach to the ALREADY-live connection without renegotiating: rebind the
+ * event listeners to this (fresh) JS runtime and re-emit the current channel +
+ * ICE state so the app hydrates. Use when {@link getConnectionState} reports
+ * `connected: true` (e.g. after a relaunch that reconnected to the
+ * still-running background service). `options` carries the same
+ * `notifications`/`queueChannels`/`heartbeat` config as {@link connect}.
+ */
+export function attach(options?: LiquidAuthConnectOptions): Promise<void> {
+  return LiquidAuthNativeModule.attach(options);
 }
 
 /**
@@ -79,13 +106,25 @@ export function cancel(): Promise<void> {
 
 /**
  * Set whether the app is currently online (foregrounded, with its JS listeners
- * attached). When set active, any messages the background service buffered
- * while the app was offline are replayed through the `onMessage` event in
- * arrival order. Drive this from the app's foreground/background lifecycle so
- * the app — not the library — controls the signaling delivery state.
+ * attached). Drive this from the app's foreground/background lifecycle so the
+ * app — not the library — controls the signaling delivery state. Deliberately
+ * does NOT replay the offline queue (a relaunching app flips active before its
+ * listeners are rewired); replay happens when a fresh sink attaches
+ * ({@link connect} / {@link attach}) or via an explicit {@link flushQueue}.
  */
 export function setActive(active: boolean): void {
   return LiquidAuthNativeModule.setActive(active);
+}
+
+/**
+ * Explicitly replay any messages the background service buffered while the app
+ * was offline, through the `onMessage` event in arrival order. Call it only
+ * once the JS message listeners are wired (e.g. right after a foreground
+ * transition with a live transport, or after a negotiation completes), so the
+ * replay can't race the listener setup. No-op when nothing is buffered.
+ */
+export function flushQueue(): void {
+  return LiquidAuthNativeModule.flushQueue();
 }
 
 /**

@@ -31,7 +31,7 @@ export interface DataChannelInit {
 
 /**
  * A single notification template the native background service uses to render
- * a per-message-type notification while the app is backgrounded.
+ * the ongoing notification while the app is backgrounded.
  */
 export interface NotificationTemplate {
   /** Notification title. When omitted, the ongoing notification's title is kept. */
@@ -41,27 +41,46 @@ export interface NotificationTemplate {
 }
 
 /**
- * Configuration for the per-message notifications the native background
- * service shows while the app is backgrounded (or its JS runtime is
- * suspended/killed). The consumer owns all copy; the native service renders
- * from this map, so notifications work even when the JS runtime is not
- * running. Content is keyed by the message's `type` (see {@link typeKey}).
+ * Copy for the single ongoing foreground-service notification, whose text
+ * reflects the service state while the app is backgrounded (or its JS runtime
+ * is suspended/killed): connected (app foreground), idle (app closed with
+ * nothing waiting — "tap to open"), or messages (message[s] arrived while
+ * closed — "you have new messages"). The consumer owns all copy so the shared
+ * library stays content-agnostic; the native service renders it, so it works
+ * even when the JS runtime is not running.
  */
 export interface NotificationConfig {
   /**
-   * Channel labels to never notify for (e.g. `ac2-heartbeat` / `ac2-stream`
-   * control traffic).
+   * Channel labels whose inbound messages do NOT flip the notification into
+   * the `messages` state (control traffic such as `ac2-heartbeat`/`ac2-stream`).
+   * They are still buffered/replayed, just not announced.
    */
   suppressChannels?: string[];
-  /** JSON field in the message used to select a template (default `type`). */
-  typeKey?: string;
-  /** Per-message-type templates, keyed by the value of {@link typeKey}. */
-  templates?: Record<string, NotificationTemplate>;
-  /**
-   * Fallback template used when the message's type matches no entry in
-   * {@link templates}. Omit to suppress unmatched messages entirely.
-   */
-  fallback?: NotificationTemplate;
+  /** Ongoing notification while the app is foreground/connected. */
+  connected?: NotificationTemplate;
+  /** Ongoing notification while the app is closed with no pending messages. */
+  idle?: NotificationTemplate;
+  /** Ongoing notification while the app is closed with pending messages. */
+  messages?: NotificationTemplate;
+}
+
+/**
+ * Heartbeat keep-alive configuration. While the app is offline (its JS runtime
+ * is suspended / it has been backgrounded or closed) the background service
+ * itself answers the peer's keepalive `ping` on {@link channel} with a `pong`,
+ * so the peer's liveness watchdog stays satisfied and does not tear the
+ * connection down while the app is away. The JS ping/pong reply only runs while
+ * the app is foregrounded, so this native reply covers the backgrounded case.
+ * The consumer supplies the channel + tokens so the shared library never
+ * hardcodes them.
+ */
+export interface HeartbeatConfig {
+  /** The data-channel label the keepalive ping/pong is exchanged on. */
+  channel: string;
+  /** The inbound token that triggers a reply (default `ping`). */
+  ping?: string;
+  /** The token sent back in reply (default `pong`). */
+  pong?: string;
 }
 
 /**
@@ -76,9 +95,9 @@ export interface LiquidAuthConnectOptions {
    */
   dataChannels?: Record<string, DataChannelInit>;
   /**
-   * Per-message-type notification content shown natively while the app is
-   * backgrounded. When omitted, the native service falls back to showing the
-   * raw message text for every channel.
+   * Notification content: the ongoing notification reflects the connected /
+   * idle ("tap to open") / new-messages states. When omitted, the native
+   * service falls back to showing the raw message text for every channel.
    */
   notifications?: NotificationConfig;
   /**
@@ -90,6 +109,13 @@ export interface LiquidAuthConnectOptions {
    * `ac2-stream`) and skip pure control traffic (e.g. `ac2-heartbeat`).
    */
   queueChannels?: string[];
+  /**
+   * Heartbeat keep-alive: while the app is offline the background service
+   * answers the peer's keepalive `ping` on the given channel with a `pong`,
+   * so the connection survives being backgrounded (the JS ping/pong reply is
+   * dead then). When omitted, no native keep-alive is performed.
+   */
+  heartbeat?: HeartbeatConfig;
 }
 
 /**
@@ -174,6 +200,29 @@ export interface LiquidAuthResponse {
   status: number;
   statusText: string;
   body: string;
+}
+
+/**
+ * A snapshot of the background service's CURRENT connection, returned by
+ * `getConnectionState`, so a re-attaching app can hydrate its UI (instead of
+ * assuming a fresh start / showing "Connecting…") when it reconnects to a
+ * still-running service.
+ */
+export interface LiquidAuthConnectionState {
+  /** Whether a peer connection with negotiated data channels currently exists. */
+  connected: boolean;
+  /** The `requestId` the live connection is bound to, or `null` when none. */
+  requestId: string | null;
+  /**
+   * The peer's ICE connection state (`CONNECTED`, `DISCONNECTED`, `FAILED`,
+   * ...), or `null` when there is no peer connection.
+   */
+  iceConnectionState: string | null;
+  /**
+   * Each negotiated channel's current state (`OPEN`, `CLOSING`, `CLOSED`, ...),
+   * keyed by channel label.
+   */
+  channels: Record<string, string>;
 }
 
 /**

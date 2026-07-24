@@ -63,11 +63,30 @@ export class NativeDataChannel {
   onopen: ((ev?: unknown) => void) | null = null;
   onclose: ((ev?: unknown) => void) | null = null;
   onerror: ((ev?: unknown) => void) | null = null;
-  onmessage: ((ev: DataChannelMessageEvent) => void) | null = null;
 
   private _readyState: DataChannelReadyState = 'connecting';
   private readonly _send: (label: string, message: string) => void;
   private readonly _listeners = new Map<ChannelEventType, Set<(ev?: unknown) => void>>();
+  // Backing field for the `onmessage` accessor. Using a setter (rather than a
+  // plain field) lets us flush any messages buffered before a consumer
+  // attached — see `dispatchMessage`.
+  private _onmessage: ((ev: DataChannelMessageEvent) => void) | null = null;
+  // Messages that arrived before a consumer (`onmessage` or a `message`
+  // listener) was attached. This happens on the hydrate/attach path: the
+  // background service replays its offline queue during `attach()`, which can
+  // fire before the SDK client wires `onmessage` on the control channel. We
+  // buffer here and flush once a consumer attaches so no replayed request
+  // (message received while the app was closed) is ever lost.
+  private readonly _pending: string[] = [];
+  // Whether a flush of `_pending` is already scheduled on the microtask queue.
+  // The flush is deferred (not synchronous) because a consumer such as the AC2
+  // SDK's `rtcDataChannelTransport` assigns `onmessage` FIRST and only then
+  // registers its real inbound handlers (`onMessage`/`onRawMessage`) on the
+  // very next lines. A synchronous flush would replay the buffered messages
+  // through that `onmessage` bridge while its downstream handlers are still
+  // null, silently dropping them. Deferring to a microtask lets the consumer
+  // finish wiring (all synchronous) before the backlog is delivered.
+  private _flushScheduled = false;
 
   constructor(label: string, send: (label: string, message: string) => void) {
     this.label = label;
@@ -76,6 +95,16 @@ export class NativeDataChannel {
 
   get readyState(): DataChannelReadyState {
     return this._readyState;
+  }
+
+  get onmessage(): ((ev: DataChannelMessageEvent) => void) | null {
+    return this._onmessage;
+  }
+
+  /** Attaching a message handler flushes anything buffered before it existed. */
+  set onmessage(handler: ((ev: DataChannelMessageEvent) => void) | null) {
+    this._onmessage = handler;
+    if (handler) this._scheduleFlush();
   }
 
   /** Send a frame over this channel through the native service. */
@@ -99,6 +128,8 @@ export class NativeDataChannel {
     const set = this._listeners.get(type) ?? new Set();
     set.add(listener);
     this._listeners.set(type, set);
+    // A newly attached message consumer flushes anything buffered before it.
+    if (type === 'message') this._scheduleFlush();
   }
 
   removeEventListener(type: ChannelEventType, listener: (ev?: unknown) => void): void {
@@ -107,13 +138,63 @@ export class NativeDataChannel {
 
   /** Route a native `onMessage` frame for this channel to the consumer. */
   dispatchMessage(message: string): void {
+    // Buffer when there is no consumer yet (e.g. the SDK client hasn't wired
+    // `onmessage` on the control channel during hydrate) OR when a deferred
+    // flush of earlier buffered messages is still pending — appending keeps
+    // delivery in strict arrival order rather than letting a live frame jump
+    // ahead of the backlog. The scheduled flush drains everything in order.
+    if (!this._hasMessageConsumer() || this._pending.length > 0 || this._flushScheduled) {
+      this._pending.push(message);
+      if (this._hasMessageConsumer()) this._scheduleFlush();
+      return;
+    }
+    this._deliver(message);
+  }
+
+  /** Deliver a single message to the attached consumer(s). */
+  private _deliver(message: string): void {
     const event: DataChannelMessageEvent = { data: message };
     try {
-      this.onmessage?.(event);
+      this._onmessage?.(event);
     } catch {
       /* consumer handler threw; do not break dispatch */
     }
     this._emit('message', event);
+  }
+
+  /** Whether a message handler (`onmessage` or a `message` listener) exists. */
+  private _hasMessageConsumer(): boolean {
+    return this._onmessage != null || (this._listeners.get('message')?.size ?? 0) > 0;
+  }
+
+  /**
+   * Schedule a deferred flush of the buffered backlog. Deferred to a microtask
+   * (not synchronous) so a consumer that assigns `onmessage` and only then
+   * wires its real inbound handlers — like the AC2 SDK's
+   * `rtcDataChannelTransport` — has finished all of its synchronous setup
+   * before the backlog is replayed, otherwise the replay would hit not-yet-set
+   * handlers and be dropped. No-op if nothing is buffered or a flush is already
+   * pending.
+   */
+  private _scheduleFlush(): void {
+    if (this._flushScheduled || this._pending.length === 0) return;
+    this._flushScheduled = true;
+    const run = () => {
+      this._flushScheduled = false;
+      this._flushPending();
+    };
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(run);
+    } else {
+      void Promise.resolve().then(run);
+    }
+  }
+
+  /** Flush (and clear) any messages buffered before a consumer attached. */
+  private _flushPending(): void {
+    if (this._pending.length === 0) return;
+    const buffered = this._pending.splice(0, this._pending.length);
+    for (const message of buffered) this._deliver(message);
   }
 
   /**

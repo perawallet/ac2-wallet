@@ -2,6 +2,7 @@ import { registerWebModule, NativeModule } from 'expo';
 
 import {
   IceServer,
+  LiquidAuthConnectionState,
   LiquidAuthConnectOptions,
   LiquidAuthMessage,
   LiquidAuthNativeModuleEvents,
@@ -33,11 +34,23 @@ class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> 
     throw new Error(UNSUPPORTED);
   }
 
+  getConnectionState(): LiquidAuthConnectionState {
+    return { connected: false, requestId: null, iceConnectionState: null, channels: {} };
+  }
+
+  async attach(_options?: LiquidAuthConnectOptions): Promise<void> {
+    throw new Error(UNSUPPORTED);
+  }
+
   async cancel(): Promise<void> {
     throw new Error(UNSUPPORTED);
   }
 
   setActive(_active: boolean): void {
+    throw new Error(UNSUPPORTED);
+  }
+
+  flushQueue(): void {
     throw new Error(UNSUPPORTED);
   }
 

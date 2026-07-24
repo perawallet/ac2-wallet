@@ -2,6 +2,7 @@ import type { NativeDataChannel } from '@/lib/ac2/nativeChannel';
 import {
   AC2_CONTROL_CHANNEL,
   createNativeAc2Transport,
+  flushNativeQueue,
   type LiquidAuthNativeApi,
   nativeAuthFetch,
 } from '@/lib/ac2/nativeTransport';
@@ -18,6 +19,12 @@ interface FakeNative {
   emitLinkError: (e: { reason?: string; message?: string }) => void;
   resolveConnect: () => void;
   rejectConnect: (err: Error) => void;
+  setConnectionState: (s: {
+    connected: boolean;
+    requestId: string | null;
+    iceConnectionState: string | null;
+    channels: Record<string, string>;
+  }) => void;
   sent: Array<[string, string]>;
   activeMessageListeners: () => number;
 }
@@ -32,6 +39,12 @@ function createFakeNative(): FakeNative {
 
   let resolveConnect: () => void = () => {};
   let rejectConnect: (err: Error) => void = () => {};
+  let connectionState = {
+    connected: false,
+    requestId: null as string | null,
+    iceConnectionState: null as string | null,
+    channels: {} as Record<string, string>,
+  };
 
   const sub = (set: Set<(e: any) => void>, l: (e: any) => void) => {
     set.add(l);
@@ -51,7 +64,10 @@ function createFakeNative(): FakeNative {
         }),
     ),
     cancel: jest.fn(async () => {}),
+    getConnectionState: jest.fn(() => connectionState),
+    attach: jest.fn(async () => {}),
     setActive: jest.fn(() => {}),
+    flushQueue: jest.fn(() => {}),
     sendToChannel: jest.fn((channel: string, m: string) => {
       sent.push([channel, m]);
     }),
@@ -73,6 +89,9 @@ function createFakeNative(): FakeNative {
     emitLinkError: (e) => emit(link, e),
     resolveConnect: () => resolveConnect(),
     rejectConnect: (err) => rejectConnect(err),
+    setConnectionState: (s: typeof connectionState) => {
+      connectionState = s;
+    },
     sent,
     activeMessageListeners: () => message.size,
   };
@@ -103,6 +122,16 @@ describe('createNativeAc2Transport', () => {
     // pure control (`ac2-heartbeat`) is intentionally excluded.
     expect(connectArgs[3].queueChannels).toEqual(['ac2-v1', 'ac2-stream']);
 
+    // Heartbeat keep-alive is enabled by default so the native service answers
+    // the agent's `ping` with a `pong` while the app is backgrounded (the JS
+    // ping/pong reply is dead then), keeping the connection from being torn
+    // down by the agent's liveness watchdog.
+    expect(connectArgs[3].heartbeat).toEqual({
+      channel: 'ac2-heartbeat',
+      ping: 'ping',
+      pong: 'pong',
+    });
+
     // Side channels are surfaced before negotiation completes.
     expect(sideChannels.map((c) => c.label).sort()).toEqual(['ac2-heartbeat', 'ac2-stream']);
 
@@ -113,6 +142,99 @@ describe('createNativeAc2Transport', () => {
     expect(setup.datachannel.label).toBe(AC2_CONTROL_CHANNEL);
     expect(setup.datachannel.readyState).toBe('open');
     expect(onPeerConnection).toHaveBeenCalledWith(setup.peerConnection);
+  });
+
+  it('re-attaches (no renegotiation) when the service already holds a live connection for the requestId', async () => {
+    const fake = createFakeNative();
+    fake.setConnectionState({
+      connected: true,
+      requestId: 'req-1',
+      iceConnectionState: 'CONNECTED',
+      channels: { 'ac2-v1': 'OPEN', 'ac2-stream': 'OPEN', 'ac2-heartbeat': 'OPEN' },
+    });
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+
+    // The live connection is re-attached, not renegotiated.
+    expect(fake.api.attach).toHaveBeenCalledTimes(1);
+    expect(fake.api.connect).not.toHaveBeenCalled();
+
+    // attach() re-emits the current channel state so the control channel opens.
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    const setup = await promise;
+    expect(setup.datachannel.readyState).toBe('open');
+  });
+
+  it('delivers offline-queue messages replayed during attach() to a consumer wired AFTER setup (hydrate)', async () => {
+    const fake = createFakeNative();
+    fake.setConnectionState({
+      connected: true,
+      requestId: 'req-1',
+      iceConnectionState: 'CONNECTED',
+      channels: { 'ac2-v1': 'OPEN' },
+    });
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    expect(fake.api.attach).toHaveBeenCalledTimes(1);
+
+    // The native service drains its offline queue during attach()/handleMessages,
+    // BEFORE the SDK client wires the control channel's `onmessage` (which only
+    // happens after this factory resolves). The replayed control-plane message
+    // therefore arrives with no consumer attached yet.
+    fake.emitMessage(AC2_CONTROL_CHANNEL, 'queued-while-closed');
+    // attach() then re-emits the live channel state so the control channel opens.
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+
+    const setup = await promise;
+
+    // The SDK client wires the consumer only now (post-resolve).
+    const raw: string[] = [];
+    setup.datachannel.onmessage = (ev) => {
+      if (typeof ev.data === 'string') raw.push(ev.data);
+    };
+
+    // The deferred flush replays the buffered message once the consumer attaches.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(raw).toEqual(['queued-while-closed']);
+  });
+
+  it('renegotiates (not attach) when the live connection is for a different requestId', async () => {
+    const fake = createFakeNative();
+    fake.setConnectionState({
+      connected: true,
+      requestId: 'other-req',
+      iceConnectionState: 'CONNECTED',
+      channels: { 'ac2-v1': 'OPEN' },
+    });
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    expect(fake.api.attach).not.toHaveBeenCalled();
+    expect(fake.api.connect).toHaveBeenCalledTimes(1);
+
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    fake.resolveConnect();
+    await promise;
   });
 
   it('routes native messages to the matching channel shim', async () => {
@@ -241,6 +363,20 @@ describe('createNativeAc2Transport', () => {
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
     expect(fake.api.cancel).toHaveBeenCalled();
     expect(fake.activeMessageListeners()).toBe(0);
+  });
+});
+
+describe('flushNativeQueue', () => {
+  it('delegates to the native flushQueue', () => {
+    const fake = createFakeNative();
+    flushNativeQueue(fake.api);
+    expect(fake.api.flushQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when the native module does not implement flushQueue (older binary)', () => {
+    const fake = createFakeNative();
+    delete (fake.api as any).flushQueue;
+    expect(() => flushNativeQueue(fake.api)).not.toThrow();
   });
 });
 

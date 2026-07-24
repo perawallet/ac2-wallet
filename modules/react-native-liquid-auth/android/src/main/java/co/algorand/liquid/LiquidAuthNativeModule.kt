@@ -9,14 +9,16 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import foundation.algorand.auth.connect.AuthMessage
+import foundation.algorand.auth.connect.HeartbeatConfig
 import foundation.algorand.auth.connect.NotificationContent
-import foundation.algorand.auth.connect.NotificationPresenter
+import foundation.algorand.auth.connect.NotificationStatus
 import foundation.algorand.auth.connect.SignalClient
 import foundation.algorand.auth.connect.SignalService
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +46,7 @@ import org.webrtc.PeerConnection
  */
 class LiquidAuthNativeModule : Module() {
   companion object {
+    const val TAG = "LiquidAuthNative"
     const val CHANNEL_ID = "liquid_auth_signaling"
     const val CHANNEL_NAME = "Liquid Auth"
     const val NOTIFICATION_ID = 1337
@@ -160,13 +163,17 @@ class LiquidAuthNativeModule : Module() {
           )
           service.handleMessages(
             activity,
-            { label, msg -> sendEvent(ON_MESSAGE, mapOf("channel" to label, "message" to msg)) },
+            { label, msg ->
+              Log.d(TAG, "emit onMessage[$label] -> JS (connect)")
+              sendEvent(ON_MESSAGE, mapOf("channel" to label, "message" to msg))
+            },
             { label, state -> sendEvent(ON_STATE_CHANGE, mapOf("channel" to label, "state" to state)) },
             createNotificationBuilder(),
             NOTIFICATION_ID,
             activity::class.java,
-            buildNotificationPresenter(options),
-            parseQueueChannels(options)
+            buildNotificationStatus(options),
+            parseQueueChannels(options),
+            parseHeartbeat(options)
           )
           promise.resolve(null)
         } catch (e: CancellationException) {
@@ -174,6 +181,73 @@ class LiquidAuthNativeModule : Module() {
         } catch (e: Exception) {
           promise.reject("E_CONNECT", e.message, e)
         }
+      }
+    }
+
+    /**
+     * Snapshot the background service's CURRENT connection so a re-attaching
+     * app can hydrate instead of assuming a fresh start. Returns
+     * `{ connected, requestId, iceConnectionState, channels }`. Safe to call
+     * before the service is bound (returns `connected: false`).
+     */
+    Function("getConnectionState") {
+      signalService?.getConnectionState() ?: mapOf(
+        "connected" to false,
+        "requestId" to null,
+        "iceConnectionState" to null,
+        "channels" to emptyMap<String, String>()
+      )
+    }
+
+    /**
+     * Re-attach to the ALREADY-live connection without renegotiating: rebind
+     * the message/state/presence/link-error/connection-state listeners to this
+     * (fresh) JS runtime and re-emit the current channel + ICE state so the app
+     * hydrates. Use when [getConnectionState] reports `connected: true` (e.g.
+     * after a relaunch that reconnected to the still-running service). `options`
+     * carries the same `notifications`/`queueChannels`/`heartbeat` config as
+     * [connect].
+     */
+    AsyncFunction("attach") { options: Map<String, Any?>?, promise: Promise ->
+      val service = signalService
+      if (service == null) {
+        promise.reject("E_NOT_STARTED", "Signaling service not started, call start() first", null)
+        return@AsyncFunction
+      }
+      val activity = currentActivity
+      try {
+        service.attach(
+          activity,
+          { label, msg ->
+            Log.d(TAG, "emit onMessage[$label] -> JS (attach)")
+            sendEvent(ON_MESSAGE, mapOf("channel" to label, "message" to msg))
+          },
+          { label, state -> sendEvent(ON_STATE_CHANGE, mapOf("channel" to label, "state" to state)) },
+          createNotificationBuilder(),
+          NOTIFICATION_ID,
+          activity::class.java,
+          buildNotificationStatus(options),
+          parseQueueChannels(options),
+          parseHeartbeat(options),
+          onPresence = { presence -> sendEvent(ON_PRESENCE, jsonToMap(presence)) },
+          onLinkError = { error -> sendEvent(ON_LINK_ERROR, jsonToMap(error)) },
+          onConnectionStateChange = { state ->
+            sendEvent(ON_CONNECTION_STATE_CHANGE, mapOf("state" to state))
+          },
+          onTrack = { track ->
+            sendEvent(
+              ON_TRACK,
+              mapOf(
+                "id" to track.id(),
+                "kind" to track.kind(),
+                "enabled" to track.enabled()
+              )
+            )
+          }
+        )
+        promise.resolve(null)
+      } catch (e: Exception) {
+        promise.reject("E_ATTACH", e.message, e)
       }
     }
 
@@ -188,13 +262,25 @@ class LiquidAuthNativeModule : Module() {
 
     /**
      * Set whether the app is currently online (foregrounded, with its JS
-     * listeners attached). When set active, any messages the background
-     * service buffered while offline are replayed through the `onMessage`
-     * event in arrival order. The app owns this signal so it — not the
-     * library — controls the signaling delivery state.
+     * listeners attached). The app owns this signal so it — not the library —
+     * controls the signaling delivery state. Deliberately does NOT replay the
+     * offline queue (a relaunching app flips active before its listeners are
+     * rewired); the replay happens when a fresh sink attaches (`connect` /
+     * `attach`) or when the app calls `flushQueue` once its listeners are
+     * wired.
      */
     Function("setActive") { active: Boolean ->
       signalService?.setActive(active)
+    }
+
+    /**
+     * Explicitly replay any messages the background service buffered while the
+     * app was offline, through the `onMessage` event in arrival order. Call it
+     * only once the JS message listeners are wired, so the replay can't race
+     * the listener setup. No-op when nothing is buffered.
+     */
+    Function("flushQueue") {
+      signalService?.flushQueue()
     }
 
     /**
@@ -417,6 +503,24 @@ class LiquidAuthNativeModule : Module() {
     return channels.ifEmpty { null }
   }
 
+  /**
+   * Parse the `heartbeat` option: the keep-alive channel + ping/pong tokens the
+   * background service uses to answer the peer's heartbeat `ping` with a `pong`
+   * while the app is offline (its JS ping/pong reply is dead), so the peer's
+   * liveness watchdog does not close the connection. Returns null when omitted
+   * (keep-alive disabled). The wallet supplies its own channel + tokens (e.g.
+   * `{ channel: "ac2-heartbeat", ping: "ping", pong: "pong" }`) so the shared
+   * library never hardcodes them.
+   */
+  private fun parseHeartbeat(options: Map<String, Any?>?): HeartbeatConfig? {
+    @Suppress("UNCHECKED_CAST")
+    val config = options?.get("heartbeat") as? Map<String, Any?> ?: return null
+    val channel = config["channel"] as? String ?: return null
+    val ping = config["ping"] as? String ?: "ping"
+    val pong = config["pong"] as? String ?: "pong"
+    return HeartbeatConfig(channel, ping, pong)
+  }
+
   private fun parseIceServers(iceServers: List<Map<String, Any?>>?): List<PeerConnection.IceServer> {
     if (iceServers.isNullOrEmpty()) {
       return listOf(
@@ -440,55 +544,46 @@ class LiquidAuthNativeModule : Module() {
   }
 
   /**
-   * Build a [NotificationPresenter] from the `notifications` template map passed
-   * to `connect(options)`. The consumer (wallet) owns all per-message-type copy;
-   * this only provides the generic mechanism (channel suppression + JSON `type`
-   * lookup), so the notification is rendered natively even when the JS runtime
-   * is suspended/dead.
+   * Build a [NotificationStatus] from the `notifications` config passed to
+   * `connect(options)`/`attach(options)`. The consumer (wallet) owns all copy;
+   * the shared library only renders it natively, so the single ongoing
+   * notification updates between its connected / idle / new-messages states
+   * even when the JS runtime is suspended/dead.
    *
    * Expected shape:
    * ```
    * notifications: {
    *   suppressChannels: ["ac2-heartbeat", "ac2-stream"],
-   *   typeKey: "type",                       // JSON field selecting a template
-   *   templates: { "ac2/SigningRequest": { title, body } },
-   *   fallback: { title, body }              // used when no type matches
+   *   connected: { title, body },  // app foreground / attached
+   *   idle:      { title, body },  // app closed, nothing waiting ("tap to open")
+   *   messages:  { title, body }   // message(s) arrived while closed
    * }
    * ```
    * Returns null when no config is supplied (legacy raw-text behavior).
    */
-  private fun buildNotificationPresenter(options: Map<String, Any?>?): NotificationPresenter? {
+  private fun buildNotificationStatus(options: Map<String, Any?>?): NotificationStatus? {
     @Suppress("UNCHECKED_CAST")
     val config = options?.get("notifications") as? Map<String, Any?> ?: return null
     val suppressChannels = (config["suppressChannels"] as? List<*>)
       ?.filterIsInstance<String>()
       ?.toSet()
       ?: emptySet()
-    val typeKey = config["typeKey"] as? String ?: "type"
+    return NotificationStatus(
+      connected = parseNotificationContent(config["connected"]),
+      idle = parseNotificationContent(config["idle"]),
+      messages = parseNotificationContent(config["messages"]),
+      suppressChannels = suppressChannels
+    )
+  }
+
+  /** Parse a `{ title, body }` template into a [NotificationContent] (or null). */
+  private fun parseNotificationContent(value: Any?): NotificationContent? {
     @Suppress("UNCHECKED_CAST")
-    val templates = config["templates"] as? Map<String, Any?> ?: emptyMap()
-    @Suppress("UNCHECKED_CAST")
-    val fallback = config["fallback"] as? Map<String, Any?>
-    return NotificationPresenter { label, message ->
-      if (label in suppressChannels) {
-        return@NotificationPresenter null
-      }
-      val type = try {
-        val json = JSONObject(message)
-        if (json.has(typeKey)) json.optString(typeKey) else null
-      } catch (e: Exception) {
-        null
-      }
-      @Suppress("UNCHECKED_CAST")
-      val template = (type?.let { templates[it] } as? Map<String, Any?>) ?: fallback
-      if (template == null) {
-        return@NotificationPresenter null
-      }
-      NotificationContent(
-        template["title"] as? String,
-        template["body"] as? String ?: message
-      )
-    }
+    val map = value as? Map<String, Any?> ?: return null
+    return NotificationContent(
+      map["title"] as? String,
+      map["body"] as? String
+    )
   }
 
   private fun createNotificationChannel() {

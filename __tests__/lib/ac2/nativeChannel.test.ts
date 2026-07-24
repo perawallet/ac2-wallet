@@ -1,6 +1,12 @@
 import { NativeDataChannel, NativePeerConnection } from '@/lib/ac2/nativeChannel';
 import { monitorPeerConnection } from '@/lib/ac2/peerConnectionMonitor';
 
+/**
+ * Let the microtask queue drain so the shim's deferred backlog flush
+ * (`queueMicrotask`) runs before assertions.
+ */
+const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 describe('NativeDataChannel', () => {
   it('starts connecting and forwards sends to the native channel by label', () => {
     const send = jest.fn();
@@ -49,6 +55,78 @@ describe('NativeDataChannel', () => {
 
     expect(onmessage).toHaveBeenCalledWith({ data: 'frame' });
     expect(listener).toHaveBeenCalledWith({ data: 'frame' });
+  });
+
+  it('buffers messages that arrive before a consumer attaches and flushes them on onmessage', async () => {
+    const channel = new NativeDataChannel('ac2-v1', jest.fn());
+    // Messages replayed from the offline queue during hydrate arrive before the
+    // SDK client wires `onmessage` on the control channel.
+    channel.dispatchMessage('first');
+    channel.dispatchMessage('second');
+
+    const onmessage = jest.fn();
+    channel.onmessage = onmessage;
+
+    // The flush is deferred to a microtask so a consumer that wires its real
+    // handlers on the lines AFTER assigning `onmessage` (like the AC2 SDK's
+    // `rtcDataChannelTransport`) is fully ready before the backlog is replayed.
+    // Nothing is delivered synchronously.
+    expect(onmessage).not.toHaveBeenCalled();
+
+    await flushMicrotasks();
+
+    // After the microtask, the buffered messages arrive in order.
+    expect(onmessage).toHaveBeenNthCalledWith(1, { data: 'first' });
+    expect(onmessage).toHaveBeenNthCalledWith(2, { data: 'second' });
+    expect(onmessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('flushes buffered messages when a "message" listener is added', async () => {
+    const channel = new NativeDataChannel('ac2-v1', jest.fn());
+    channel.dispatchMessage('buffered');
+
+    const listener = jest.fn();
+    channel.addEventListener('message', listener);
+
+    await flushMicrotasks();
+
+    expect(listener).toHaveBeenCalledWith({ data: 'buffered' });
+  });
+
+  it('preserves arrival order when a live frame arrives before the deferred flush', async () => {
+    const channel = new NativeDataChannel('ac2-v1', jest.fn());
+    // Backlog buffered before any consumer.
+    channel.dispatchMessage('backlog');
+
+    const onmessage = jest.fn();
+    channel.onmessage = onmessage;
+
+    // A live frame arrives after the consumer attaches but before the deferred
+    // flush runs — it must queue behind the backlog, not jump ahead.
+    channel.dispatchMessage('live');
+    expect(onmessage).not.toHaveBeenCalled();
+
+    await flushMicrotasks();
+
+    expect(onmessage).toHaveBeenNthCalledWith(1, { data: 'backlog' });
+    expect(onmessage).toHaveBeenNthCalledWith(2, { data: 'live' });
+    expect(onmessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-deliver buffered messages once flushed', async () => {
+    const channel = new NativeDataChannel('ac2-v1', jest.fn());
+    channel.dispatchMessage('once');
+
+    const first = jest.fn();
+    channel.onmessage = first;
+    await flushMicrotasks();
+    expect(first).toHaveBeenCalledTimes(1);
+
+    // A later handler must not see the already-flushed backlog again.
+    const second = jest.fn();
+    channel.onmessage = second;
+    await flushMicrotasks();
+    expect(second).not.toHaveBeenCalled();
   });
 
   it('close() flips to closed and fires close once', () => {
