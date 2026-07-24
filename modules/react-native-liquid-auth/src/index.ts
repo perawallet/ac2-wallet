@@ -9,6 +9,7 @@ import type {
   LiquidAuthPeerType,
   LiquidAuthPresenceEvent,
   LiquidAuthResponse,
+  LiquidAuthSignalingStateEvent,
   LiquidAuthStateChangeEvent,
   LiquidAuthTrackEvent,
 } from './LiquidAuthNative.types';
@@ -221,4 +222,18 @@ export function addConnectionStateListener(
   listener: (event: LiquidAuthConnectionStateEvent) => void
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onConnectionStateChange', listener);
+}
+
+/**
+ * Subscribe to signaling-socket connectivity changes (`connected` /
+ * `disconnected`), including socket.io auto-reconnects. Independent of the
+ * p2p connection — the data channels deliberately survive signaling
+ * disruptions — so the app can surface a dedicated "signaling server offline"
+ * state. Seed the initial value from {@link getConnectionState}'s
+ * `signalingConnected` when subscribing after {@link start}.
+ */
+export function addSignalingStateListener(
+  listener: (event: LiquidAuthSignalingStateEvent) => void
+): EventSubscription {
+  return LiquidAuthNativeModule.addListener('onSignalingStateChange', listener);
 }

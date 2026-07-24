@@ -43,6 +43,11 @@ public class SignalService {
     private var lastKnownReferer: String?
     private var isDeepLink: Bool = true
 
+    // The `requestId` the live connection is bound to, so a re-attaching app
+    // can hydrate which room/peer the background service is connected to. Set
+    // by ``connectToPeer`` and cleared by ``stop``.
+    private var connectedRequestId: String?
+
     var currentPeerType: LiquidAuthPeerType? // .offer or .answer
 
     /// Guards the one-shot `onConnected` callback so it fires exactly once per
@@ -58,10 +63,33 @@ public class SignalService {
     /// - Parameters:
     ///   - url: The signaling server URL
     ///   - httpClient: URLSession for HTTP communications
-    public func start(url: String, httpClient _: URLSession) {
-        // Initialize the SignalClient
-        signalClient = SignalClient(url: url, service: self)
-        signalClient?.connectSocket()
+    ///   - onPresence: Callback for server-broadcast `presence` updates
+    ///   - onSignalingState: Callback for signaling-socket connectivity changes
+    public func start(
+        url: String,
+        httpClient _: URLSession,
+        onPresence: (([String: Any]) -> Void)? = nil,
+        onSignalingState: ((String) -> Void)? = nil
+    ) {
+        // Preserve an already-running client so the app re-attaching (e.g. after
+        // a relaunch that reconnected to the still-running service) does NOT
+        // tear down the live connection the service was keeping alive.
+        if signalClient == nil {
+            signalClient = SignalClient(url: url, service: self)
+        }
+        // (Re)bind the persistent-socket callbacks before the socket comes up so
+        // the very first presence broadcast / connectivity transition is seen.
+        if let onPresence = onPresence {
+            signalClient?.onPresence = onPresence
+        }
+        if let onSignalingState = onSignalingState {
+            signalClient?.onSignalingState = onSignalingState
+        }
+        // Bring the persistent signaling socket up NOW (not lazily on the first
+        // peer negotiation) so presence and signaling connectivity flow to the
+        // consumer before — and between — p2p negotiations.
+        signalClient?.ensureSocket()
+
         delegate?.signalService(
             self,
             didReceiveStatusUpdate: "Signal Service",
@@ -75,6 +103,7 @@ public class SignalService {
         signalClient = nil
         peerClient = nil
         dataChannel = nil
+        connectedRequestId = nil
         namedDataChannels.removeAll()
         peerConnection = nil
         delegate?.signalService(self, didReceiveStatusUpdate: "Signal Service", message: "Service stopped.")
@@ -88,6 +117,59 @@ public class SignalService {
             didReceiveStatusUpdate: "Signal Service",
             message: "Disconnected from the signaling server."
         )
+    }
+
+    /**
+     * Re-attach a freshly (re)started app to the ALREADY-live connection without
+     * renegotiating. Rebinds the socket/peer callbacks to the new sinks (the old
+     * ones referenced a now-dead JS runtime), and re-emits each channel's current
+     * state plus the peer's ICE connection state so the consumer hydrates
+     * immediately — observers only fire on transitions, so a live-but-unchanged
+     * channel would otherwise never notify the fresh listener. Used when
+     * ``getConnectionState()`` reports a live peer.
+     */
+    public func attach(
+        onMessage: @escaping (String, String) -> Void,
+        onStateChange: @escaping (String, String?) -> Void,
+        onPresence: (([String: Any]) -> Void)? = nil,
+        onLinkError: ((LinkError) -> Void)? = nil,
+        onConnectionStateChange: ((String) -> Void)? = nil,
+        onSignalingState: ((String) -> Void)? = nil
+    ) {
+        // Rebind the live socket/peer callbacks to the new sinks.
+        if let onPresence = onPresence {
+            signalClient?.onPresence = onPresence
+        }
+        if let onLinkError = onLinkError {
+            signalClient?.onLinkError = onLinkError
+        }
+        if let onSignalingState = onSignalingState {
+            signalClient?.onSignalingState = onSignalingState
+        }
+        if let onConnectionStateChange = onConnectionStateChange {
+            signalClient?.onConnectionStateChange = onConnectionStateChange
+            peerClient?.onConnectionStateChange = onConnectionStateChange
+        }
+
+        // Re-register the data-channel observers with the fresh message/state
+        // sinks.
+        for (label, channel) in namedDataChannels {
+            let delegate = DataChannelDelegate(
+                signalService: self,
+                onMessage: { message in onMessage(label, message) },
+                onStateChange: { state in onStateChange(label, state) }
+            )
+            channel.delegate = delegate
+            dataChannelDelegates[channel] = delegate
+
+            // Re-emit the current channel state so the re-attached consumer
+            // hydrates now (the observers only fire on future transitions).
+            onStateChange(label, channel.readyState.stateDescription)
+        }
+
+        if let iceState = peerClient?.peerConnection?.iceConnectionState {
+            onConnectionStateChange?(iceState.stateDescription)
+        }
     }
 
     /// Abort an in-flight ``connectToPeer`` negotiation without fully stopping
@@ -130,23 +212,28 @@ public class SignalService {
         onLinkError: ((LinkError) -> Void)? = nil,
         onConnected: (() -> Void)? = nil,
         onPresence: (([String: Any]) -> Void)? = nil,
-        onConnectionStateChange: ((String) -> Void)? = nil
+        onConnectionStateChange: ((String) -> Void)? = nil,
+        onSignalingState: ((String) -> Void)? = nil
     ) {
         currentPeerType = type
         didFireConnected = false
+        connectedRequestId = requestId
 
-        signalClient?.disconnectSocket()
-        signalClient = nil
         namedDataChannels.removeAll()
 
         Logger.debug("Attempting to connect to peer with requestId: \(requestId), type: \(type.rawValue)")
 
-        // Ensure the socket is connected
-        signalClient = SignalClient(url: origin, service: self)
+        // Ensure the SignalClient exists and is pointing to the right origin
+        if signalClient == nil {
+            signalClient = SignalClient(url: origin, service: self)
+        }
         // Register socket/peer callbacks before connecting so the socket
         // listeners (presence) are attached when the socket is created.
         signalClient?.onPresence = onPresence
         signalClient?.onConnectionStateChange = onConnectionStateChange
+        if let onSignalingState = onSignalingState {
+            signalClient?.onSignalingState = onSignalingState
+        }
 
         // Wait for socket connection before starting signaling
         signalClient?.onSocketConnected = { [weak self] in
@@ -197,7 +284,12 @@ public class SignalService {
             )
         }
 
-        signalClient?.connectSocket()
+        if signalClient?.isSignalingConnected() == true {
+            signalClient?.onSocketConnected?()
+        } else {
+            signalClient?.connectSocket()
+        }
+
         Logger.debug("ICE servers: \(iceServers)")
         Logger.debug("Waiting for socket to connect before signaling.")
     }
@@ -260,5 +352,44 @@ public class SignalService {
             Logger.info("Flushed queued message: \(message)")
         }
         messageQueue.removeAll()
+    }
+
+    /**
+     * Snapshot of the current live connection so a re-attaching app can hydrate
+     * its UI (rather than assuming a fresh start). Reports whether a peer
+     * connection exists with negotiated channels, its ICE connection state, the
+     * `requestId` it is bound to, and each negotiated channel's current state
+     * keyed by label. Read-only: this never mutates the connection.
+     */
+    public func getConnectionState() -> [String: Any?] {
+        let peer = signalClient?.peerClient
+        let channels = namedDataChannels.mapValues { $0.readyState.stateDescription }
+        return [
+            "connected": peer != nil && !namedDataChannels.isEmpty,
+            "requestId": connectedRequestId,
+            "iceConnectionState": peer?.peerConnection?.iceConnectionState.stateDescription,
+            "channels": channels,
+            // Whether the persistent signaling socket is currently connected,
+            // independent of the p2p state above (data channels deliberately
+            // survive signaling disruptions).
+            "signalingConnected": signalClient?.isSignalingConnected() ?? false,
+        ]
+    }
+}
+
+// MARK: - RTCDataChannelState description
+
+extension RTCDataChannelState {
+    /// Uppercase state name matching the Android SDK's
+    /// `DataChannel.State.toString()` (`CONNECTING`/`OPEN`/`CLOSING`/`CLOSED`),
+    /// so the `onStateChange` payload is identical across platforms.
+    var stateDescription: String {
+        switch self {
+        case .connecting: return "CONNECTING"
+        case .open: return "OPEN"
+        case .closing: return "CLOSING"
+        case .closed: return "CLOSED"
+        @unknown default: return "UNKNOWN"
+        }
     }
 }

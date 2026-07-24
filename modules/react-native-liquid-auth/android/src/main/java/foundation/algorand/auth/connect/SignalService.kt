@@ -182,7 +182,9 @@ class SignalService : Service() {
         httpClient: OkHttpClient,
         notificationBuilder: Builder,
         notificationId: Int,
-        activityClass: Class<out Activity>
+        activityClass: Class<out Activity>,
+        onPresence: ((JSONObject) -> Unit)? = null,
+        onSignalingState: ((String) -> Unit)? = null
     ) {
         startForeground(notificationBuilder.setContentIntent(createPendingIntent(activityClass, 0)), notificationId)
         // Preserve an already-running client so the app re-attaching (e.g. after
@@ -194,6 +196,14 @@ class SignalService : Service() {
         if (signalClient == null) {
             signalClient = SignalClient(url, this@SignalService, httpClient)
         }
+        // (Re)bind the persistent-socket callbacks before the socket comes up so
+        // the very first presence broadcast / connectivity transition is seen.
+        onPresence?.let { signalClient?.onPresence = it }
+        onSignalingState?.let { signalClient?.onSignalingState = it }
+        // Bring the persistent signaling socket up NOW (not lazily on the first
+        // peer negotiation) so presence and signaling connectivity flow to the
+        // consumer before — and between — p2p negotiations.
+        signalClient?.ensureSocket()
     }
 
     /**
@@ -234,6 +244,7 @@ class SignalService : Service() {
         onPresence: ((JSONObject) -> Unit)? = null,
         onLinkError: ((JSONObject) -> Unit)? = null,
         onConnectionStateChange: ((String) -> Unit)? = null,
+        onSignalingState: ((String) -> Unit)? = null,
     ) {
         connectedRequestId = requestId
         // Register the socket/peer callbacks before negotiation so the socket
@@ -241,6 +252,7 @@ class SignalService : Service() {
         signalClient?.onPresence = onPresence
         signalClient?.onLinkError = onLinkError
         signalClient?.onConnectionStateChange = onConnectionStateChange
+        onSignalingState?.let { signalClient?.onSignalingState = it }
         dataChannel = signalClient?.peer(requestId, type, iceServers, dataChannels, tracks)
         peerClient = signalClient?.peerClient
         peerClient?.onTrack = onTrack
@@ -377,7 +389,11 @@ class SignalService : Service() {
             "connected" to (peer != null && peer.dataChannels.isNotEmpty()),
             "requestId" to connectedRequestId,
             "iceConnectionState" to peer?.peerConnection?.iceConnectionState()?.toString(),
-            "channels" to channels
+            "channels" to channels,
+            // Whether the persistent signaling socket is currently connected,
+            // independent of the p2p state above (data channels deliberately
+            // survive signaling disruptions).
+            "signalingConnected" to (signalClient?.isSignalingConnected() == true)
         )
     }
 
@@ -404,7 +420,8 @@ class SignalService : Service() {
         onPresence: ((JSONObject) -> Unit)? = null,
         onLinkError: ((JSONObject) -> Unit)? = null,
         onConnectionStateChange: ((String) -> Unit)? = null,
-        onTrack: ((MediaStreamTrack) -> Unit)? = null
+        onTrack: ((MediaStreamTrack) -> Unit)? = null,
+        onSignalingState: ((String) -> Unit)? = null
     ) {
         // Re-attaching means the app is in the foreground and (re)wiring its
         // listeners, so it is online and consuming by definition. Mark it active
@@ -422,6 +439,7 @@ class SignalService : Service() {
         signalClient?.onPresence = onPresence
         signalClient?.onLinkError = onLinkError
         signalClient?.onConnectionStateChange = onConnectionStateChange
+        onSignalingState?.let { signalClient?.onSignalingState = it }
         signalClient?.peerClient?.onConnectionStateChange = onConnectionStateChange
         signalClient?.peerClient?.onTrack = onTrack
         // Re-register the data-channel observers with the fresh message/state

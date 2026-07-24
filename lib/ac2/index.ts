@@ -18,6 +18,8 @@ export { attachHeartbeatChannel } from './heartbeat';
 export type { HeartbeatChannelOptions } from './heartbeat';
 export { createHeartbeatMonitor } from './heartbeatMonitor';
 export type { HeartbeatMonitor, HeartbeatMonitorOptions } from './heartbeatMonitor';
+export { evaluateIdleSession } from './idleSession';
+export type { IdleSessionInput, IdleSessionVerdict } from './idleSession';
 export { monitorPeerConnection } from './peerConnectionMonitor';
 export type {
   MonitoredPeerConnection,
@@ -55,11 +57,13 @@ export type { DataChannelMessageEvent, DataChannelReadyState } from './nativeCha
 export {
   AC2_CONTROL_CHANNEL,
   addNativePresenceListener,
+  addNativeSignalingStateListener,
   cancelNativeNegotiation,
   createNativeAc2Transport,
   DEFAULT_AC2_QUEUE_CHANNELS,
   flushNativeQueue,
   getNativeConnectionState,
+  isSnapshotChannelOpen,
   nativeAuthFetch,
   setNativeActive,
   startNativeService,
@@ -74,6 +78,7 @@ export type {
   NativeIceServer,
   NativeLinkErrorEvent,
   NativePresenceEvent,
+  NativeSignalingStateEvent,
   NativeSubscription,
 } from './nativeTransport';
 

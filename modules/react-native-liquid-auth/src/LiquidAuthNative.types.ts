@@ -190,6 +190,16 @@ export interface LiquidAuthConnectionStateEvent {
 }
 
 /**
+ * Payload emitted when the persistent signaling socket's connectivity changes
+ * (including socket.io auto-reconnects). Independent of the p2p connection —
+ * the data channels deliberately survive signaling disruptions — so consumers
+ * can surface a dedicated "signaling server offline" state.
+ */
+export interface LiquidAuthSignalingStateEvent {
+  state: 'connected' | 'disconnected';
+}
+
+/**
  * The result of an authenticated {@link request} performed through the native
  * module's shared cookie-jar HTTP client (the same client that backs the
  * background signaling socket). `body` is the raw response text; callers parse
@@ -223,6 +233,13 @@ export interface LiquidAuthConnectionState {
    * keyed by channel label.
    */
   channels: Record<string, string>;
+  /**
+   * Whether the persistent signaling socket is currently connected,
+   * independent of the p2p state above. Lets a (re)attaching app seed its
+   * "signaling offline" indicator before the first `onSignalingStateChange`
+   * event arrives.
+   */
+  signalingConnected: boolean;
 }
 
 /**
@@ -235,4 +252,5 @@ export type LiquidAuthNativeModuleEvents = {
   onPresence: (event: LiquidAuthPresenceEvent) => void;
   onLinkError: (event: LiquidAuthLinkErrorEvent) => void;
   onConnectionStateChange: (event: LiquidAuthConnectionStateEvent) => void;
+  onSignalingStateChange: (event: LiquidAuthSignalingStateEvent) => void;
 };

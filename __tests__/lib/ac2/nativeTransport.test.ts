@@ -1,10 +1,13 @@
 import type { NativeDataChannel } from '@/lib/ac2/nativeChannel';
 import {
   AC2_CONTROL_CHANNEL,
+  addNativeSignalingStateListener,
   createNativeAc2Transport,
   flushNativeQueue,
+  isSnapshotChannelOpen,
   type LiquidAuthNativeApi,
   nativeAuthFetch,
+  type NativeSignalingStateEvent,
 } from '@/lib/ac2/nativeTransport';
 
 /** Flush pending microtasks so awaited `start()`/`connect()` progress. */
@@ -51,7 +54,7 @@ function createFakeNative(): FakeNative {
     return { remove: () => set.delete(l) };
   };
   const emit = (set: Set<(e: any) => void>, e: any) => {
-    for (const l of [...set]) l(e);
+    for (const l of set) l(e);
   };
 
   const api: LiquidAuthNativeApi = {
@@ -377,6 +380,69 @@ describe('flushNativeQueue', () => {
     const fake = createFakeNative();
     delete (fake.api as any).flushQueue;
     expect(() => flushNativeQueue(fake.api)).not.toThrow();
+  });
+});
+
+describe('isSnapshotChannelOpen', () => {
+  const snapshot = (channels: Record<string, string>) => ({
+    connected: true,
+    requestId: 'req-1',
+    iceConnectionState: 'CONNECTED',
+    channels,
+  });
+
+  it('recognizes the UPPERCASE enum strings the native snapshot carries', () => {
+    // Regression: the raw snapshot reports states verbatim (`"OPEN"`), and a
+    // lowercase `=== 'open'` check misread a healthy resume as dead — forcing
+    // a spurious reconnect on every background -> foreground transition.
+    expect(isSnapshotChannelOpen(snapshot({ [AC2_CONTROL_CHANNEL]: 'OPEN' }))).toBe(true);
+  });
+
+  it('accepts an already-lowercase state', () => {
+    expect(isSnapshotChannelOpen(snapshot({ [AC2_CONTROL_CHANNEL]: 'open' }))).toBe(true);
+  });
+
+  it('rejects non-open states regardless of case', () => {
+    expect(isSnapshotChannelOpen(snapshot({ [AC2_CONTROL_CHANNEL]: 'CLOSING' }))).toBe(false);
+    expect(isSnapshotChannelOpen(snapshot({ [AC2_CONTROL_CHANNEL]: 'closed' }))).toBe(false);
+  });
+
+  it('is false when the channel is missing from the snapshot', () => {
+    expect(isSnapshotChannelOpen(snapshot({ 'ac2-stream': 'OPEN' }))).toBe(false);
+    expect(isSnapshotChannelOpen(snapshot({}))).toBe(false);
+  });
+
+  it('checks a custom channel label when given one', () => {
+    expect(isSnapshotChannelOpen(snapshot({ 'ac2-stream': 'OPEN' }), 'ac2-stream')).toBe(true);
+  });
+});
+
+describe('addNativeSignalingStateListener', () => {
+  it('delegates to the native listener and forwards events until removed', () => {
+    const listeners = new Set<(e: NativeSignalingStateEvent) => void>();
+    const fake = createFakeNative();
+    (fake.api as any).addSignalingStateListener = (l: (e: NativeSignalingStateEvent) => void) => {
+      listeners.add(l);
+      return { remove: () => listeners.delete(l) };
+    };
+
+    const events: NativeSignalingStateEvent[] = [];
+    const sub = addNativeSignalingStateListener((e) => events.push(e), fake.api);
+
+    for (const l of listeners) l({ state: 'disconnected' });
+    for (const l of listeners) l({ state: 'connected' });
+    expect(events).toEqual([{ state: 'disconnected' }, { state: 'connected' }]);
+
+    sub.remove();
+    expect(listeners.size).toBe(0);
+  });
+
+  it('returns a no-op subscription when the native module predates the event', () => {
+    const fake = createFakeNative();
+    // createFakeNative does not implement addSignalingStateListener, matching
+    // an older native binary.
+    const sub = addNativeSignalingStateListener(() => {}, fake.api);
+    expect(() => sub.remove()).not.toThrow();
   });
 });
 

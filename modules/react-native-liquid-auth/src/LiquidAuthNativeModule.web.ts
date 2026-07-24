@@ -35,7 +35,13 @@ class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> 
   }
 
   getConnectionState(): LiquidAuthConnectionState {
-    return { connected: false, requestId: null, iceConnectionState: null, channels: {} };
+    return {
+      connected: false,
+      requestId: null,
+      iceConnectionState: null,
+      channels: {},
+      signalingConnected: false,
+    };
   }
 
   async attach(_options?: LiquidAuthConnectOptions): Promise<void> {

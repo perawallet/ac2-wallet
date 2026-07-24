@@ -11,6 +11,10 @@ sibling repo.
 - **Upstream repo:** https://github.com/algorandfoundation/react-native-liquid-auth
 - **Upstream commit:** `1b5d4ca7dc69b11c13a44e0a7696a877eff2a0bc` (`chore: bind connections to service`)
 - **Vendored on:** 2026-07-23
+- **Re-synced on:** 2026-07-24 — persistent signaling socket (peer-only
+  `cancel()` that no longer tears the socket down) and the new
+  `onSignalingStateChange` event / `signalingConnected` snapshot field, applied
+  from the upstream working tree alongside the same wallet-side changes.
 
 ## Sync direction (one-way: upstream → copy)
 

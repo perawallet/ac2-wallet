@@ -141,6 +141,16 @@ export interface NativePresenceEvent {
   online: boolean;
 }
 
+/**
+ * Native signaling-socket connectivity payload (`connected`/`disconnected`),
+ * including socket.io auto-reconnects. Independent of the p2p connection —
+ * data channels deliberately survive signaling disruptions — so the app can
+ * show a dedicated "signaling server offline" state.
+ */
+export interface NativeSignalingStateEvent {
+  state: 'connected' | 'disconnected';
+}
+
 /** Native signaling link-error payload (e.g. the two-peer lockdown refusal). */
 export interface NativeLinkErrorEvent {
   event?: string;
@@ -164,6 +174,12 @@ export interface NativeConnectionStateSnapshot {
   requestId: string | null;
   iceConnectionState: string | null;
   channels: Record<string, string>;
+  /**
+   * Whether the persistent signaling socket is currently connected. Optional
+   * so older native binaries / test fakes without the field keep working
+   * (treat `undefined` as unknown).
+   */
+  signalingConnected?: boolean;
 }
 
 /**
@@ -210,6 +226,11 @@ export interface LiquidAuthNativeApi {
   addConnectionStateListener(listener: (e: { state: string }) => void): NativeSubscription;
   addPresenceListener(listener: (e: NativePresenceEvent) => void): NativeSubscription;
   addLinkErrorListener(listener: (e: NativeLinkErrorEvent) => void): NativeSubscription;
+  /**
+   * Subscribe to signaling-socket connectivity changes. Optional so older
+   * native binaries / test fakes without the event keep working.
+   */
+  addSignalingStateListener?(listener: (e: NativeSignalingStateEvent) => void): NativeSubscription;
   request(
     url: string,
     method: string,
@@ -294,6 +315,7 @@ function getDefaultNativeApi(): LiquidAuthNativeApi {
     addConnectionStateListener: mod.addConnectionStateListener,
     addPresenceListener: mod.addPresenceListener,
     addLinkErrorListener: mod.addLinkErrorListener,
+    addSignalingStateListener: mod.addSignalingStateListener,
     request: mod.request,
     setActive: mod.setActive,
     flushQueue: mod.flushQueue,
@@ -399,9 +421,7 @@ export function setNativeActive(
  * after a negotiation completes. No-op when nothing is buffered or the native
  * module doesn't implement it.
  */
-export function flushNativeQueue(
-  native: LiquidAuthNativeApi = getDefaultNativeApi(),
-): void {
+export function flushNativeQueue(native: LiquidAuthNativeApi = getDefaultNativeApi()): void {
   native.flushQueue?.();
 }
 
@@ -418,6 +438,19 @@ export function getNativeConnectionState(
 }
 
 /**
+ * Whether a {@link getNativeConnectionState} snapshot reports the given data
+ * channel as open. The raw snapshot carries the native WebRTC enum strings
+ * verbatim (UPPERCASE, e.g. `"OPEN"`) — unlike the channel shims, which
+ * lowercase them into `readyState` — so the comparison is case-insensitive.
+ */
+export function isSnapshotChannelOpen(
+  snapshot: NativeConnectionStateSnapshot,
+  channel: string = AC2_CONTROL_CHANNEL,
+): boolean {
+  return snapshot.channels?.[channel]?.toLowerCase() === 'open';
+}
+
+/**
  * Subscribe to server-broadcast presence for the connected `requestId`. Lives
  * with the persistent service (not a single negotiation), mirroring how the JS
  * path subscribed presence on the long-lived signaling socket.
@@ -427,6 +460,24 @@ export function addNativePresenceListener(
   native: LiquidAuthNativeApi = getDefaultNativeApi(),
 ): NativeSubscription {
   return native.addPresenceListener(listener);
+}
+
+/**
+ * Subscribe to signaling-socket connectivity changes (`connected` /
+ * `disconnected`, including socket.io auto-reconnects) from the persistent
+ * native service. Independent of the p2p connection — data channels
+ * deliberately survive signaling disruptions — so the app can surface a
+ * dedicated "signaling server offline" state. Returns a no-op subscription
+ * when the native module predates the event.
+ */
+export function addNativeSignalingStateListener(
+  listener: (e: NativeSignalingStateEvent) => void,
+  native: LiquidAuthNativeApi = getDefaultNativeApi(),
+): NativeSubscription {
+  if (!native.addSignalingStateListener) {
+    return { remove: () => {} };
+  }
+  return native.addSignalingStateListener(listener);
 }
 
 /**

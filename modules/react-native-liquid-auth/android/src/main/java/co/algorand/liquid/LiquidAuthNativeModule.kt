@@ -56,6 +56,7 @@ class LiquidAuthNativeModule : Module() {
     const val ON_PRESENCE = "onPresence"
     const val ON_LINK_ERROR = "onLinkError"
     const val ON_CONNECTION_STATE_CHANGE = "onConnectionStateChange"
+    const val ON_SIGNALING_STATE_CHANGE = "onSignalingStateChange"
   }
 
   private var signalService: SignalService? = null
@@ -78,7 +79,7 @@ class LiquidAuthNativeModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("LiquidAuthNative")
 
-    Events(ON_MESSAGE, ON_STATE_CHANGE, ON_TRACK, ON_PRESENCE, ON_LINK_ERROR, ON_CONNECTION_STATE_CHANGE)
+    Events(ON_MESSAGE, ON_STATE_CHANGE, ON_TRACK, ON_PRESENCE, ON_LINK_ERROR, ON_CONNECTION_STATE_CHANGE, ON_SIGNALING_STATE_CHANGE)
 
     /**
      * Generate a random (time-based) request id.
@@ -116,7 +117,14 @@ class LiquidAuthNativeModule : Module() {
             httpClient,
             createNotificationBuilder(),
             NOTIFICATION_ID,
-            currentActivity::class.java
+            currentActivity::class.java,
+            // The persistent signaling socket comes up at service start (not
+            // lazily on the first negotiation), so presence and signaling
+            // connectivity must already be routed to JS here.
+            onPresence = { presence -> sendEvent(ON_PRESENCE, jsonToMap(presence)) },
+            onSignalingState = { state ->
+              sendEvent(ON_SIGNALING_STATE_CHANGE, mapOf("state" to state))
+            }
           )
           promise.resolve(null)
         } catch (e: Exception) {
@@ -159,6 +167,9 @@ class LiquidAuthNativeModule : Module() {
             onLinkError = { error -> sendEvent(ON_LINK_ERROR, jsonToMap(error)) },
             onConnectionStateChange = { state ->
               sendEvent(ON_CONNECTION_STATE_CHANGE, mapOf("state" to state))
+            },
+            onSignalingState = { state ->
+              sendEvent(ON_SIGNALING_STATE_CHANGE, mapOf("state" to state))
             }
           )
           service.handleMessages(
@@ -195,7 +206,8 @@ class LiquidAuthNativeModule : Module() {
         "connected" to false,
         "requestId" to null,
         "iceConnectionState" to null,
-        "channels" to emptyMap<String, String>()
+        "channels" to emptyMap<String, String>(),
+        "signalingConnected" to false
       )
     }
 
@@ -243,6 +255,9 @@ class LiquidAuthNativeModule : Module() {
                 "enabled" to track.enabled()
               )
             )
+          },
+          onSignalingState = { state ->
+            sendEvent(ON_SIGNALING_STATE_CHANGE, mapOf("state" to state))
           }
         )
         promise.resolve(null)

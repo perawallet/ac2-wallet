@@ -51,7 +51,6 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     peerOffline,
     isSocketConnected,
     reconnectAttempt,
-    maxReconnectAttempts,
     send,
     sendAc2,
     lastHeartbeat,
@@ -330,14 +329,20 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
         // Connected but the wallet is not registered with the agent (a foreign
         // wallet was locked out, or no identity has been granted yet): block
         // new messages until registration completes.
-        <ChatComposer onSend={send} enabled={false} placeholder="Not registered — can't send messages" />
+        <ChatComposer
+          onSend={send}
+          enabled={false}
+          placeholder="Not registered — can't send messages"
+        />
       ) : isConnected ? (
         <ChatComposer onSend={send} enabled placeholder="Message" />
       ) : isReconnecting ? (
         <ChatComposer
           onSend={send}
           enabled={false}
-          placeholder={`Reconnecting (${reconnectAttempt}/${maxReconnectAttempts})…`}
+          placeholder={
+            reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt})…` : 'Reconnecting…'
+          }
         />
       ) : isLoading ? (
         <ChatComposer onSend={send} enabled={false} placeholder="Connecting…" />

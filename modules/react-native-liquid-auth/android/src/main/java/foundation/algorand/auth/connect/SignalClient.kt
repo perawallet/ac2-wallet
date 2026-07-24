@@ -81,6 +81,14 @@ class SignalClient(
      */
     var onConnectionStateChange: ((String) -> Unit)? = null
 
+    /**
+     * Signaling-socket connectivity changes (`"connected"` / `"disconnected"`),
+     * including socket.io auto-reconnects. Lets consumers surface a
+     * "signaling offline" state that is independent of the p2p connection —
+     * the data channels deliberately survive signaling disruptions.
+     */
+    var onSignalingState: ((String) -> Unit)? = null
+
     // In-flight negotiation bookkeeping, so [cancel] can abort a pending [peer].
     private var peerJob: Job? = null
     private var peerContinuation: Continuation<DataChannel?>? = null
@@ -109,15 +117,41 @@ class SignalClient(
     }
 
     /**
-     * Abort an in-flight [peer] negotiation: cancel the negotiation coroutine,
-     * fail the pending continuation with a [CancellationException] so the caller
-     * unblocks promptly, and tear the socket + peer down.
+     * Abort an in-flight (or established) [peer] negotiation: cancel the
+     * negotiation coroutine, fail the pending continuation with a
+     * [CancellationException] so the caller unblocks promptly, and destroy the
+     * peer connection.
+     *
+     * Deliberately does NOT touch the signaling socket. Cancelling used to run
+     * a full [disconnect], which closed the socket while [SignalService.start]
+     * kept this client instance alive — so no further `presence` broadcasts
+     * could ever arrive, and a consumer waiting for the peer to come back
+     * online (presence-gated renegotiation) was left permanently deaf. The
+     * socket must outlive the peer: it is the persistent presence/rendezvous
+     * plane; only [disconnect] (an explicit stop) tears it down.
      */
     fun cancel() {
         peerJob?.cancel()
         peerJob = null
         failPeer(CancellationException("Peer negotiation cancelled"))
-        disconnect()
+        // Drop this negotiation's socket listeners (candidates + the one-shot
+        // description waiters) so a stray late frame can't hit a destroyed
+        // peer, and the next negotiation on the SAME socket starts clean.
+        detachNegotiationListeners()
+        peerClient?.destroy()
+        peerClient = null
+    }
+
+    /**
+     * Remove the per-negotiation socket listeners ([peer] re-registers them on
+     * each run). The persistent listeners (`presence`, `exception`, socket
+     * connectivity) registered in [ensureSocket] are left untouched.
+     */
+    private fun detachNegotiationListeners() {
+        socket?.off("offer-candidate")
+        socket?.off("answer-candidate")
+        socket?.off("offer-description")
+        socket?.off("answer-description")
     }
 
     /**
@@ -167,12 +201,16 @@ class SignalClient(
         dataChannels: Map<String, DataChannel.Init>?,
         tracks: List<MediaStreamTrack>?
     ): DataChannel? {
-        createSocket()
+        ensureSocket()
         return suspendCoroutine { continuation ->
             peerContinuation = continuation
             peerResumed = false
             peerJob = scope.launch {
                 val clientType = if (type == "offer") "answer" else "offer"
+                // The socket is persistent across negotiations, so clear any
+                // listeners a previous (cancelled/failed) negotiation left
+                // behind before re-registering this run's own.
+                detachNegotiationListeners()
                 peerClient = PeerApi(context)
                 peerClient?.onConnectionStateChange = onConnectionStateChange
                 // Note: the peer continuation is resumed at most once via
@@ -353,11 +391,28 @@ class SignalClient(
         }
     }
 
-    private fun createSocket() {
-        // Handle existing connections
-        if (socket !== null) {
-            socket?.close()
-            socket?.disconnect()
+    /**
+     * Whether the signaling socket is currently connected. `false` before the
+     * first [ensureSocket] and while socket.io is (re)connecting.
+     */
+    fun isSignalingConnected(): Boolean {
+        return socket?.connected() == true
+    }
+
+    /**
+     * Create the signaling socket if none exists yet, or (re)connect the
+     * existing one. The socket is PERSISTENT: it is reused across peer
+     * negotiations (and across [cancel]) so `presence` broadcasts keep flowing
+     * between chats — it is only torn down by an explicit [disconnect].
+     */
+    fun ensureSocket() {
+        val existing = socket
+        if (existing !== null) {
+            // Reuse the persistent socket; revive it if it was dropped.
+            if (!existing.connected()) {
+                existing.connect()
+            }
+            return
         }
 
         // Configure Socket Options to use the same client
@@ -376,12 +431,25 @@ class SignalClient(
         socket?.on("exception") { args ->
             (args.getOrNull(0) as? JSONObject)?.let { onLinkError?.invoke(it) }
         }
+        // Surface socket connectivity (fires on every connect/auto-reconnect
+        // and disconnect) so consumers can show a "signaling offline" state
+        // without tying it to the p2p connection.
+        socket?.on(Socket.EVENT_CONNECT) {
+            Log.d(TAG, "Signaling socket connected")
+            onSignalingState?.invoke("connected")
+        }
+        socket?.on(Socket.EVENT_DISCONNECT) {
+            Log.d(TAG, "Signaling socket disconnected")
+            onSignalingState?.invoke("disconnected")
+        }
         socket?.connect()
     }
 
     fun disconnect() {
         socket?.close()
         socket?.disconnect()
+        socket = null
         peerClient?.destroy()
+        peerClient = null
     }
 }

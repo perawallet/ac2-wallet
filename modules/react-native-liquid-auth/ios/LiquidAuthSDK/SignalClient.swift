@@ -29,8 +29,13 @@ public class SignalClient {
     private var candidatesBuffer: [RTCIceCandidate] = []
     private var eventQueue: [(String, QueuedEventData)] = []
     private var dataChannelDelegates: [RTCDataChannel: DataChannelDelegate] = [:]
-    private var onLinkError: ((LinkError) -> Void)?
+    var onLinkError: ((LinkError) -> Void)?
     var onSocketConnected: (() -> Void)?
+    /// Signaling-socket connectivity changes (`"connected"` / `"disconnected"`),
+    /// including socket.io auto-reconnects. Lets consumers surface a
+    /// "signaling offline" state that is independent of the p2p connection —
+    /// the data channels deliberately survive signaling disruptions.
+    var onSignalingState: ((String) -> Void)?
     /// Server-broadcast `presence` updates for the current `requestId` room
     /// (`{ requestId, deviceCount, online }`). Set before ``connectToPeer`` so
     /// the socket listener is registered when the socket is created. Mirrors
@@ -51,6 +56,22 @@ public class SignalClient {
         setupSocketListeners()
     }
 
+    /// Whether the signaling socket is currently connected.
+    func isSignalingConnected() -> Bool {
+        return socket.status == .connected
+    }
+
+    /// Create the signaling socket if none exists yet, or (re)connect the
+    /// existing one. The socket is PERSISTENT: it is reused across peer
+    /// negotiations (and across [cancel]) so `presence` broadcasts keep flowing
+    /// between chats — it is only torn down by an explicit [disconnectSocket].
+    func ensureSocket() {
+        if socket.status != .connected && socket.status != .connecting {
+            Logger.debug("SignalClient: Socket is not connected. Attempting to connect...")
+            socket.connect()
+        }
+    }
+
     // swiftlint:disable:next function_body_length
     public func connectToPeer(
         requestId: String,
@@ -62,14 +83,35 @@ public class SignalClient {
         onStateChange: @escaping (String, String?) -> Void,
         onLinkError: ((LinkError) -> Void)? = nil
     ) -> RTCDataChannel? {
+        ensureSocket()
+
         // Clean up any existing peer connection
         peerClient?.close()
         peerClient = nil
+
+        // The socket is persistent across negotiations, so clear any
+        // listeners a previous (cancelled/failed) negotiation left
+        // behind before re-registering this run's own.
+        detachNegotiationListeners()
 
         self.onLinkError = onLinkError
         installLinkErrorListeners(requestId: requestId)
 
         Logger.debug("SignalClient: Attempting to connect to peer with requestId: \(requestId), type: \(type.rawValue)")
+
+        // Listen for Remote ICE Candidates
+        socket.on("candidate") { [weak self] data, _ in
+            guard let self, let eventData = data.first as? [String: Any] else { return }
+            self.handleIceCandidate(eventData)
+        }
+        socket.on("offer-candidate") { [weak self] data, _ in
+            guard let self, let eventData = data.first as? [String: Any] else { return }
+            self.handleIceCandidate(eventData)
+        }
+        socket.on("answer-candidate") { [weak self] data, _ in
+            guard let self, let eventData = data.first as? [String: Any] else { return }
+            self.handleIceCandidate(eventData)
+        }
 
         peerClient = PeerApi(
             iceServers: iceServers,
@@ -148,6 +190,16 @@ public class SignalClient {
             Logger.info("Answer (initiator): sending link request")
             send(event: "link", data: ["requestId": requestId])
 
+            // Listen for the answer-description event (only for initiator)
+            socket.on("answer-description") { [weak self] data, _ in
+                guard let self else { return }
+                if let eventData = data.first as? [String: Any] {
+                    self.handleAnswerDescription(eventData)
+                } else if let sdp = data.first as? String {
+                    self.handleAnswerDescription(sdp)
+                }
+            }
+
             guard let peerClient, peerClient.peerConnection != nil else {
                 Logger.error("PeerClient or its peerConnection is nil!")
                 return nil
@@ -193,40 +245,9 @@ public class SignalClient {
             send(event: "link", data: ["requestId": requestId])
 
             // Listen for the offer-description event (only for responder)
-            socket.off("offer-description")
             socket.on("offer-description") { [weak self] data, _ in
-                guard let self, let eventData = data.first as? [String: Any],
-                      let sdp = eventData["sdp"] as? String,
-                      let type = sdpType(from: eventData["type"] as? String) else { return }
-                Logger.info("Offer (responder): Received SDP type: \(type) : \(sdp)")
-                let sessionDescription = RTCSessionDescription(type: type, sdp: sdp)
-
-                peerClient?.setRemoteDescription(sessionDescription, completion: { error in
-                    if let error {
-                        Logger.error("Failed to set remote description: \(error)")
-                    } else {
-                        Logger.info("Offer (responder): Remote description set successfully.")
-
-                        self.peerClient?.createAnswer { answer in
-                            guard let answer else {
-                                Logger.error("Failed to create answer: Answer is nil")
-                                return
-                            }
-                            Logger.info("Offer (responder): Setting local description")
-                            self.peerClient?.setLocalDescription(answer) { error in
-                                if let error {
-                                    Logger.error("Failed to set local description: \(error)")
-                                } else {
-                                    Logger.info("Offer (responder): Sending answer description")
-                                    self
-                                        .send(event: "answer-description",
-                                              sdp: answer
-                                                  .sdp) // ["type": stringFromSdpType(answer.type), "sdp": answer.sdp])
-                                }
-                            }
-                        }
-                    }
-                })
+                guard let self, let eventData = data.first as? [String: Any] else { return }
+                self.handleOfferDescription(eventData)
             }
             return nil
         }
@@ -236,32 +257,53 @@ public class SignalClient {
     // MARK: - Connect to the Socket.IO Server
 
     func connectSocket() {
-        if socket.status != .connected {
-            Logger.debug("Socket is not connected. Attempting to connect...")
-            socket.connect()
-        } else {
-            Logger.debug("Socket is already connected.")
-        }
+        ensureSocket()
     }
 
     func disconnectSocket() {
         socket.disconnect()
+        peerClient?.close()
+        peerClient = nil
         handleDisconnect()
     }
 
-    /// Abort an in-flight negotiation: tear the peer connection down and
-    /// disconnect the socket so the caller unblocks promptly. Mirrors
-    /// `SignalClient.cancel()` in the Android SDK.
+    /// Abort an in-flight negotiation: cancel the negotiation, and destroy the
+    /// peer connection.
+    ///
+    /// Deliberately does NOT touch the signaling socket. Cancelling used to run
+    /// a full [disconnectSocket], which closed the socket while the service
+    /// kept this client instance alive — so no further `presence` broadcasts
+    /// could ever arrive, and a consumer waiting for the peer to come back
+    /// online (presence-gated renegotiation) was left permanently deaf. The
+    /// socket must outlive the peer: it is the persistent presence/rendezvous
+    /// plane; only [disconnectSocket] (an explicit stop) tears it down.
     func cancel() {
         peerClient?.close()
         peerClient = nil
-        socket.disconnect()
+        // Drop this negotiation's socket listeners (candidates + the one-shot
+        // description waiters) so a stray late frame can't hit a destroyed
+        // peer, and the next negotiation on the SAME socket starts clean.
+        detachNegotiationListeners()
+        candidatesBuffer.removeAll()
+    }
+
+    /// Remove the per-negotiation socket listeners (``connectToPeer`` re-registers
+    /// them on each run). The persistent listeners (`presence`, `exception`, socket
+    /// connectivity) registered in ``setupSocketListeners`` are left untouched.
+    private func detachNegotiationListeners() {
+        socket.off("offer-candidate")
+        socket.off("answer-candidate")
+        socket.off("offer-description")
+        socket.off("answer-description")
+        socket.off("candidate")
+        socket.off("link-error")
+        socket.off("exception")
     }
 
     private func handleDisconnect() {
         Logger.debug("Handling Socket.IO disconnection...")
-        peerClient?.close()
-        peerClient = nil
+        // peerClient?.close()
+        // peerClient = nil
     }
 
     // MARK: - Link Error Handling
@@ -322,52 +364,15 @@ public class SignalClient {
     private func setupSocketListeners() {
         socket.on(clientEvent: .connect) { _, _ in
             Logger.debug("Socket.IO connected")
+            self.onSignalingState?("connected")
             self.onSocketConnected?()
             self.processEventQueue()
         }
 
         socket.on(clientEvent: .disconnect) { _, _ in
             Logger.debug("Socket.IO disconnected")
+            self.onSignalingState?("disconnected")
             self.handleDisconnect()
-        }
-
-        if service?.currentPeerType == .offer {
-            socket.on("offer-description") { [weak self] data, _ in
-                guard let self, let eventData = data.first as? [String: Any] else { return }
-                Logger.debug("Received SDP offer: \(eventData)")
-                handleOfferDescription(eventData)
-            }
-        }
-
-        socket.on("answer-description") { [weak self] data, _ in
-            guard let self else { return }
-            // Try to handle as dictionary first, then as string
-            if let eventData = data.first as? [String: Any] {
-                Logger.debug("Received SDP answer as dictionary: \(eventData)")
-                handleAnswerDescription(eventData)
-            } else if let sdp = data.first as? String {
-                Logger.debug("Received SDP answer as string: \(sdp)")
-                handleAnswerDescription(sdp)
-            } else {
-                Logger.error("Received SDP answer in unknown format: \(data)")
-            }
-        }
-
-        socket.on("candidate") { [weak self] data, _ in
-            guard let self, let eventData = data.first as? [String: Any] else { return }
-            Logger.debug("Received ICE candidate: \(eventData)")
-            handleIceCandidate(eventData)
-        }
-
-        socket.on("offer-candidate") { [weak self] data, _ in
-            guard let self, let eventData = data.first as? [String: Any] else { return }
-            Logger.debug("Received offer ICE candidate: \(eventData)")
-            handleIceCandidate(eventData)
-        }
-        socket.on("answer-candidate") { [weak self] data, _ in
-            guard let self, let eventData = data.first as? [String: Any] else { return }
-            Logger.debug("Received answer ICE candidate: \(eventData)")
-            handleIceCandidate(eventData)
         }
 
         socket.on("presence") { [weak self] data, _ in

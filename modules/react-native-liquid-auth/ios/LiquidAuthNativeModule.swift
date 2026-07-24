@@ -33,7 +33,8 @@ public class LiquidAuthNativeModule: Module {
       "onTrack",
       "onPresence",
       "onLinkError",
-      "onConnectionStateChange"
+      "onConnectionStateChange",
+      "onSignalingStateChange"
     )
 
     /**
@@ -64,7 +65,16 @@ public class LiquidAuthNativeModule: Module {
      */
     AsyncFunction("start") { (url: String, promise: Promise) in
       self.signalUrl = url
-      SignalService.shared.start(url: url, httpClient: URLSession.shared)
+      SignalService.shared.start(
+        url: url,
+        httpClient: URLSession.shared,
+        onPresence: { [weak self] presence in
+          self?.sendEvent("onPresence", presence)
+        },
+        onSignalingState: { [weak self] state in
+          self?.sendEvent("onSignalingStateChange", ["state": state])
+        }
+      )
       promise.resolve(nil)
     }
 
@@ -129,6 +139,9 @@ public class LiquidAuthNativeModule: Module {
         },
         onConnectionStateChange: { [weak self] state in
           self?.sendEvent("onConnectionStateChange", ["state": state])
+        },
+        onSignalingState: { [weak self] state in
+          self?.sendEvent("onSignalingStateChange", ["state": state])
         }
       )
     }
@@ -143,6 +156,54 @@ public class LiquidAuthNativeModule: Module {
         self.pendingConnect = nil
         pending.reject("E_ABORTED", "Connection aborted")
       }
+      promise.resolve(nil)
+    }
+
+    /**
+     * Snapshot the background service's CURRENT connection so a re-attaching
+     * app can hydrate instead of assuming a fresh start. Returns
+     * `{ connected, requestId, iceConnectionState, channels, signalingConnected }`.
+     * Safe to call before the service is bound (returns `connected: false`).
+     */
+    Function("getConnectionState") { () -> [String: Any?] in
+      return SignalService.shared.getConnectionState()
+    }
+
+    /**
+     * Re-attach to the ALREADY-live connection without renegotiating: rebind
+     * the message/state/presence/link-error/connection-state listeners to this
+     * (fresh) JS runtime and re-emit the current channel + ICE state so the app
+     * hydrates. Use when [getConnectionState] reports `connected: true` (e.g.
+     * after a relaunch that reconnected to the still-running service).
+     */
+    AsyncFunction("attach") { (options: [String: Any]?, promise: Promise) in
+      SignalService.shared.attach(
+        onMessage: { [weak self] channel, message in
+          self?.sendEvent("onMessage", ["channel": channel, "message": message])
+        },
+        onStateChange: { [weak self] channel, state in
+          var payload: [String: Any] = ["channel": channel]
+          if let state { payload["state"] = state }
+          self?.sendEvent("onStateChange", payload)
+        },
+        onPresence: { [weak self] presence in
+          self?.sendEvent("onPresence", presence)
+        },
+        onLinkError: { [weak self] error in
+          guard let self else { return }
+          var payload: [String: Any] = ["event": "link-error"]
+          if let reason = error.rawReason { payload["reason"] = reason }
+          if let requestId = error.requestId { payload["requestId"] = requestId }
+          if let message = error.message { payload["message"] = message }
+          self.sendEvent("onLinkError", payload)
+        },
+        onConnectionStateChange: { [weak self] state in
+          self?.sendEvent("onConnectionStateChange", ["state": state])
+        },
+        onSignalingState: { [weak self] state in
+          self?.sendEvent("onSignalingStateChange", ["state": state])
+        }
+      )
       promise.resolve(nil)
     }
 
