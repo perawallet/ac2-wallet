@@ -55,6 +55,15 @@ public class SignalClient {
     /// Forwarded to ``PeerApi/onConnectionStateChange`` when the peer is created,
     /// so callers can observe ICE connection state without a native handle.
     var onConnectionStateChange: ((String) -> Void)?
+    /// Re-emits the pending `offer-description` until the peer answers. The
+    /// signaling server only relays the offer to peers ALREADY in the room, so
+    /// a peer that (re)joins moments after the first emit (the classic
+    /// agent-restart race) would otherwise never see it and the negotiation
+    /// would stall until the caller's deadline. The remote waits with a
+    /// one-shot listener, so duplicates are harmless. Main-queue timer; see
+    /// ``startOfferResend(sdp:)``.
+    private var offerResendTimer: Timer?
+    private static let offerResendInterval: TimeInterval = 5
 
     init(url: String, service: SignalService) {
         self.service = service
@@ -246,6 +255,7 @@ public class SignalClient {
                     } else {
                         Logger.debug("Answer (initiator): Sending offer description")
                         self.send(event: "offer-description", sdp: offer.sdp)
+                        self.startOfferResend(sdp: offer.sdp)
                     }
                 }
             }
@@ -272,6 +282,7 @@ public class SignalClient {
     }
 
     func disconnectSocket() {
+        stopOfferResend()
         socket.disconnect()
         peerClient?.close()
         peerClient = nil
@@ -290,6 +301,7 @@ public class SignalClient {
     /// socket must outlive the peer: it is the persistent presence/rendezvous
     /// plane; only [disconnectSocket] (an explicit stop) tears it down.
     func cancel() {
+        stopOfferResend()
         peerClient?.close()
         peerClient = nil
         // Drop this negotiation's socket listeners (candidates + the one-shot
@@ -297,6 +309,39 @@ public class SignalClient {
         // peer, and the next negotiation on the SAME socket starts clean.
         detachNegotiationListeners()
         candidatesBuffer.removeAll()
+    }
+
+    /// Re-emit the pending offer on an interval until the peer answers, so a
+    /// peer that joined the `requestId` room AFTER the first emit (e.g. an
+    /// agent that just restarted) still receives it instead of leaving the
+    /// negotiation to stall out its deadline. The timer self-terminates once
+    /// the answer is applied (the signaling state leaves `haveLocalOffer`) or
+    /// the peer is destroyed, and is stopped explicitly by
+    /// ``stopOfferResend()`` on answer/cancel/disconnect.
+    private func startOfferResend(sdp: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            offerResendTimer?.invalidate()
+            offerResendTimer = Timer.scheduledTimer(
+                withTimeInterval: Self.offerResendInterval,
+                repeats: true
+            ) { [weak self] timer in
+                guard let self, self.peerClient?.peerConnection?.signalingState == .haveLocalOffer else {
+                    timer.invalidate()
+                    return
+                }
+                Logger.debug("Re-emitting offer-description (no answer yet)")
+                send(event: "offer-description", sdp: sdp)
+            }
+        }
+    }
+
+    private func stopOfferResend() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            offerResendTimer?.invalidate()
+            offerResendTimer = nil
+        }
     }
 
     /// Remove the per-negotiation socket listeners (``connectToPeer`` re-registers
@@ -450,6 +495,8 @@ public class SignalClient {
     }
 
     private func handleAnswerDescription(_ data: [String: Any]) {
+        // The peer answered: stop re-emitting the offer.
+        stopOfferResend()
         guard let sdp = data["sdp"] as? String,
               let type = sdpType(from: data["type"] as? String)
         else {
@@ -474,6 +521,8 @@ public class SignalClient {
     }
 
     private func handleAnswerDescription(_ sdp: String) {
+        // The peer answered: stop re-emitting the offer.
+        stopOfferResend()
         // If you know this is always an answer, you can hardcode the type
         let sessionDescription = RTCSessionDescription(type: .answer, sdp: sdp)
 
