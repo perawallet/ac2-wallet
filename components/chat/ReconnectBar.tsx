@@ -27,7 +27,12 @@ interface ReconnectBarProps {
 // Footer shown in place of the composer when the transport has dropped. Mirrors
 // the composer's bar styling so the chat surface keeps a consistent footprint,
 // and gives the user an explicit affordance to re-establish the connection.
-function ReconnectBar({ onReconnect, isError, peerOffline, serviceUnavailable }: ReconnectBarProps) {
+function ReconnectBar({
+  onReconnect,
+  isError,
+  peerOffline,
+  serviceUnavailable,
+}: ReconnectBarProps) {
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const message = serviceUnavailable

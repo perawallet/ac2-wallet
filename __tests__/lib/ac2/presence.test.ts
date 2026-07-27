@@ -36,9 +36,9 @@ function createFakeSocket() {
 
 describe('normalizePresence', () => {
   it('passes through a well-formed payload', () => {
-    expect(normalizePresence('req-1', { requestId: 'req-1', deviceCount: 2, online: true })).toEqual(
-      { requestId: 'req-1', deviceCount: 2, online: true },
-    );
+    expect(
+      normalizePresence('req-1', { requestId: 'req-1', deviceCount: 2, online: true }),
+    ).toEqual({ requestId: 'req-1', deviceCount: 2, online: true });
   });
 
   it('derives online from deviceCount when missing and falls back to the queried id', () => {

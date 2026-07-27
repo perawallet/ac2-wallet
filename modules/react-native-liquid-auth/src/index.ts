@@ -70,7 +70,7 @@ export function connect(
   requestId: string,
   type: LiquidAuthPeerType,
   iceServers?: IceServer[],
-  options?: LiquidAuthConnectOptions
+  options?: LiquidAuthConnectOptions,
 ): Promise<void> {
   return LiquidAuthNativeModule.connect(requestId, type, iceServers, options);
 }
@@ -162,7 +162,7 @@ export function request(
   url: string,
   method: string = 'GET',
   headers?: Record<string, string>,
-  body?: string
+  body?: string,
 ): Promise<LiquidAuthResponse> {
   return LiquidAuthNativeModule.request(url, method, headers, body);
 }
@@ -171,7 +171,7 @@ export function request(
  * Subscribe to data-channel messages received from the peer.
  */
 export function addMessageListener(
-  listener: (event: LiquidAuthMessageEvent) => void
+  listener: (event: LiquidAuthMessageEvent) => void,
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onMessage', listener);
 }
@@ -180,7 +180,7 @@ export function addMessageListener(
  * Subscribe to data-channel state changes (`OPEN`, `CLOSING`, `CLOSED`, ...).
  */
 export function addStateChangeListener(
-  listener: (event: LiquidAuthStateChangeEvent) => void
+  listener: (event: LiquidAuthStateChangeEvent) => void,
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onStateChange', listener);
 }
@@ -189,7 +189,7 @@ export function addStateChangeListener(
  * Subscribe to remote media tracks added to the peer connection.
  */
 export function addTrackListener(
-  listener: (event: LiquidAuthTrackEvent) => void
+  listener: (event: LiquidAuthTrackEvent) => void,
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onTrack', listener);
 }
@@ -199,7 +199,7 @@ export function addTrackListener(
  * `requestId` (how many devices are connected).
  */
 export function addPresenceListener(
-  listener: (event: LiquidAuthPresenceEvent) => void
+  listener: (event: LiquidAuthPresenceEvent) => void,
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onPresence', listener);
 }
@@ -209,7 +209,7 @@ export function addPresenceListener(
  * room refusal), so a full session can fail fast instead of timing out.
  */
 export function addLinkErrorListener(
-  listener: (event: LiquidAuthLinkErrorEvent) => void
+  listener: (event: LiquidAuthLinkErrorEvent) => void,
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onLinkError', listener);
 }
@@ -219,7 +219,7 @@ export function addLinkErrorListener(
  * `FAILED`, ...), for connectivity monitoring after negotiation.
  */
 export function addConnectionStateListener(
-  listener: (event: LiquidAuthConnectionStateEvent) => void
+  listener: (event: LiquidAuthConnectionStateEvent) => void,
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onConnectionStateChange', listener);
 }
@@ -233,7 +233,7 @@ export function addConnectionStateListener(
  * `signalingConnected` when subscribing after {@link start}.
  */
 export function addSignalingStateListener(
-  listener: (event: LiquidAuthSignalingStateEvent) => void
+  listener: (event: LiquidAuthSignalingStateEvent) => void,
 ): EventSubscription {
   return LiquidAuthNativeModule.addListener('onSignalingStateChange', listener);
 }

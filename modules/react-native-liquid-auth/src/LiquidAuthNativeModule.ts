@@ -39,7 +39,7 @@ declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModule
     requestId: string,
     type: LiquidAuthPeerType,
     iceServers?: IceServer[],
-    options?: LiquidAuthConnectOptions
+    options?: LiquidAuthConnectOptions,
   ): Promise<void>;
 
   /**
@@ -114,7 +114,7 @@ declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModule
     url: string,
     method: string,
     headers?: Record<string, string>,
-    body?: string
+    body?: string,
   ): Promise<LiquidAuthResponse>;
 }
 

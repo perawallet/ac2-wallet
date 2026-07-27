@@ -10,11 +10,11 @@ in the parent directory wraps these vendored sources (via the shared
 `SignalService.shared` singleton) and exposes the same JS API as the Android
 module.
 
-| | |
-| --- | --- |
-| **Upstream repo** | `algorandfoundation/liquid-auth-ios` |
-| **Upstream path** | `Sources/LiquidAuthSDK/` |
-| **Target commit** | `384c926d334f69e744b80b6166af3d034970170d` (2025-08-20), branch `chore/consolidation` |
+|                      |                                                                                               |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| **Upstream repo**    | `algorandfoundation/liquid-auth-ios`                                                          |
+| **Upstream path**    | `Sources/LiquidAuthSDK/`                                                                      |
+| **Target commit**    | `384c926d334f69e744b80b6166af3d034970170d` (2025-08-20), branch `chore/consolidation`         |
 | **Portion vendored** | Signaling only (the FIDO/WebAuthn portion belongs to `react-native-passkey-autofill`, per D4) |
 
 ## Vendored files

@@ -45,11 +45,7 @@ function TaskCard({ message }: TaskCardProps) {
     case 'running':
     default:
       statusIcon = (
-        <ActivityIndicator
-          size="small"
-          color={palette.primary}
-          style={{ width: 16, height: 16 }}
-        />
+        <ActivityIndicator size="small" color={palette.primary} style={{ width: 16, height: 16 }} />
       );
       statusColor = 'text-primary';
       statusLabel = 'Running';
@@ -97,9 +93,7 @@ function TaskCard({ message }: TaskCardProps) {
             {result}
           </Text>
         ) : (
-          <Text className="text-sm italic text-muted-foreground">
-            Working in the background…
-          </Text>
+          <Text className="text-sm italic text-muted-foreground">Working in the background…</Text>
         )}
       </View>
     </View>

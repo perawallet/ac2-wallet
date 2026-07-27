@@ -6,17 +6,17 @@
 `lib/ac2/nativeChannel.ts` (`NativeDataChannel` / `NativePeerConnection`) is
 **vendored from `react-native-liquid-auth`**, which now owns the canonical copy
 so the wallet and any other consumer share the same adapter base. The shims
-present the package's *event-based* native background service
+present the package's _event-based_ native background service
 (`onMessage` / `onStateChange` / `onConnectionStateChange` / ...) as the
 `RTCDataChannel`- and `RTCPeerConnection`-shaped objects the wallet's
 connection code (the AC2 SDK client, heartbeat, stream, and
 `peerConnectionMonitor`) already consumes.
 
-| | |
-| --- | --- |
-| **Upstream repo** | `react-native-liquid-auth` |
-| **Upstream path** | `src/nativeChannel.ts` |
-| **Target commit** | branch `chore/consolidation` (based on `3c2acd9`) |
+|                      |                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Upstream repo**    | `react-native-liquid-auth`                                                                                           |
+| **Upstream path**    | `src/nativeChannel.ts`                                                                                               |
+| **Target commit**    | branch `chore/consolidation` (based on `3c2acd9`)                                                                    |
 | **Portion vendored** | The RTC shims only (`NativeDataChannel`, `NativePeerConnection`, `DataChannelReadyState`, `DataChannelMessageEvent`) |
 
 ## Sync direction

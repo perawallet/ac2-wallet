@@ -6,17 +6,17 @@
 This `foundation.algorand.auth.connect` package is a **vendored copy** of the
 signaling / WebRTC stack from the original Android SDK.
 
-| | |
-| --- | --- |
-| **Upstream repo** | `algorandfoundation/liquid-auth-android` |
-| **Upstream path** | `liquid/src/main/java/foundation/algorand/auth/connect/` |
-| **Copied from commit** | `05b51f2609c15c8daa74848ce83f4a1fad397a85` (2026-03-07) |
-| **Portion vendored** | Signaling only (`SignalService`, `SignalClient`, `PeerApi`, `AuthMessage`, `SignalInterface`, extensions) |
+|                        |                                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Upstream repo**      | `algorandfoundation/liquid-auth-android`                                                                  |
+| **Upstream path**      | `liquid/src/main/java/foundation/algorand/auth/connect/`                                                  |
+| **Copied from commit** | `05b51f2609c15c8daa74848ce83f4a1fad397a85` (2026-03-07)                                                   |
+| **Portion vendored**   | Signaling only (`SignalService`, `SignalClient`, `PeerApi`, `AuthMessage`, `SignalInterface`, extensions) |
 
 ## Sync direction
 
 **Upstream → vendored copy (one-way).** Edit the originals in
-`liquid-auth-android` first, then sync the change *down* into this copy. Do not
+`liquid-auth-android` first, then sync the change _down_ into this copy. Do not
 treat this copy as the source of truth.
 
 ## Local divergence
@@ -26,7 +26,7 @@ Native binding (multiple named data channels, media-track surfacing,
 channel-labeled message/state callbacks, `send(label, msg)`).
 
 **Divergence captured upstream (consolidation branch `chore/consolidation`).**
-Those evolutions have now been back-ported *into the upstream originals* so the
+Those evolutions have now been back-ported _into the upstream originals_ so the
 originals and this vendored copy expose the same "top-level signal client"
 contract (peer type, named data channels, channel-labeled callbacks,
 channel-addressed send). The upstream SDK kept its own extras that this copy
@@ -60,7 +60,7 @@ These are byte-for-byte the same additions in both trees; only the upstream's
 `SignalService.handleMessages` gained an optional `NotificationPresenter`
 parameter (`(label, message) -> NotificationContent?`, `null` suppresses) plus
 the top-level `NotificationContent` / `NotificationPresenter` declarations, so
-the *content* of a backgrounded per-message notification is decided by the
+the _content_ of a backgrounded per-message notification is decided by the
 consumer (the RN module builds a presenter from `connect(options.notifications)`)
 rather than hardcoded in the shared library. With no presenter the legacy
 raw-message behavior is preserved. These are byte-for-byte the same additions in
@@ -75,7 +75,7 @@ so requests are delivered when the app comes back online:
 
 - **Lifecycle:** `onStartCommand` returns `START_STICKY` and `onTaskRemoved`
   keeps the service alive (does not `stopSelf`), so the started foreground
-  service outlives the app's task. The RN module now only *unbinds* on JS
+  service outlives the app's task. The RN module now only _unbinds_ on JS
   `OnDestroy` (`unbindOnly`); the service is stopped solely by an explicit
   `disconnect()`.
 - **Offline queue:** a generic message buffer (`messageQueue`) + app-controlled
@@ -125,9 +125,10 @@ channels opened. Detaching the observer first makes a destroyed peer go silent,
 so only the current negotiation's real state changes reach JS. Byte-for-byte
 identical across `liquid-auth-android`, `react-native-liquid-auth`, and the
 wallet's vendored copy.
+
 ## Preserve live connection + re-attach + resume-on-tap (kept in sync, upstream → copy)
 
-Three related changes so the background service *stays connected* while the app
+Three related changes so the background service _stays connected_ while the app
 re-attaches (rather than restarting) and the connected banner reopens the app in
 place:
 

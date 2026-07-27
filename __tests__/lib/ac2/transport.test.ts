@@ -132,9 +132,9 @@ describe('attachSignalingDiagnostics', () => {
     expect(firstLines[0]).toContain('(first)');
 
     dispose();
-    expect(logs.some((m) => m.includes('diagnostics detached') && m.includes('offer-candidate=3'))).toBe(
-      true,
-    );
+    expect(
+      logs.some((m) => m.includes('diagnostics detached') && m.includes('offer-candidate=3')),
+    ).toBe(true);
   });
 
   it('detaches every listener on dispose so a reused client does not accumulate handlers', () => {

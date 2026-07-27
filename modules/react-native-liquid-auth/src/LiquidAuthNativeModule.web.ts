@@ -29,7 +29,7 @@ class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> 
     _requestId: string,
     _type: LiquidAuthPeerType,
     _iceServers?: IceServer[],
-    _options?: LiquidAuthConnectOptions
+    _options?: LiquidAuthConnectOptions,
   ): Promise<void> {
     throw new Error(UNSUPPORTED);
   }
@@ -77,7 +77,7 @@ class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModuleEvents> 
     _url: string,
     _method: string,
     _headers?: Record<string, string>,
-    _body?: string
+    _body?: string,
   ): Promise<LiquidAuthResponse> {
     throw new Error(UNSUPPORTED);
   }

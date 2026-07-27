@@ -311,10 +311,7 @@ export async function authenticateLiquidAuth(
       // attestation to re-register the passkey. User-driven aborts
       // (cancel/timeout) are re-thrown so they surface normally.
       if (!isRecoverableAssertionFailure(assertionError)) throw assertionError;
-      console.warn(
-        'Passkey assertion failed; re-registering via attestation:',
-        assertionError,
-      );
+      console.warn('Passkey assertion failed; re-registering via attestation:', assertionError);
       return authenticateLiquidAuth({
         ...params,
         recoverFromFailedAssertion: true,

@@ -75,7 +75,7 @@ consume.
    account, and returns `ac2/SigningResponse` (or `SigningRejected`).
 4. Free-text chat + tool/preview frames flow on `ac2-stream`; liveness
    on `ac2-heartbeat`.
-5. If a *different* wallet connects to an already-registered agent, the
+5. If a _different_ wallet connects to an already-registered agent, the
    agent refuses the takeover (it will not reuse or regenerate its key)
    and pushes a `notice` frame; the wallet shows the banner explaining
    the operator must clear the agent's keys (`ac2 forget`) before a new
