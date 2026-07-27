@@ -25,7 +25,9 @@ function MessageBubble({ text, mine, timestamp }: MessageBubbleProps) {
         borderBottomRightRadius: mine ? 4 : 16,
       }}
     >
-      <Text className={mine ? 'text-primary-foreground' : 'text-card-foreground'}>{text}</Text>
+      <Text selectable className={mine ? 'text-primary-foreground' : 'text-card-foreground'}>
+        {text}
+      </Text>
       {timestamp !== undefined && (
         <Text
           className={cn(
