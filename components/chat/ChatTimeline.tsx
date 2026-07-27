@@ -1,5 +1,6 @@
 import { Ac2MessageCard } from '@/components/chat/Ac2MessageCard';
 import { MessageBubble } from '@/components/chat/MessageBubble';
+import { TaskCard } from '@/components/chat/TaskCard';
 import { ToolActivityCard } from '@/components/chat/ToolActivityCard';
 import { TypingIndicator, type AgentPresence } from '@/components/chat/TypingIndicator';
 import type { Outcome } from '@/lib/ac2/messageDisplay';
@@ -116,6 +117,9 @@ function ChatTimeline({
       const m = item.data;
       if (m.kind === 'tool') {
         return <ToolActivityCard message={m} />;
+      }
+      if (m.kind === 'task') {
+        return <TaskCard message={m} />;
       }
       return <MessageBubble text={m.text} mine={m.sender === 'me'} timestamp={m.timestamp} />;
     }

@@ -1,7 +1,19 @@
+const path = require('path');
 const { withNativeWind } = require('nativewind/metro');
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
 const config = getSentryExpoConfig(__dirname);
+
+// `react-native-liquid-auth` is vendored as an Expo local module under
+// `modules/` (see modules/react-native-liquid-auth/VENDORED.md), which is NOT on
+// the node resolution path. Alias the bare specifier to the vendored `src` so
+// every existing `require('react-native-liquid-auth')` / import resolves
+// unchanged and Metro bundles the module's TypeScript directly (no build step).
+// When the package is published, delete this alias and add a scoped dependency.
+config.resolver.extraNodeModules = {
+  ...config.resolver.extraNodeModules,
+  'react-native-liquid-auth': path.resolve(__dirname, 'modules/react-native-liquid-auth/src'),
+};
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === 'crypto' || moduleName === 'node:crypto') {

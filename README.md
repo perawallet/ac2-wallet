@@ -131,3 +131,63 @@ To further integrate with identity primitives, the following extensions are sugg
 > ```bash
 > pnpm android
 > ```
+
+## Liquid Auth native module (vendored)
+
+The wallet's connection layer drives Liquid Auth signaling/WebRTC through a
+native **background service** exposed by the `react-native-liquid-auth` package
+(see `hooks/useConnection.ts` and `lib/ac2/nativeTransport.ts`).
+
+That package is **unpublished**, so instead of a workspace/`file:`/`link:`
+dependency it is **vendored as an [Expo local module](https://docs.expo.dev/modules/get-started/)**
+at `modules/react-native-liquid-auth/`. This keeps the wallet a self-contained,
+buildable app — no external workspace or sibling checkout required.
+
+- **Runtime resolution:** a Metro resolver alias (`resolver.extraNodeModules` in
+  `metro.config.js`) maps the bare specifier `react-native-liquid-auth` to
+  `modules/react-native-liquid-auth/src`, so every `require('react-native-liquid-auth')`
+  resolves unchanged and Metro bundles the module's TypeScript directly.
+- **Native autolinking:** Expo autolinking discovers the module's `android/` and
+  `ios/` from `modules/` during prebuild — no `package.json` dependency entry.
+- **Isolation:** the vendored tree is excluded from the wallet's `tsc`, `oxlint`,
+  `oxfmt`, and scoped in Jest, so it is never scanned as app source.
+- **Provenance:** `modules/react-native-liquid-auth/VENDORED.md` records the
+  upstream repo/commit and the one-way (upstream → copy) sync direction.
+
+### Background-service notifications
+
+The native background service shows an ongoing "connected" notification plus a
+per-message notification while the app is backgrounded (rendered natively so it
+works even when the JS runtime is suspended/killed).
+
+- **Runtime permission:** on Android 13+ (`POST_NOTIFICATIONS`) the app must
+  request the permission at runtime. The wallet depends on `expo-notifications`
+  and requests it via `lib/notifications.ts` (`ensureNotificationPermission`)
+  just before starting the service — non-fatal if denied. Adding this native
+  dependency requires an `expo prebuild` + rebuild to link it.
+- **Custom content:** the per-message copy is defined in
+  `DEFAULT_AC2_NOTIFICATIONS` (`lib/ac2/nativeTransport.ts`) and passed to the
+  native service via `connect(options.notifications)`. Heartbeat/stream control
+  channels are suppressed; `ac2/SigningRequest` / `ac2/KeyRequest` get tailored
+  copy; anything else falls back to a generic banner.
+
+### Remaining on-device (Mac) steps
+
+Native linking and a device/simulator run require a macOS host and are **not**
+exercised in CI/Linux:
+
+1. `expo prebuild` — generate the native `android/` / `ios/` projects.
+2. `pod install` (iOS) — **watch for a pod overlap:** the module's podspec pulls
+   `WebRTC-lib`, which can clash with the wallet's `react-native-webrtc`. This is
+   resolved when the in-process WebRTC path is retired.
+3. Gradle autolink (Android) — picks up the module from `modules/` automatically.
+4. Run on device/simulator and confirm `startNativeService` /
+   `createNativeAc2Transport` reach the native `SignalService`.
+
+### Upgrade path
+
+When `react-native-liquid-auth` is published (e.g.
+`@algorandfoundation/react-native-liquid-auth`), migrating is mechanical: delete
+`modules/react-native-liquid-auth/`, drop the Metro alias and the
+`tsconfig`/`oxlint`/`oxfmt`/Jest isolation entries, and add a normal scoped
+dependency.
