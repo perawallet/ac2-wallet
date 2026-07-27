@@ -257,7 +257,7 @@ export class NativeDataChannel {
   private _emit(type: ChannelEventType, ev?: unknown): void {
     const set = this._listeners.get(type);
     if (!set) return;
-    for (const listener of [...set]) {
+    for (const listener of Array.from(set)) {
       try {
         listener(ev);
       } catch {
@@ -320,7 +320,7 @@ export class NativePeerConnection {
   private _emit(type: PeerEventType): void {
     const set = this._listeners.get(type);
     if (!set) return;
-    for (const listener of [...set]) {
+    for (const listener of Array.from(set)) {
       try {
         listener();
       } catch {
