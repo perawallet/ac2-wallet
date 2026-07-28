@@ -33,6 +33,19 @@ export function formatAlgo(microAlgo: bigint): string {
   return `${whole.toLocaleString('en-US')}.${padded} ALGO`;
 }
 
+const GENESIS_HASH_LABELS: Record<string, string> = {
+  'SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=': 'TestNet',
+  'wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=': 'MainNet',
+  'mFgazF+2uRS1tMiL9dsj01hJGySEmPN28B/TjjvpVW0=': 'BetaNet',
+};
+
+/** Human label for a genesis hash / network identifier decoded from a transaction. */
+export function formatNetwork(network: string | undefined): string {
+  if (!network) return 'Algorand';
+  const match = Object.entries(GENESIS_HASH_LABELS).find(([hash]) => network.includes(hash));
+  return match ? match[1] : 'Unknown';
+}
+
 function firstMatch(description: string, regex: RegExp): string | undefined {
   return description.match(regex)?.[1]?.trim();
 }

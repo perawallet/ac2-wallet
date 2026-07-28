@@ -13,6 +13,7 @@ type BaseSummary = {
   fee: bigint;
   group?: Uint8Array;
   genesisId?: string;
+  genesisHash?: string;
   rekeyTo?: Address;
 };
 
@@ -45,6 +46,7 @@ export type GenericTransactionSummary = {
   fee: bigint | undefined;
   group?: Uint8Array;
   genesisId?: string;
+  genesisHash?: string;
   rekeyTo?: Address;
   fields?: Record<string, string>;
 };
@@ -73,6 +75,7 @@ export function getTransactionSummary(encoded: string): TransactionSummary {
     fee: txn.fee!,
     group: txn.group,
     genesisId: txn.genesisId,
+    genesisHash: txn.genesisHash ? Buffer.from(txn.genesisHash).toString('base64') : undefined,
     rekeyTo: txn.rekeyTo,
   };
 
@@ -151,6 +154,7 @@ export function getTransactionSummary(encoded: string): TransactionSummary {
     fee: txn.fee,
     group: txn.group,
     genesisId: txn.genesisId,
+    genesisHash: txn.genesisHash ? Buffer.from(txn.genesisHash).toString('base64') : undefined,
     rekeyTo: txn.rekeyTo,
   };
 }
