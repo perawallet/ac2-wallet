@@ -88,6 +88,40 @@ export function sessionAddressFromData(sessionData: any): string | null {
         : null;
 }
 
+/**
+ * The requestId a `/auth/session` payload is currently bound to, if any. The
+ * server persists it under `session.requestId` (and echoes it at the top level
+ * in some responses), so both shapes are tolerated.
+ */
+export function sessionRequestIdFromData(sessionData: any): string | null {
+  return typeof sessionData?.session?.requestId === 'string'
+    ? sessionData.session.requestId
+    : typeof sessionData?.requestId === 'string'
+      ? sessionData.requestId
+      : null;
+}
+
+/**
+ * True when an existing `/auth/session` already authenticates this wallet key
+ * for this exact requestId. When so, a reconnect can renegotiate over the
+ * already-authenticated socket without a fresh passkey assertion — the server
+ * re-announces presence for the bound requestId on the socket's reconnect,
+ * which resolves the waiting peer's `link`.
+ */
+export function sessionAlreadyAuthenticatedForRequest(
+  sessionData: any,
+  key: Key,
+  requestId: string,
+): boolean {
+  if (typeof requestId !== 'string' || requestId.length === 0) return false;
+  const address = sessionAddressFromData(sessionData);
+  return (
+    !!address &&
+    addressMatchesKey(address, key) &&
+    sessionRequestIdFromData(sessionData) === requestId
+  );
+}
+
 export function credentialIdFromData(data: any): string | null {
   if (!data) return null;
   if (typeof data === 'string') return data;

@@ -42,6 +42,12 @@ app-example
 /ios
 /android
 
+# vendored Expo local module build outputs (keep the module source, ignore
+# Gradle/CocoaPods build artifacts produced when autolinked during prebuild)
+modules/**/android/build/
+modules/**/ios/build/
+modules/**/ios/Pods/
+
 /docs/superpowers
 
 # fastlane

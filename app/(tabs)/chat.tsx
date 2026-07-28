@@ -97,7 +97,16 @@ export default function ChatTab() {
 
   return (
     <Screen edges={[]}>
+      {/*
+        Key by the connection identity so switching connections (scanning a new
+        QR or picking another chat in the drawer) fully remounts `ChatScreen`
+        and resets `useConnection` state. Without this, the persisted
+        `isConnected` state from the previous connection makes the new setup's
+        `if (clientRef.current || isConnected) return` guard short-circuit, so a
+        second session on the same origin never establishes.
+      */}
       <ChatScreen
+        key={`${origin}::${requestId}`}
         origin={origin}
         requestId={requestId}
         allowPasskeyCreation={allowPasskeyCreation}

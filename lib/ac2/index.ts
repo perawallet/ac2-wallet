@@ -18,15 +18,69 @@ export { attachHeartbeatChannel } from './heartbeat';
 export type { HeartbeatChannelOptions } from './heartbeat';
 export { createHeartbeatMonitor } from './heartbeatMonitor';
 export type { HeartbeatMonitor, HeartbeatMonitorOptions } from './heartbeatMonitor';
+export { evaluateIdleSession } from './idleSession';
+export type { IdleSessionInput, IdleSessionVerdict } from './idleSession';
 export { monitorPeerConnection } from './peerConnectionMonitor';
 export type {
   MonitoredPeerConnection,
   MonitorPeerConnectionOptions,
   PeerConnectionFailureReason,
 } from './peerConnectionMonitor';
-export { parseStreamControlFrame, STX } from './stream';
-export type { AgentPresence, StreamControlFrame } from './stream';
-export { createAc2Transport } from './transport';
-export type { Ac2TransportSetup, CreateAc2TransportOptions } from './transport';
+export {
+  hasPeerPresence,
+  isPeerOffline,
+  isPeerRejectedError,
+  isPeerUnreachableError,
+  normalizePresence,
+  PRESENCE_EVENT,
+  queryPresence,
+  subscribeToPresence,
+} from './presence';
+export type { PresenceResult, PresenceSocket } from './presence';
+export {
+  isRegistrationBlockingNotice,
+  normalizeNoticeFrame,
+  parseStreamControlFrame,
+  REGISTRATION_BLOCKING_NOTICE_CODES,
+  selectConnectionNoticeForRequest,
+  STX,
+} from './stream';
+export type {
+  AgentPresence,
+  ConnectionNotice,
+  NoticeLevel,
+  ScopedConnectionNotice,
+  StreamControlFrame,
+} from './stream';
+export { NativeDataChannel, NativePeerConnection } from './nativeChannel';
+export type { DataChannelMessageEvent, DataChannelReadyState } from './nativeChannel';
+export {
+  AC2_CONTROL_CHANNEL,
+  addNativePresenceListener,
+  addNativeSignalingStateListener,
+  cancelNativeNegotiation,
+  createNativeAc2Transport,
+  DEFAULT_AC2_QUEUE_CHANNELS,
+  flushNativeQueue,
+  getNativeConnectionState,
+  isSnapshotChannelOpen,
+  nativeAuthFetch,
+  presenceFromSnapshot,
+  setNativeActive,
+  startNativeService,
+  stopNativeService,
+} from './nativeTransport';
+export type {
+  CreateNativeAc2TransportOptions,
+  LiquidAuthNativeApi,
+  NativeAc2TransportSetup,
+  NativeConnectionStateSnapshot,
+  NativeDataChannelInit,
+  NativeIceServer,
+  NativeLinkErrorEvent,
+  NativePresenceEvent,
+  NativeSignalingStateEvent,
+  NativeSubscription,
+} from './nativeTransport';
 
 export type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
