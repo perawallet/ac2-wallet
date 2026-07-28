@@ -88,7 +88,7 @@ describe('Ac2MessageCard — fund-moving payment', () => {
     expect(screen.getByText('ALGO payment')).toBeTruthy();
     expect(screen.getByText('5 ALGO')).toBeTruthy();
     expect(screen.getByText('From your wallet')).toBeTruthy();
-    expect(screen.getByText('Requesting site')).toBeTruthy();
+    expect(screen.getByText('Network:')).toBeTruthy();
     // Legal-approved generic transaction warning, but not the smart-contract one.
     expect(screen.getByText(/about to sign a transaction/)).toBeTruthy();
     expect(screen.queryByText('Smart contract call')).toBeNull();

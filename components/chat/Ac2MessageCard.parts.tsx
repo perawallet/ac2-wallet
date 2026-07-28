@@ -4,6 +4,7 @@ import {
   directionLabel,
   displayHintLabel,
   formatAlgo,
+  formatNetwork,
   getTransactionWarnings,
   signatureLabel,
   transactionTypeLabel,
@@ -28,8 +29,10 @@ export function TxnDetails({ txn }: { txn: TransactionSummary }) {
   const amount = 'amount' in txn ? txn.amount : undefined;
   const assetId = 'assetId' in txn ? txn.assetId : undefined;
   const appId = 'appId' in txn ? txn.appId : undefined;
+
   return (
     <View className="gap-1">
+      <Row label="Network:" value={formatNetwork(txn.genesisHash)} mono />
       {from && <Row label="From:" value={truncateAddress(from, 8, 8)} mono />}
       {to && <Row label="To:" value={truncateAddress(to, 8, 8)} mono />}
       {txn.type === TransactionType.Payment && amount !== undefined ? (
@@ -53,7 +56,7 @@ export function TxnDetails({ txn }: { txn: TransactionSummary }) {
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <View className="flex-row items-start gap-2">
-      <Text className="w-12 text-xs font-medium text-muted-foreground">{label}</Text>
+      <Text className="w-16 text-xs font-medium text-muted-foreground">{label}</Text>
       <Text className={cn('flex-1 text-xs text-foreground', mono && 'font-mono')}>{value}</Text>
     </View>
   );
@@ -180,12 +183,6 @@ export function TransactionGroupOverview({
 
       <View className="gap-2">
         <SmallLabel>Requester context</SmallLabel>
-        <InfoLine
-          icon="language"
-          label="Requesting site"
-          value={context.site}
-          iconColor={palette.mutedForeground}
-        />
         {walletAddress && (
           <InfoLine
             icon="account-balance-wallet"
