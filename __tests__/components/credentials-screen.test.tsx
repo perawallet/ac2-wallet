@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { AccessibilityInfo, Alert } from 'react-native';
+import { AccessibilityInfo, Alert, Platform } from 'react-native';
 
 jest.mock('react-native-mmkv', () => ({
   createMMKV: () => ({ getString: () => undefined, set: () => {} }),
@@ -48,6 +48,10 @@ describe('CredentialsScreen copy feedback', () => {
     hapticsMock.mockResolvedValue(undefined);
   });
 
+  afterEach(() => {
+    Platform.OS = 'ios';
+  });
+
   it('shows a success toast after copying even when haptics fail', async () => {
     hapticsMock.mockRejectedValueOnce(new Error('Haptics unavailable'));
     render(<CredentialsScreen />);
@@ -59,6 +63,20 @@ describe('CredentialsScreen copy feedback', () => {
     expect(announceSpy).toHaveBeenCalledWith('Copied to clipboard');
     expect(hapticsMock).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
     expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  // Android already shows a system confirmation for clipboard writes, so ours
+  // would be a second, redundant "Copied" message.
+  it('leaves the copy confirmation to the OS on Android', async () => {
+    Platform.OS = 'android';
+    render(<CredentialsScreen />);
+
+    fireEvent.press(screen.getByText('Origin'));
+
+    await waitFor(() => expect(clipboardMock).toHaveBeenCalledWith('https://agent.example'));
+    expect(screen.queryByText('Copied to clipboard')).toBeNull();
+    expect(announceSpy).not.toHaveBeenCalled();
+    expect(hapticsMock).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
   });
 
   it('shows a failure alert without success feedback when clipboard copying fails', async () => {

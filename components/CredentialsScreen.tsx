@@ -18,7 +18,11 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { AccessibilityInfo, Alert, Pressable, ScrollView, View } from 'react-native';
+import { AccessibilityInfo, Alert, Platform, Pressable, ScrollView, View } from 'react-native';
+
+// Android shows its own on-screen confirmation when something is written to the
+// clipboard, so our toast would be a duplicate there. iOS gives no such feedback.
+const showsNativeCopyFeedback = () => Platform.OS !== 'ios';
 
 function formatDate(ts?: number): string | null {
   if (!ts) return null;
@@ -196,7 +200,9 @@ export function CredentialsScreen() {
     if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
     copyResetTimer.current = setTimeout(() => setCopiedField(null), 1500);
 
-    AccessibilityInfo.announceForAccessibility('Copied to clipboard');
+    if (!showsNativeCopyFeedback()) {
+      AccessibilityInfo.announceForAccessibility('Copied to clipboard');
+    }
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
 
@@ -311,7 +317,7 @@ export function CredentialsScreen() {
         )}
       </ScrollView>
 
-      {copiedField ? (
+      {copiedField && !showsNativeCopyFeedback() ? (
         <View
           pointerEvents="none"
           accessible
