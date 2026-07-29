@@ -1,4 +1,5 @@
 import { Text } from '@/components/ui/text';
+import { authenticateToViewRecoveryPhrase } from '@/lib/keystore/authenticate';
 import { createRecoveryPhraseAccessToken } from '@/lib/keystore/recovery-phrase-access';
 import { localStorage } from '@/stores/mmkv-local';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -9,6 +10,7 @@ import { Pressable } from 'react-native';
 function BackupMnemonicBanner() {
   const router = useRouter();
   const [visible, setVisible] = React.useState(() => !localStorage.getBoolean('mnemonicBackedUp'));
+  const authPending = React.useRef(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -18,9 +20,19 @@ function BackupMnemonicBanner() {
 
   if (!visible) return null;
 
-  const openBackup = () => {
-    const accessToken = createRecoveryPhraseAccessToken();
-    router.push({ pathname: '/onboarding/backup', params: { accessToken } });
+  const openBackup = async () => {
+    if (authPending.current) return;
+
+    authPending.current = true;
+    try {
+      const authenticated = await authenticateToViewRecoveryPhrase();
+      if (!authenticated) return;
+
+      const accessToken = createRecoveryPhraseAccessToken();
+      router.push({ pathname: '/onboarding/backup', params: { accessToken } });
+    } finally {
+      authPending.current = false;
+    }
   };
 
   return (

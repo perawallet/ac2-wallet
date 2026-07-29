@@ -10,9 +10,10 @@ function pruneExpiredTokens(now: number) {
 /**
  * Creates a short-lived capability for the recovery-phrase route.
  *
- * Only trusted in-app entry points call this function. A raw deep link cannot
- * manufacture a valid token, so the route fails closed unless navigation came
- * from the backup banner or a successfully authenticated settings action.
+ * Only trusted in-app entry points call this function, and each one prompts a
+ * fresh biometric challenge first. A raw deep link cannot manufacture a valid
+ * token, so the route fails closed unless navigation came from an
+ * authenticated backup-banner or settings action.
  */
 export function createRecoveryPhraseAccessToken(): string {
   const now = Date.now();
