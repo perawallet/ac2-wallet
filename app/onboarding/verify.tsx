@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
+import { BackHeader } from '@/components/navigation/BackHeader';
 import SeedPhrase from '@/components/SeedPhrase';
 import { getStoredMnemonic } from '@/hooks/useWalletSetup';
 import { hasRecoveryPhraseAccess } from '@/lib/keystore/recovery-phrase-access';
@@ -44,21 +45,13 @@ export default function VerifyScreen() {
 
   return (
     <Screen>
+      <BackHeader onPress={() => router.back()} accessibilityLabel="Back to recovery phrase" />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ flexGrow: 1, gap: 16, padding: 24 }}
       >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          onPress={() => router.back()}
-          accessibilityLabel="Back to recovery phrase"
-        >
-          <Text>Back to recovery phrase</Text>
-        </Button>
         <Text className="text-2xl font-bold text-foreground">Verify your phrase</Text>
         <Text className="text-sm text-muted-foreground">
           Enter the requested words to confirm your backup.

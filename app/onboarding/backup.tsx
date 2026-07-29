@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
+import { BackHeader } from '@/components/navigation/BackHeader';
 import { PreventScreenshot } from '@/components/PreventScreenshot';
 import SeedPhrase from '@/components/SeedPhrase';
 import { getStoredMnemonic } from '@/hooks/useWalletSetup';
@@ -40,20 +41,12 @@ export default function BackupScreen() {
 
   return (
     <Screen>
+      <BackHeader onPress={() => router.back()} accessibilityLabel="Back" />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         automaticallyAdjustKeyboardInsets
         contentContainerStyle={{ flexGrow: 1, gap: 16, padding: 24 }}
       >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          onPress={() => router.back()}
-          accessibilityLabel="Back"
-        >
-          <Text>Back</Text>
-        </Button>
         <Text className="text-2xl font-bold text-foreground">Back up your phrase</Text>
         <Text className="text-sm text-muted-foreground">
           Write down these 24 words in order and store them somewhere safe and offline.
