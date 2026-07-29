@@ -21,9 +21,11 @@ interface AppHeaderProps {
   // The menu and action icons are only relevant on the chat page; other pages
   // show just the centered title.
   showActions?: boolean;
+  // The mainnet/testnet badge is only relevant on the wallet page.
+  showNetwork?: boolean;
 }
 
-function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
+function AppHeader({ title = 'Chat', showActions = false, showNetwork = false }: AppHeaderProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const network = useStore(networkStore, (state) => state.network);
@@ -61,26 +63,6 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
         </View>
         <View className="grow items-center justify-center">
           <Text className="text-base font-semibold text-foreground">{title}</Text>
-          <View
-            accessible
-            accessibilityRole="text"
-            accessibilityLabel={`Current network: ${networkLabel}`}
-            className={
-              network === 'mainnet'
-                ? 'mt-0.5 rounded-full border border-primary bg-primary px-2 py-0.5'
-                : 'mt-0.5 rounded-full border border-border bg-secondary px-2 py-0.5'
-            }
-          >
-            <Text
-              className={
-                network === 'mainnet'
-                  ? 'text-[10px] font-semibold leading-3 text-primary-foreground'
-                  : 'text-[10px] font-semibold leading-3 text-primary'
-              }
-            >
-              {networkLabel}
-            </Text>
-          </View>
         </View>
         <View className="w-[100] flex-row">
           {showActions ? (
@@ -125,6 +107,29 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
                 </WalkthroughableView>
               </CopilotStep>
             </>
+          ) : showNetwork ? (
+            <View className="flex-1 items-center justify-center">
+              <View
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={`Current network: ${networkLabel}`}
+                className={
+                  network === 'mainnet'
+                    ? 'rounded-full border border-primary bg-primary px-2 py-0.5'
+                    : 'rounded-full border border-border bg-secondary px-2 py-0.5'
+                }
+              >
+                <Text
+                  className={
+                    network === 'mainnet'
+                      ? 'text-[10px] font-semibold leading-3 text-primary-foreground'
+                      : 'text-[10px] font-semibold leading-3 text-primary'
+                  }
+                >
+                  {networkLabel}
+                </Text>
+              </View>
+            </View>
           ) : null}
         </View>
       </View>

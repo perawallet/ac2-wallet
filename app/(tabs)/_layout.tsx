@@ -52,7 +52,11 @@ export default function TabsLayout() {
           headerShown: true,
           header: () => (
             <>
-              <AppHeader title={TITLES[route.name] ?? 'AC2'} showActions={route.name === 'chat'} />
+              <AppHeader
+                title={TITLES[route.name] ?? 'AC2'}
+                showActions={route.name === 'chat'}
+                showNetwork={route.name === 'wallet'}
+              />
               <BackupMnemonicBanner />
             </>
           ),
