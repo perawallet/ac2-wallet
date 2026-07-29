@@ -1,6 +1,8 @@
 import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/text';
+import { networkStore } from '@/stores/network';
 import { toggleDrawer } from '@/stores/ui';
+import { useStore } from '@tanstack/react-store';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { Platform, View } from 'react-native';
@@ -19,11 +21,16 @@ interface AppHeaderProps {
   // The menu and action icons are only relevant on the chat page; other pages
   // show just the centered title.
   showActions?: boolean;
+  // The mainnet/testnet badge is only relevant on the wallet page.
+  showNetwork?: boolean;
 }
 
-function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
+function AppHeader({ title = 'Chat', showActions = false, showNetwork = false }: AppHeaderProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const network = useStore(networkStore, (state) => state.network);
+  const networkLabel = network === 'mainnet' ? 'MainNet' : 'TestNet';
+
   return (
     <View className="border-b border-border bg-card px-2" style={{ paddingTop: insets.top }}>
       {showActions ? (
@@ -34,7 +41,7 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
           <CopilotStep
             name="openclaw-setup"
             order={2}
-            text="To use this app you'll need an OpenClaw instance with the AC2 OpenClaw plugin installed and configured. You can find a link to the plugin's GitHub repo on the Menu tab, under Integrations."
+            text="To use this app you'll need an OpenClaw instance with the AC2 OpenClaw plugin installed and configured. You can learn more at ac2protocol.org from the Menu tab, under Integrations."
           >
             <WalkthroughableView style={{ width: 1, height: 1 }} />
           </CopilotStep>
@@ -100,6 +107,29 @@ function AppHeader({ title = 'Chat', showActions = false }: AppHeaderProps) {
                 </WalkthroughableView>
               </CopilotStep>
             </>
+          ) : showNetwork ? (
+            <View className="flex-1 items-center justify-center">
+              <View
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={`Current network: ${networkLabel}`}
+                className={
+                  network === 'mainnet'
+                    ? 'rounded-full border border-primary bg-primary px-2 py-0.5'
+                    : 'rounded-full border border-border bg-secondary px-2 py-0.5'
+                }
+              >
+                <Text
+                  className={
+                    network === 'mainnet'
+                      ? 'text-[10px] font-semibold leading-3 text-primary-foreground'
+                      : 'text-[10px] font-semibold leading-3 text-primary'
+                  }
+                >
+                  {networkLabel}
+                </Text>
+              </View>
+            </View>
           ) : null}
         </View>
       </View>

@@ -1,4 +1,6 @@
 import { Text } from '@/components/ui/text';
+import { authenticateToViewRecoveryPhrase } from '@/lib/keystore/authenticate';
+import { createRecoveryPhraseAccessToken } from '@/lib/keystore/recovery-phrase-access';
 import { localStorage } from '@/stores/mmkv-local';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -8,6 +10,7 @@ import { Pressable } from 'react-native';
 function BackupMnemonicBanner() {
   const router = useRouter();
   const [visible, setVisible] = React.useState(() => !localStorage.getBoolean('mnemonicBackedUp'));
+  const authPending = React.useRef(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -17,9 +20,24 @@ function BackupMnemonicBanner() {
 
   if (!visible) return null;
 
+  const openBackup = async () => {
+    if (authPending.current) return;
+
+    authPending.current = true;
+    try {
+      const authenticated = await authenticateToViewRecoveryPhrase();
+      if (!authenticated) return;
+
+      const accessToken = createRecoveryPhraseAccessToken();
+      router.push({ pathname: '/onboarding/backup', params: { accessToken } });
+    } finally {
+      authPending.current = false;
+    }
+  };
+
   return (
     <Pressable
-      onPress={() => router.push('/onboarding/backup')}
+      onPress={openBackup}
       accessibilityRole="button"
       accessibilityLabel="Back up recovery phrase"
       className="flex-row items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30"

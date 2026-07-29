@@ -5,17 +5,17 @@ import {
   truncateMiddle,
   type AgentIdentitySummary,
 } from '@/components/AgentIdentityDetails';
+import { CopiedToast } from '@/components/ui/CopiedToast';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import type { Passkey } from '@/extensions/passkeys/types';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { useProvider } from '@/hooks/useProvider';
 import { THEME } from '@/lib/theme';
 import { ac2MessagesStore } from '@/stores/ac2Messages';
 import { agentIdentitiesStore, type AgentIdentity } from '@/stores/agentIdentities';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
@@ -168,24 +168,7 @@ export function CredentialsScreen() {
   const ac2Messages = useStore(ac2MessagesStore, (s) => s.messages);
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
-  const [copiedField, setCopiedField] = React.useState<string | null>(null);
-  const copyResetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  React.useEffect(
-    () => () => {
-      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    },
-    [],
-  );
-
-  const handleCopy = React.useCallback(async (field: string, value: string) => {
-    if (!value) return;
-    await Clipboard.setStringAsync(value);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setCopiedField(field);
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    copyResetTimer.current = setTimeout(() => setCopiedField(null), 1500);
-  }, []);
+  const { copiedField, copy: handleCopy, showCopiedToast } = useCopyFeedback();
 
   const handleDeletePasskey = React.useCallback(
     (target: Passkey) => {
@@ -297,6 +280,8 @@ export function CredentialsScreen() {
           </View>
         )}
       </ScrollView>
+
+      <CopiedToast visible={showCopiedToast} />
     </Screen>
   );
 }

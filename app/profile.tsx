@@ -5,8 +5,10 @@ import {
   truncateMiddle,
   type AgentIdentitySummary,
 } from '@/components/AgentIdentityDetails';
+import { CopiedToast } from '@/components/ui/CopiedToast';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { THEME } from '@/lib/theme';
 import { ac2MessagesStore } from '@/stores/ac2Messages';
 import { agentIdentitiesStore } from '@/stores/agentIdentities';
@@ -14,8 +16,6 @@ import { sessionsStore } from '@/stores/sessions';
 import { uiStore } from '@/stores/ui';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -29,24 +29,7 @@ export default function ProfileOverlay() {
   const ac2Messages = useStore(ac2MessagesStore, (s) => s.messages);
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
-  const [copiedField, setCopiedField] = React.useState<string | null>(null);
-  const copyResetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  React.useEffect(
-    () => () => {
-      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    },
-    [],
-  );
-
-  const handleCopyField = React.useCallback(async (field: string, value: string) => {
-    if (!value || value === '—') return;
-    await Clipboard.setStringAsync(value);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setCopiedField(field);
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    copyResetTimer.current = setTimeout(() => setCopiedField(null), 1500);
-  }, []);
+  const { copiedField, copy: handleCopyField, showCopiedToast } = useCopyFeedback();
 
   // Match Chat tab resolution rules so this route reflects the same connection.
   const resolved = React.useMemo(() => {
@@ -168,6 +151,8 @@ export default function ProfileOverlay() {
           </>
         )}
       </ScrollView>
+
+      <CopiedToast visible={showCopiedToast} />
     </Screen>
   );
 }

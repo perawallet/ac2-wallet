@@ -1,11 +1,15 @@
 import { Text } from '@/components/ui/text';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { THEME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+
+// This viewer is embedded in lists and cards, so it confirms a copy in place on
+// its own button rather than with a screen-level toast.
+const COPY_FIELD = 'raw-content';
 
 interface RawContentViewerProps {
   content: string;
@@ -28,14 +32,12 @@ function RawContentViewer({
   const lineCount = content.split('\n').length;
   const canExpand = lineCount > collapsedLines;
 
-  const handleCopy = React.useCallback(async () => {
-    try {
-      await Clipboard.setStringAsync(content);
-      Alert.alert('Copied', `${contentType} copied to clipboard.`);
-    } catch {
-      Alert.alert('Copy failed', 'Could not copy to the clipboard.');
-    }
-  }, [content, contentType]);
+  const { copiedField, copy } = useCopyFeedback();
+  const copied = copiedField === COPY_FIELD;
+
+  const handleCopy = React.useCallback(() => {
+    void copy(COPY_FIELD, content);
+  }, [content, copy]);
 
   return (
     <View className={cn('overflow-hidden rounded-lg bg-muted', className)}>
@@ -46,10 +48,14 @@ function RawContentViewer({
         <Pressable
           onPress={handleCopy}
           accessibilityRole="button"
-          accessibilityLabel={`Copy ${contentType}`}
+          accessibilityLabel={copied ? `${contentType} copied` : `Copy ${contentType}`}
           className="p-1"
         >
-          <MaterialIcons name="content-copy" size={14} color={palette.foreground} />
+          <MaterialIcons
+            name={copied ? 'check' : 'content-copy'}
+            size={14}
+            color={copied ? palette.primary : palette.foreground}
+          />
         </Pressable>
         {canExpand && (
           <Pressable
