@@ -5,24 +5,20 @@ import {
   truncateMiddle,
   type AgentIdentitySummary,
 } from '@/components/AgentIdentityDetails';
+import { CopiedToast } from '@/components/ui/CopiedToast';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
 import type { Passkey } from '@/extensions/passkeys/types';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { useProvider } from '@/hooks/useProvider';
 import { THEME } from '@/lib/theme';
 import { ac2MessagesStore } from '@/stores/ac2Messages';
 import { agentIdentitiesStore, type AgentIdentity } from '@/stores/agentIdentities';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useStore } from '@tanstack/react-store';
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { AccessibilityInfo, Alert, Platform, Pressable, ScrollView, View } from 'react-native';
-
-// Android shows its own on-screen confirmation when something is written to the
-// clipboard, so our toast would be a duplicate there. iOS gives no such feedback.
-const showsNativeCopyFeedback = () => Platform.OS !== 'ios';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 function formatDate(ts?: number): string | null {
   if (!ts) return null;
@@ -172,39 +168,7 @@ export function CredentialsScreen() {
   const ac2Messages = useStore(ac2MessagesStore, (s) => s.messages);
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
-  const [copiedField, setCopiedField] = React.useState<string | null>(null);
-  const copyResetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  React.useEffect(
-    () => () => {
-      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    },
-    [],
-  );
-
-  const handleCopy = React.useCallback(async (field: string, value: string) => {
-    if (!value) return;
-
-    try {
-      const didCopy = await Clipboard.setStringAsync(value);
-      if (!didCopy) throw new Error('Clipboard did not accept the value');
-    } catch {
-      setCopiedField(null);
-      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-      copyResetTimer.current = null;
-      Alert.alert('Copy failed', 'Could not copy to the clipboard.');
-      return;
-    }
-
-    setCopiedField(field);
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    copyResetTimer.current = setTimeout(() => setCopiedField(null), 1500);
-
-    if (!showsNativeCopyFeedback()) {
-      AccessibilityInfo.announceForAccessibility('Copied to clipboard');
-    }
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-  }, []);
+  const { copiedField, copy: handleCopy, showCopiedToast } = useCopyFeedback();
 
   const handleDeletePasskey = React.useCallback(
     (target: Passkey) => {
@@ -317,19 +281,7 @@ export function CredentialsScreen() {
         )}
       </ScrollView>
 
-      {copiedField && !showsNativeCopyFeedback() ? (
-        <View
-          pointerEvents="none"
-          accessible
-          accessibilityLabel="Copied to clipboard"
-          className="absolute bottom-4 left-4 right-4 items-center"
-        >
-          <View className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 shadow-lg">
-            <MaterialIcons name="check-circle" size={18} color={palette.primary} />
-            <Text className="text-sm font-semibold text-card-foreground">Copied to clipboard</Text>
-          </View>
-        </View>
-      ) : null}
+      <CopiedToast visible={showCopiedToast} />
     </Screen>
   );
 }
