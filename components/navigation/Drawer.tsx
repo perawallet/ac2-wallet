@@ -58,6 +58,8 @@ function Drawer() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const open = useStore(uiStore, (s) => s.drawerOpen);
+  const currentOrigin = useStore(uiStore, (s) => s.currentOrigin);
+  const currentSessionId = useStore(uiStore, (s) => s.currentSessionId);
   const sessions = useStore(sessionsStore, (s) => s.sessions);
   const panelWidth = Math.min(320, width * 0.82);
 
@@ -95,24 +97,33 @@ function Drawer() {
               No chats yet. Scan a QR code to start one.
             </Text>
           ) : (
-            ordered.map((s) => (
-              <Pressable
-                key={`${s.origin}:${s.id}`}
-                accessibilityRole="button"
-                onPress={() => openSession(s)}
-                className="border-b border-border p-4 active:bg-muted"
-              >
-                <View className="flex-row items-center gap-2">
-                  <SessionStatusIndicator session={s} />
-                  <Text className="flex-1 font-semibold text-foreground" numberOfLines={1}>
-                    {s.name?.trim() || s.origin}
+            ordered.map((s) => {
+              const isCurrent = s.origin === currentOrigin && s.id === currentSessionId;
+              return (
+                <Pressable
+                  key={`${s.origin}:${s.id}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isCurrent }}
+                  onPress={() => openSession(s)}
+                  className={`border-b border-border border-l-4 p-4 active:bg-muted ${
+                    isCurrent ? 'border-l-primary bg-muted' : 'border-l-transparent'
+                  }`}
+                >
+                  <View className="flex-row items-center gap-2">
+                    <SessionStatusIndicator session={s} />
+                    <Text
+                      className={`flex-1 font-semibold ${isCurrent ? 'text-primary' : 'text-foreground'}`}
+                      numberOfLines={1}
+                    >
+                      {s.name?.trim() || s.origin}
+                    </Text>
+                  </View>
+                  <Text className="ml-8 text-xs text-muted-foreground" numberOfLines={1}>
+                    {s.id}
                   </Text>
-                </View>
-                <Text className="ml-8 text-xs text-muted-foreground" numberOfLines={1}>
-                  {s.id}
-                </Text>
-              </Pressable>
-            ))
+                </Pressable>
+              );
+            })
           )}
         </ScrollView>
       </Animated.View>
