@@ -58,4 +58,29 @@ describe('Drawer', () => {
     expect(uiStore.state.drawerOpen).toBe(false);
     expect(mockPush).toHaveBeenCalledWith('/chat');
   });
+
+  it('marks only the current session as selected', () => {
+    sessionsStore.setState((s) => ({
+      sessions: [
+        ...s.sessions,
+        {
+          id: 'req-2',
+          origin: 'https://b.example',
+          timestamp: 2,
+          lastActivity: 20,
+          status: 'active' as const,
+        },
+      ],
+    }));
+    uiStore.setState((s) => ({
+      ...s,
+      currentOrigin: 'https://a.example',
+      currentSessionId: 'req-1',
+    }));
+
+    render(<Drawer />);
+    const selected = screen.getByRole('button', { selected: true });
+    expect(selected).toHaveTextContent(/https:\/\/a\.example/);
+    expect(screen.getByText('https://b.example')).toBeTruthy();
+  });
 });
