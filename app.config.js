@@ -150,6 +150,13 @@ module.exports = {
       [
         'expo-build-properties',
         {
+          ios: {
+            // The PasskeyAutofillCredentialProvider extension already targets
+            // 17.0, so passkey autofill cannot run on 15.x/16.x anyway. Align
+            // the app with it rather than shipping a floor the core flow does
+            // not actually support.
+            deploymentTarget: '17.0',
+          },
           android: {
             compileSdkVersion: 35,
             gradleProperties: {

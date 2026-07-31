@@ -45,6 +45,32 @@ convention (consolidation decisions D1/D7).
   consumption-side adjustment specific to the wallet (which also depends on
   `react-native-webrtc`).
 
+- **`ios/LiquidAuthNative.podspec` — WebRTC is `JitsiWebRTC`.** The iOS analog
+  of the Android divergence above, and for the same reason. Upstream declares
+  `WebRTC-lib`, which vendors a `WebRTC.xcframework`; `react-native-webrtc`
+  pulls `JitsiWebRTC ~> 124.0.0`, which vendors a framework of the _same name_
+  and same Clang module (`WebRTC`). CocoaPods refuses two same-named vendored
+  frameworks in one target — it aborts with "frameworks with conflicting
+  names" — so the wallet can host exactly one. Depending on the
+  app's existing `JitsiWebRTC` shares that single binary — and inherits
+  react-native-webrtc's version pin, where upstream's `WebRTC-lib` was
+  unpinned and free to drift off the app's M124. The vendored SDK only uses
+  standard `RTCPeerConnection` / `RTCDataChannel` / ICE APIs (verified — it
+  compiles against Jitsi M124), so this is safe. Do **not** back-port upstream;
+  it is a consumption-side adjustment specific to this wallet.
+
+The podspec's `s.platforms` is left at upstream's 16.4. It is only safe to
+leave it there because the wallet sets `ios.deploymentTarget: '17.0'`
+(`app.config.js`, via `expo-build-properties`) — expo autolinking **silently
+skips** a pod whose deployment target exceeds the app's platform, so on the
+previous 15.1 floor the 16.4 kept this module out of the build entirely (see
+"Known caveat"). If the wallet's deployment target is ever lowered below 16.4,
+lower this podspec to match or the module will silently vanish from the iOS
+binary again. Nothing in the vendored Swift actually requires 16.4 — there are
+no `@available` annotations, the imports are only `CoreImage` /
+`ExpoModulesCore` / `Foundation` / `SocketIO` / `WebRTC`, and the highest
+dependency minimum is ExpoModulesCore's 15.1 — so lowering it is safe if needed.
+
 ## What was copied / trimmed
 
 Copied from upstream (verbatim):
@@ -84,10 +110,32 @@ collided with the wallet's `react-native-webrtc` (`org.jitsi:webrtc`), failing
 Fixed by declaring the module's WebRTC dependency `compileOnly` (see "Intentional
 local divergence" above) — `:app:assembleDebug` now `BUILD SUCCESSFUL`.
 
-**iOS (open):** the iOS podspec pulls `WebRTC-lib`, which can similarly clash
-with the wallet's `react-native-webrtc` at `pod install`. This is not introduced
-by vendoring; it is resolved when the in-process WebRTC path is retired (Phase 4
-cleanup).
+**iOS (resolved):** two independent problems kept `LiquidAuthNative` out of the
+iOS binary, surfacing at runtime as `Cannot find native module
+'LiquidAuthNative'` → `SERVICE_FAILED (kind=auth)`, because the Metro alias
+makes the JS `require` succeed on every platform regardless of what is built.
+
+1. **The podspec's 16.4 platform exceeded the app's then-15.1 floor.** Expo
+   autolinking _skips_ such pods with a single yellow warning rather than
+   failing, so `pod install` reported success while quietly omitting the module
+   — no pod in `Podfile.lock`, no entry in `ExpoModulesProvider.swift`. See
+   `expo-modules-autolinking/scripts/ios/autolinking_manager.rb`.
+2. **`WebRTC-lib` collided with `JitsiWebRTC`** once the pod was installable.
+
+(1) is fixed by the wallet's `ios.deploymentTarget: '17.0'`, which clears 16.4;
+(2) by the podspec's `JitsiWebRTC` divergence. The two are independent —
+raising the deployment target alone turns the silent skip into a hard
+`pod install` failure (verified: `The 'Pods-AC2Debug' target has frameworks with
+conflicting names: webrtc.xcframework`), because the pod only reaches the
+collision once it is no longer skipped. `pod install` now reports `Installing
+LiquidAuthNative 1.0.0` and the module is registered in
+`ExpoModulesProvider.swift`. Note this needs a **native rebuild**; a Metro
+reload cannot pick it up.
+
+The older framing of this caveat — that the clash is only resolved once the
+in-process WebRTC path is retired — was too pessimistic: sharing the app's
+WebRTC binary resolves it today. Retiring that path (Phase 4 cleanup) is still
+worth doing, but it is no longer a prerequisite for an iOS build.
 
 ## Upgrade path (removing this copy)
 
