@@ -126,6 +126,7 @@ function chatDisplayName(session: Session): string {
 function AgentIdentityCard({
   identity,
   iconColor,
+  mutedColor,
   materialHeld,
   session,
   onOpenChat,
@@ -134,6 +135,7 @@ function AgentIdentityCard({
 }: {
   identity: AgentIdentity;
   iconColor: string;
+  mutedColor: string;
   materialHeld: boolean | undefined;
   session: Session | undefined;
   onOpenChat?: () => void;
@@ -149,40 +151,57 @@ function AgentIdentityCard({
     keyId: identity.keyId,
   };
   const chatName = session ? chatDisplayName(session) : null;
+  const canOpenChat = Boolean(session && onOpenChat);
   return (
-    <View className="rounded-2xl bg-card p-5 gap-3">
-      <View className="flex-row items-center gap-3">
-        <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <MaterialIcons name="smart-toy" size={22} color={iconColor} />
+    <View className="overflow-hidden rounded-2xl bg-card">
+      <View className="p-5 gap-3">
+        <View className="flex-row items-center gap-3">
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
+            <MaterialIcons name="smart-toy" size={22} color={iconColor} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
+              {truncateMiddle(identity.agentDid)}
+            </Text>
+            <Text className="text-sm text-muted-foreground" numberOfLines={1}>
+              {identity.origin}
+            </Text>
+          </View>
         </View>
-        <View className="flex-1">
-          <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
-            {truncateMiddle(identity.agentDid)}
-          </Text>
-          <Text className="text-sm text-muted-foreground" numberOfLines={1}>
-            {identity.origin}
-          </Text>
-        </View>
-        {session && onOpenChat ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Open chat ${chatName}`}
-            accessibilityHint="Opens the chat this agent identity was granted to"
-            className="h-9 w-9 items-center justify-center rounded-full bg-muted active:opacity-70"
-            onPress={onOpenChat}
-          >
-            <MaterialIcons name="chat-bubble-outline" size={18} color={iconColor} />
-          </Pressable>
-        ) : null}
-      </View>
-      <View className="gap-1">
-        <DetailRow label="Chat" value={chatName ?? 'No active chat'} />
         <AgentIdentityDetailRows
           identity={summary}
           keyPrefix={`agent-${identity.id}`}
           onCopy={onCopy}
           copiedField={copiedField}
         />
+      </View>
+      <View className="border-t border-border">
+        <Pressable
+          onPress={onOpenChat}
+          disabled={!canOpenChat}
+          accessibilityRole={canOpenChat ? 'button' : undefined}
+          accessibilityLabel={canOpenChat ? `Open chat ${chatName}` : undefined}
+          accessibilityHint={
+            canOpenChat ? 'Opens the chat this agent identity was granted to' : undefined
+          }
+          className={`flex-row items-center gap-3 px-5 py-3 ${canOpenChat ? 'active:opacity-70' : ''}`}
+        >
+          <MaterialIcons
+            name="chat-bubble-outline"
+            size={18}
+            color={canOpenChat ? iconColor : mutedColor}
+          />
+          <View className="min-w-0 flex-1">
+            <Text className="text-sm text-muted-foreground">Chat</Text>
+            <Text
+              className={`text-sm font-medium ${canOpenChat ? 'text-card-foreground' : 'text-muted-foreground'}`}
+              numberOfLines={1}
+            >
+              {chatName ?? 'No active chat'}
+            </Text>
+          </View>
+          {canOpenChat ? <MaterialIcons name="chevron-right" size={20} color={iconColor} /> : null}
+        </Pressable>
       </View>
     </View>
   );
@@ -306,6 +325,7 @@ export function CredentialsScreen() {
                       key={ident.id}
                       identity={ident}
                       iconColor={palette.primary}
+                      mutedColor={palette.mutedForeground}
                       materialHeld={getAgentMaterialHeld(ac2Messages, {
                         origin: ident.origin,
                         requestId: ident.requestId,
