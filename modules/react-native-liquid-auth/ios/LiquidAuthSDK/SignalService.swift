@@ -40,6 +40,17 @@ public class SignalService {
 
     private var messageQueue: [String] = []
 
+    // Inbound delivery state. iOS has no Android-style foreground Service, but
+    // the native WebRTC connection can continue receiving while JavaScript is
+    // backgrounded/suspended. Buffer deliverable frames until a fresh JS sink
+    // is attached and explicitly flushed.
+    private let inboundMessageLock = NSLock()
+    private var appActive = true
+    private var messageSink: ((String, String) -> Void)?
+    private var queueChannels: Set<String>?
+    private var inboundMessageQueue: [(channel: String, message: String)] = []
+    private let maxQueuedMessages = 256
+
     private var lastKnownReferer: String?
     private var isDeepLink: Bool = true
 
@@ -106,6 +117,12 @@ public class SignalService {
         connectedRequestId = nil
         namedDataChannels.removeAll()
         peerConnection = nil
+        inboundMessageLock.lock()
+        appActive = true
+        messageSink = nil
+        queueChannels = nil
+        inboundMessageQueue.removeAll()
+        inboundMessageLock.unlock()
         delegate?.signalService(self, didReceiveStatusUpdate: "Signal Service", message: "Service stopped.")
     }
 
@@ -129,6 +146,7 @@ public class SignalService {
      * ``getConnectionState()`` reports a live peer.
      */
     public func attach(
+        queueChannels: [String]? = nil,
         onMessage: @escaping (String, String) -> Void,
         onStateChange: @escaping (String, String?) -> Void,
         onPresence: (([String: Any]) -> Void)? = nil,
@@ -136,6 +154,8 @@ public class SignalService {
         onConnectionStateChange: ((String) -> Void)? = nil,
         onSignalingState: ((String) -> Void)? = nil
     ) {
+        bindMessageSink(onMessage, queueChannels: queueChannels, markActive: true)
+
         // Rebind the live socket/peer callbacks to the new sinks.
         if let onPresence = onPresence {
             signalClient?.onPresence = onPresence
@@ -156,7 +176,9 @@ public class SignalService {
         for (label, channel) in namedDataChannels {
             let delegate = DataChannelDelegate(
                 signalService: self,
-                onMessage: { message in onMessage(label, message) },
+                onMessage: { [weak self] message in
+                    self?.routeIncomingMessage(channel: label, message: message)
+                },
                 onStateChange: { state in onStateChange(label, state) }
             )
             channel.delegate = delegate
@@ -207,6 +229,7 @@ public class SignalService {
         origin: String,
         iceServers: [RTCIceServer],
         dataChannels: [String: DataChannelConfig] = DataChannelConfig.defaultChannels,
+        queueChannels: [String]? = nil,
         onMessage: @escaping (String, String) -> Void,
         onStateChange: @escaping (String, String?) -> Void,
         onLinkError: ((LinkError) -> Void)? = nil,
@@ -215,6 +238,7 @@ public class SignalService {
         onConnectionStateChange: ((String) -> Void)? = nil,
         onSignalingState: ((String) -> Void)? = nil
     ) {
+        bindMessageSink(onMessage, queueChannels: queueChannels)
         currentPeerType = type
         didFireConnected = false
         connectedRequestId = requestId
@@ -253,8 +277,8 @@ public class SignalService {
                         self?.flushMessageQueue()
                     }
                 },
-                onMessage: { channel, message in
-                    onMessage(channel, message)
+                onMessage: { [weak self] channel, message in
+                    self?.routeIncomingMessage(channel: channel, message: message)
                 },
                 onStateChange: { [weak self] channel, state in
                     onStateChange(channel, state)
@@ -343,6 +367,26 @@ public class SignalService {
         }
     }
 
+    /**
+     * Mark whether JavaScript is currently able to consume native events.
+     * Becoming active deliberately does not replay: callers first wire their
+     * fresh listeners, then call ``flushQueue()``.
+     */
+    public func setActive(_ active: Bool) {
+        inboundMessageLock.lock()
+        appActive = active
+        inboundMessageLock.unlock()
+    }
+
+    /** Replay buffered inbound messages to the currently attached sink. */
+    public func flushQueue() {
+        let delivery = takeQueuedMessagesForDelivery()
+        guard let sink = delivery.sink else { return }
+        for item in delivery.messages {
+            sink(item.channel, item.message)
+        }
+    }
+
     /// Flushes queued messages when the data channel becomes available
     private func flushMessageQueue() {
         guard let dataChannel else { return }
@@ -352,6 +396,73 @@ public class SignalService {
             Logger.info("Flushed queued message: \(message)")
         }
         messageQueue.removeAll()
+    }
+
+    /// Capture a fresh JS message sink and queue policy. If the app is already
+    /// active, replay any backlog now; the JS channel adapters buffer frames
+    /// until their final consumer attaches, preserving delivery during setup.
+    private func bindMessageSink(
+        _ sink: @escaping (String, String) -> Void,
+        queueChannels: [String]?,
+        markActive: Bool = false
+    ) {
+        inboundMessageLock.lock()
+        messageSink = sink
+        self.queueChannels = queueChannels.map(Set.init)
+        if markActive {
+            appActive = true
+        }
+        let queued = appActive ? inboundMessageQueue : []
+        if appActive {
+            inboundMessageQueue.removeAll()
+        }
+        inboundMessageLock.unlock()
+
+        for item in queued {
+            sink(item.channel, item.message)
+        }
+    }
+
+    /// Deliver online frames in arrival order, or buffer selected channels
+    /// while JavaScript is inactive. Excluded channels are intentionally
+    /// dropped while offline, matching Android's queue policy.
+    private func routeIncomingMessage(channel: String, message: String) {
+        inboundMessageLock.lock()
+
+        guard appActive, let sink = messageSink else {
+            if queueChannels == nil || queueChannels?.contains(channel) == true {
+                if inboundMessageQueue.count >= maxQueuedMessages {
+                    inboundMessageQueue.removeFirst()
+                }
+                inboundMessageQueue.append((channel: channel, message: message))
+            }
+            inboundMessageLock.unlock()
+            return
+        }
+
+        let queued = inboundMessageQueue
+        inboundMessageQueue.removeAll()
+        inboundMessageLock.unlock()
+
+        for item in queued {
+            sink(item.channel, item.message)
+        }
+        sink(channel, message)
+    }
+
+    /// Atomically detach the current backlog for replay. If no sink is bound,
+    /// keep every message queued for the next attachment.
+    private func takeQueuedMessagesForDelivery()
+        -> (sink: ((String, String) -> Void)?, messages: [(channel: String, message: String)])
+    {
+        inboundMessageLock.lock()
+        defer { inboundMessageLock.unlock() }
+        guard let sink = messageSink else {
+            return (nil, [])
+        }
+        let queued = inboundMessageQueue
+        inboundMessageQueue.removeAll()
+        return (sink, queued)
     }
 
     /**

@@ -63,6 +63,22 @@ share one contract:
   when the first channel opens, so the RN `connect` promise resolves on both the
   offerer and responder side.
 
+## Wallet-required API parity (ahead of upstream)
+
+The wallet's native transport also requires three methods already present on
+Android but missing from the vendored iOS binding:
+
+- **`request`** — performs the Liquid Auth HTTP ceremony with
+  `URLSession.shared`. Socket.IO's default iOS session uses the same
+  `HTTPCookieStorage.shared`, so the resulting `connect.sid` authenticates the
+  signaling socket.
+- **`setActive`** — gates delivery while JavaScript is backgrounded or suspended.
+- **`flushQueue`** — replays a bounded native inbound queue after fresh JavaScript
+  listeners are wired; `options.queueChannels` controls which channels buffer.
+
+These changes are currently ahead of the upstream package and must be
+back-ported before the next re-vendor.
+
 Porting this SDK into this directory (Phase 3 of the consolidation plan) is
 **DONE**. Wiring iOS background execution appropriately remains an open question
 (see the plan's §8 risks).

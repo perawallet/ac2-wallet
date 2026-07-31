@@ -1,3 +1,4 @@
+import Foundation
 import ExpoModulesCore
 import WebRTC
 
@@ -7,9 +8,9 @@ import WebRTC
  * Wraps the vendored `LiquidAuthSDK` signaling stack (ported from
  * `liquid-auth-ios`, see `ios/VENDORED.md`) so wallets can drive the WebRTC
  * signaling handshake from JavaScript. This mirrors the Android module's JS
- * contract: `start`/`connect`/`cancel`/`send`/`sendToChannel`/`disconnect`
- * plus the `onMessage`/`onStateChange`/`onTrack`/`onPresence`/`onLinkError`/
- * `onConnectionStateChange` events.
+ * contract: `start`/`connect`/`attach`/`cancel`/`setActive`/`flushQueue`/
+ * `send`/`sendToChannel`/`disconnect`/`request` plus the native connection
+ * and message events.
  *
  * Unlike Android there is no foreground `Service`; the shared
  * `SignalService.shared` singleton owns the connection. Long-lived background
@@ -17,6 +18,11 @@ import WebRTC
  * plan's Phase 3 open question).
  */
 public class LiquidAuthNativeModule: Module {
+  /// Shared cookie-jar-backed HTTP client used for both the Liquid Auth HTTP
+  /// ceremony and signaling. `URLSession.shared` and Socket.IO's default
+  /// session both use `HTTPCookieStorage.shared`, so the `connect.sid` cookie
+  /// established by `request` is available when signaling starts.
+  private let httpClient = URLSession.shared
   /// The signaling origin captured from `start(url:)`, reused as the
   /// `connectToPeer` origin (iOS re-creates the socket per negotiation).
   private var signalUrl: String?
@@ -67,7 +73,7 @@ public class LiquidAuthNativeModule: Module {
       self.signalUrl = url
       SignalService.shared.start(
         url: url,
-        httpClient: URLSession.shared,
+        httpClient: self.httpClient,
         onPresence: { [weak self] presence in
           self?.sendEvent("onPresence", presence)
         },
@@ -102,6 +108,7 @@ public class LiquidAuthNativeModule: Module {
       self.pendingConnect = promise
       let servers = Self.parseIceServers(iceServers)
       let channels = Self.parseDataChannels(options)
+      let queueChannels = Self.parseQueueChannels(options)
 
       SignalService.shared.connectToPeer(
         requestId: requestId,
@@ -109,6 +116,7 @@ public class LiquidAuthNativeModule: Module {
         origin: origin,
         iceServers: servers,
         dataChannels: channels,
+        queueChannels: queueChannels,
         onMessage: { [weak self] channel, message in
           self?.sendEvent("onMessage", ["channel": channel, "message": message])
         },
@@ -178,6 +186,7 @@ public class LiquidAuthNativeModule: Module {
      */
     AsyncFunction("attach") { (options: [String: Any]?, promise: Promise) in
       SignalService.shared.attach(
+        queueChannels: Self.parseQueueChannels(options),
         onMessage: { [weak self] channel, message in
           self?.sendEvent("onMessage", ["channel": channel, "message": message])
         },
@@ -208,6 +217,20 @@ public class LiquidAuthNativeModule: Module {
     }
 
     /**
+     * Set whether JavaScript is currently able to consume data-channel events.
+     * Messages received while inactive are buffered by `SignalService` until a
+     * fresh sink attaches or JavaScript explicitly calls `flushQueue`.
+     */
+    Function("setActive") { (active: Bool) in
+      SignalService.shared.setActive(active)
+    }
+
+    /** Replay buffered inbound messages after JavaScript listeners are wired. */
+    Function("flushQueue") {
+      SignalService.shared.flushQueue()
+    }
+
+    /**
      * Send a message over the primary (`liquid`) data channel.
      */
     Function("send") { (message: String) in
@@ -231,6 +254,61 @@ public class LiquidAuthNativeModule: Module {
         pending.reject("E_ABORTED", "Connection closed")
       }
       promise.resolve(nil)
+    }
+
+    /**
+     * Perform an authenticated HTTP request with the same shared cookie store
+     * used by the signaling socket. Resolves with the Android-compatible
+     * `{ ok, status, statusText, body }` response shape.
+     */
+    AsyncFunction("request") { (
+      url: String,
+      method: String,
+      headers: [String: String]?,
+      body: String?,
+      promise: Promise
+    ) in
+      guard let requestUrl = URL(string: url),
+            let scheme = requestUrl.scheme?.lowercased(),
+            scheme == "http" || scheme == "https"
+      else {
+        promise.reject("E_REQUEST", "Invalid HTTP URL: \(url)")
+        return
+      }
+
+      let normalizedMethod = method.uppercased()
+      var request = URLRequest(url: requestUrl)
+      request.httpMethod = normalizedMethod
+      headers?.forEach { name, value in
+        request.setValue(value, forHTTPHeaderField: name)
+      }
+
+      if normalizedMethod != "GET" && normalizedMethod != "HEAD" {
+        let hasContentType = headers?.keys.contains {
+          $0.caseInsensitiveCompare("Content-Type") == .orderedSame
+        } ?? false
+        if !hasContentType {
+          request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        request.httpBody = Data((body ?? "").utf8)
+      }
+
+      self.httpClient.dataTask(with: request) { data, response, error in
+        if let error {
+          promise.reject("E_REQUEST", error.localizedDescription)
+          return
+        }
+        guard let response = response as? HTTPURLResponse else {
+          promise.reject("E_REQUEST", "Response was not HTTP")
+          return
+        }
+        promise.resolve([
+          "ok": (200..<300).contains(response.statusCode),
+          "status": response.statusCode,
+          "statusText": HTTPURLResponse.localizedString(forStatusCode: response.statusCode),
+          "body": data.flatMap { String(data: $0, encoding: .utf8) } ?? "",
+        ])
+      }.resume()
     }
   }
 
@@ -292,5 +370,11 @@ public class LiquidAuthNativeModule: Module {
       )
     }
     return result
+  }
+
+  /// Channels whose inbound frames should be buffered while JavaScript is
+  /// inactive. `nil` means all channels, matching Android's default behavior.
+  private static func parseQueueChannels(_ options: [String: Any]?) -> [String]? {
+    return options?["queueChannels"] as? [String]
   }
 }

@@ -23,12 +23,20 @@ sibling repo.
   from the room-join presence broadcast that fires before the JS listener
   attaches.
 
-## Sync direction (one-way: upstream → copy)
+## Sync direction (normally upstream → copy)
 
 This is a **one-way mirror**. The upstream repo is the source of truth. Do not
 make behavioral edits to the native Kotlin/Swift or the `src/` TypeScript here;
 change upstream first, then re-vendor. Consistent with the vendor-a-copy
 convention (consolidation decisions D1/D7).
+
+> **Temporary iOS parity divergence — upstream back-port required.** The wallet
+> calls `request`, `setActive`, and `flushQueue` on every native transport setup,
+> but the vendored iOS module did not export them. The local Swift binding now
+> implements the same API as Android: authenticated HTTP through the shared iOS
+> cookie store, app-active delivery gating, and bounded inbound-message replay.
+> Port these changes to `react-native-liquid-auth` upstream before the next
+> re-vendor so they are not overwritten.
 
 ### Intentional local divergence (build config only, not behavior)
 
@@ -44,6 +52,22 @@ convention (consolidation decisions D1/D7).
   upstream — the standalone package still needs `implementation`; it is a
   consumption-side adjustment specific to the wallet (which also depends on
   `react-native-webrtc`).
+
+- **`ios/LiquidAuthNative.podspec` — WebRTC is `JitsiWebRTC`.** The iOS analog
+  of the Android divergence above, and for the same reason. Upstream declares
+  `WebRTC-lib`, which vendors a `WebRTC.xcframework`; `react-native-webrtc`
+  pulls `JitsiWebRTC ~> 124.0.0`, which vendors a framework of the _same name_
+  and same Clang module (`WebRTC`). CocoaPods allows only one in the app target.
+  Depending on the app's existing `JitsiWebRTC` shares that binary and keeps
+  the version aligned with `react-native-webrtc`.
+
+- **`ios/LiquidAuthNative.podspec` — platform is `15.1`, not `16.4`.** Upstream
+  declares 16.4, inherited from liquid-auth-ios' passkey /
+  `AuthenticationServices` code that this vendored subset does not include.
+  The vendored signaling subset has no 16.4-only API, and its highest dependency
+  minimum is ExpoModulesCore's 15.1. Expo autolinking skips a pod whose minimum
+  deployment target exceeds the app target, so the upstream value kept the
+  native module out of this wallet's iOS binary.
 
 ## What was copied / trimmed
 
@@ -84,10 +108,17 @@ collided with the wallet's `react-native-webrtc` (`org.jitsi:webrtc`), failing
 Fixed by declaring the module's WebRTC dependency `compileOnly` (see "Intentional
 local divergence" above) — `:app:assembleDebug` now `BUILD SUCCESSFUL`.
 
-**iOS (open):** the iOS podspec pulls `WebRTC-lib`, which can similarly clash
-with the wallet's `react-native-webrtc` at `pod install`. This is not introduced
-by vendoring; it is resolved when the in-process WebRTC path is retired (Phase 4
-cleanup).
+**iOS (resolved):** two independent podspec problems kept `LiquidAuthNative`
+out of the iOS binary:
+
+1. The podspec's iOS 16.4 minimum exceeded the app's 15.1 target, so Expo
+   autolinking skipped the pod.
+2. Once installable, `WebRTC-lib` collided with the same-named WebRTC framework
+   already supplied by `JitsiWebRTC` through `react-native-webrtc`.
+
+The local podspec now targets iOS 15.1 and shares the app's `JitsiWebRTC`
+dependency. A native prebuild/rebuild is required; a Metro reload cannot add a
+previously omitted native module to an installed binary.
 
 ## Upgrade path (removing this copy)
 
