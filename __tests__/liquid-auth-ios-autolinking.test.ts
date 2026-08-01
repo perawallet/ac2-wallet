@@ -48,4 +48,16 @@ describe('LiquidAuthNative iOS autolinking', () => {
       expect(moduleSource).toMatch(new RegExp(`(?:Async)?Function\\("${method}"\\)`));
     }
   });
+
+  it('preserves an absolute signaling origin instead of prepending a second scheme', () => {
+    const signalClientSource = fs.readFileSync(
+      path.join(moduleRoot, 'ios', 'LiquidAuthSDK', 'SignalClient.swift'),
+      'utf8',
+    );
+
+    expect(signalClientSource).toContain(
+      'let candidate = url.contains("://") ? url : "https://\\(url)"',
+    );
+    expect(signalClientSource).not.toContain('URL(string: "https://\\(url)")!');
+  });
 });

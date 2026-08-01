@@ -79,6 +79,12 @@ Android but missing from the vendored iOS binding:
 These changes are currently ahead of the upstream package and must be
 back-ported before the next re-vendor.
 
+The wallet also supplies signaling origins as absolute URLs (`https://…`). The
+ported `SignalClient` now accepts either an absolute HTTP(S) origin or the bare
+host expected by the original iOS SDK. Never unconditionally prepend a scheme:
+`https://https://…` parses with the wrong host and leaves Socket.IO connecting
+to a nonexistent endpoint.
+
 Porting this SDK into this directory (Phase 3 of the consolidation plan) is
 **DONE**. Wiring iOS background execution appropriately remains an open question
 (see the plan's §8 risks).

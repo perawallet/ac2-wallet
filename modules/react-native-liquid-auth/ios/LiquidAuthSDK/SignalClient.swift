@@ -65,11 +65,28 @@ public class SignalClient {
     private var offerResendTimer: Timer?
     private static let offerResendInterval: TimeInterval = 5
 
-    init(url: String, service: SignalService) {
+    init?(url: String, service: SignalService) {
         self.service = service
 
-        // Initialize the Socket.IO manager and client
-        manager = SocketManager(socketURL: URL(string: "https://\(url)")!, config: [.log(false), .compress])
+        // The wallet passes an absolute origin (for example,
+        // `https://debug.liquidauth.com`), while the original iOS SDK expected
+        // a bare host and unconditionally prepended `https://`. That produced
+        // `https://https://…`, which URL parses with the host `https`; Socket.IO
+        // then remained in `.connecting` forever against the wrong endpoint.
+        // Accept both public API shapes and reject malformed origins without a
+        // force-unwrap crash.
+        let candidate = url.contains("://") ? url : "https://\(url)"
+        guard let socketURL = URL(string: candidate),
+              let scheme = socketURL.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              socketURL.host != nil
+        else {
+            Logger.error("SignalClient: Invalid signaling URL: \(url)")
+            return nil
+        }
+
+        // Initialize the Socket.IO manager and client.
+        manager = SocketManager(socketURL: socketURL, config: [.log(false), .compress])
         socket = manager.defaultSocket
 
         // Set up event listeners
