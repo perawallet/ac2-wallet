@@ -40,6 +40,30 @@ public class SignalService {
 
     private var messageQueue: [String] = []
 
+    // --- Offline (inbound) message queue -----------------------------------
+    // Mirrors the Android SDK's queue, with one platform difference that
+    // callers must understand: on Android a foreground `Service` keeps
+    // receiving while the app is backgrounded or killed, so its queue also
+    // covers messages that arrived while the app was gone. iOS has no such
+    // service — when the app is suspended nothing receives — so this queue is
+    // FOREGROUND-ONLY. What it does buy on iOS is the other half of the
+    // Android behaviour: it stops inbound messages racing ahead of the JS
+    // listeners while a fresh sink is being wired (`connectToPeer` / `attach`
+    // / a relaunch), which would otherwise drop them into a dead runtime.
+    /// Whether the app is online (foregrounded with its JS listeners attached).
+    /// Owned by the app via ``setActive(_:)``; messages that arrive while this
+    /// is `false` are buffered instead of delivered.
+    private var isAppActive: Bool = true
+    /// Inbound messages buffered while inactive, in arrival order.
+    private var inboundQueue: [(channel: String, message: String)] = []
+    /// Which channel labels are eligible for buffering (`nil` = all). Mirrors
+    /// the Android `queueChannels` option so e.g. a heartbeat channel can be
+    /// excluded from replay.
+    private var queueChannels: Set<String>?
+    /// The live `onMessage` sink, retained so ``flushQueue()`` can replay into
+    /// whichever consumer is currently attached.
+    private var onMessageSink: ((String, String) -> Void)?
+
     private var lastKnownReferer: String?
     private var isDeepLink: Bool = true
 
@@ -106,6 +130,12 @@ public class SignalService {
         connectedRequestId = nil
         namedDataChannels.removeAll()
         peerConnection = nil
+        // An explicit stop ends the session: drop the queue and its sink so a
+        // later connect cannot replay messages from a torn-down connection.
+        inboundQueue.removeAll()
+        onMessageSink = nil
+        queueChannels = nil
+        isAppActive = true
         delegate?.signalService(self, didReceiveStatusUpdate: "Signal Service", message: "Service stopped.")
     }
 
@@ -134,8 +164,18 @@ public class SignalService {
         onPresence: (([String: Any]) -> Void)? = nil,
         onLinkError: ((LinkError) -> Void)? = nil,
         onConnectionStateChange: ((String) -> Void)? = nil,
-        onSignalingState: ((String) -> Void)? = nil
+        onSignalingState: ((String) -> Void)? = nil,
+        queueChannels: Set<String>? = nil
     ) {
+        // Re-attaching means a fresh, live sink: retain it for the queue and
+        // mark the app active. The buffered replay happens at the end of this
+        // method, once the channel observers below have been rebound.
+        onMessageSink = onMessage
+        isAppActive = true
+        if let queueChannels {
+            self.queueChannels = queueChannels
+        }
+
         // Rebind the live socket/peer callbacks to the new sinks.
         if let onPresence = onPresence {
             signalClient?.onPresence = onPresence
@@ -156,7 +196,7 @@ public class SignalService {
         for (label, channel) in namedDataChannels {
             let delegate = DataChannelDelegate(
                 signalService: self,
-                onMessage: { message in onMessage(label, message) },
+                onMessage: { [weak self] message in self?.deliver(channel: label, message: message) },
                 onStateChange: { state in onStateChange(label, state) }
             )
             channel.delegate = delegate
@@ -170,12 +210,68 @@ public class SignalService {
         if let iceState = peerClient?.peerConnection?.iceConnectionState {
             onConnectionStateChange?(iceState.stateDescription)
         }
+
+        // The fresh listeners are wired now, so buffered messages can be
+        // replayed without racing the setup above.
+        flushQueue()
     }
 
     /// Abort an in-flight ``connectToPeer`` negotiation without fully stopping
     /// the service. Mirrors `SignalService.cancel()` in the Android SDK.
     public func cancel() {
         signalClient?.cancel()
+    }
+
+    // MARK: - Offline queue
+
+    /// Set whether the app is online (foregrounded, with its JS listeners
+    /// attached). The app owns this signal so it — not the library — controls
+    /// the delivery state.
+    ///
+    /// Deliberately does NOT replay the queue: a relaunching app flips active
+    /// BEFORE its listeners are rewired, so replaying here would hand the
+    /// buffered messages to the previous (dead) sink and lose them. Replay
+    /// happens when a fresh sink attaches (``connectToPeer`` / ``attach``) or
+    /// when the app calls ``flushQueue()`` once its listeners are wired.
+    /// Mirrors `SignalService.setActive` in the Android SDK.
+    public func setActive(_ active: Bool) {
+        isAppActive = active
+        Logger.debug("setActive: \(active) (queued=\(inboundQueue.count))")
+    }
+
+    /// Replay any buffered inbound messages through the current `onMessage`
+    /// sink, in arrival order. Call only once the JS message listeners are
+    /// wired, so the replay cannot race listener setup. No-op when the queue is
+    /// empty. Mirrors `SignalService.flushQueue` in the Android SDK.
+    public func flushQueue() {
+        guard !inboundQueue.isEmpty else { return }
+        guard let sink = onMessageSink else {
+            Logger.debug("flushQueue: no sink attached, keeping \(inboundQueue.count) message(s) queued")
+            return
+        }
+        let pending = inboundQueue
+        inboundQueue.removeAll()
+        Logger.debug("flushQueue: replaying \(pending.count) buffered message(s)")
+        for item in pending {
+            sink(item.channel, item.message)
+        }
+    }
+
+    /// Single chokepoint for inbound data-channel messages: deliver to the live
+    /// sink when the app is active, otherwise buffer for a later replay. Every
+    /// `onMessage` path routes through here so the active/queue decision is
+    /// made in exactly one place.
+    private func deliver(channel: String, message: String) {
+        guard isAppActive, let sink = onMessageSink else {
+            guard queueChannels?.contains(channel) ?? true else {
+                Logger.debug("deliver: channel '\(channel)' excluded from queueChannels, dropping while inactive")
+                return
+            }
+            inboundQueue.append((channel: channel, message: message))
+            Logger.debug("deliver: app inactive, queued message on '\(channel)' (queued=\(inboundQueue.count))")
+            return
+        }
+        sink(channel, message)
     }
 
     // MARK: - Check if the signaling service is initialized
@@ -219,6 +315,13 @@ public class SignalService {
         didFireConnected = false
         connectedRequestId = requestId
 
+        // A fresh sink is being wired for this negotiation: retain it for the
+        // queue, and mark the app active (it has, by definition, live
+        // listeners). Any messages buffered by a previous session are replayed
+        // once the channels come up, not here — see `onDataChannelOpen`.
+        onMessageSink = onMessage
+        isAppActive = true
+
         namedDataChannels.removeAll()
 
         Logger.debug("Attempting to connect to peer with requestId: \(requestId), type: \(type.rawValue)")
@@ -251,10 +354,14 @@ public class SignalService {
                     Logger.debug("Data channel is open and ready: \(dataChannel.label)")
                     if dataChannel.readyState == .open {
                         self?.flushMessageQueue()
+                        // The fresh sink is wired and a channel is live, so any
+                        // inbound messages buffered while the app was offline
+                        // can now be replayed safely.
+                        self?.flushQueue()
                     }
                 },
-                onMessage: { channel, message in
-                    onMessage(channel, message)
+                onMessage: { [weak self] channel, message in
+                    self?.deliver(channel: channel, message: message)
                 },
                 onStateChange: { [weak self] channel, state in
                     onStateChange(channel, state)

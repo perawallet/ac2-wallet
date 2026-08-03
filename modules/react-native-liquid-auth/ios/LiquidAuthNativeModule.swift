@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import UIKit
 import WebRTC
 
 /**
@@ -17,6 +18,27 @@ import WebRTC
  * plan's Phase 3 open question).
  */
 public class LiquidAuthNativeModule: Module {
+  /// A cookie-jar-backed `URLSession` shared by the authenticated Liquid Auth
+  /// HTTP exchange (``request``) and — implicitly — the signaling socket, so
+  /// the `connect.sid` session cookie set during attestation/assertion is
+  /// replayed on the socket handshake. This is the iOS analog of the Android
+  /// module's shared `OkHttpClient` + `LiquidCookieJar`.
+  ///
+  /// The sharing works because it deliberately uses `HTTPCookieStorage.shared`:
+  /// Socket.IO-Client-Swift builds its engine session with
+  /// `URLSessionConfiguration.default` (which is backed by that same shared
+  /// storage) and explicitly replays `session.configuration.httpCookieStorage`
+  /// cookies onto the WebSocket upgrade. So nothing has to be threaded through
+  /// `SignalClient` — but note the coupling: switching this to a private
+  /// `HTTPCookieStorage` would silently unauthenticate the socket.
+  private static let httpSession: URLSession = {
+    let configuration = URLSessionConfiguration.default
+    configuration.httpCookieStorage = HTTPCookieStorage.shared
+    configuration.httpCookieAcceptPolicy = .always
+    configuration.httpShouldSetCookies = true
+    return URLSession(configuration: configuration)
+  }()
+
   /// The signaling origin captured from `start(url:)`, reused as the
   /// `connectToPeer` origin (iOS re-creates the socket per negotiation).
   private var signalUrl: String?
@@ -202,9 +224,105 @@ public class LiquidAuthNativeModule: Module {
         },
         onSignalingState: { [weak self] state in
           self?.sendEvent("onSignalingStateChange", ["state": state])
-        }
+        },
+        queueChannels: Self.parseQueueChannels(options)
       )
       promise.resolve(nil)
+    }
+
+    /**
+     * Set whether the app is currently online (foregrounded, with its JS
+     * listeners attached). The app owns this signal so it — not the library —
+     * controls the signaling delivery state. Deliberately does NOT replay the
+     * offline queue (a relaunching app flips active before its listeners are
+     * rewired); the replay happens when a fresh sink attaches (`connect` /
+     * `attach`) or when the app calls `flushQueue` once its listeners are
+     * wired.
+     */
+    Function("setActive") { (active: Bool) in
+      SignalService.shared.setActive(active)
+    }
+
+    /**
+     * Explicitly replay any messages buffered while the app was offline,
+     * through the `onMessage` event in arrival order. Call it only once the JS
+     * message listeners are wired, so the replay can't race the listener
+     * setup. No-op when nothing is buffered.
+     *
+     * iOS caveat: unlike Android there is no foreground service, so the queue
+     * only ever holds messages that arrived while the app was running but
+     * marked inactive — never messages from while the app was suspended or
+     * killed. See `SignalService`'s offline-queue notes.
+     */
+    Function("flushQueue") {
+      SignalService.shared.flushQueue()
+    }
+
+    /**
+     * Perform an HTTP request through the module's shared cookie-jar session,
+     * so the Liquid Auth session cookie (`connect.sid`) is captured natively
+     * and replayed on the signaling socket handshake. Mirrors the Android
+     * module's `request`, including its `{ ok, status, statusText, body }`
+     * result shape.
+     */
+    AsyncFunction("request") { (
+      url: String,
+      method: String,
+      headers: [String: String]?,
+      body: String?,
+      promise: Promise
+    ) in
+      guard let requestUrl = URL(string: url) else {
+        promise.reject("E_REQUEST", "Invalid URL: \(url)")
+        return
+      }
+
+      let verb = method.uppercased()
+      var request = URLRequest(url: requestUrl)
+      request.httpMethod = verb
+      headers?.forEach { name, value in
+        request.setValue(value, forHTTPHeaderField: name)
+      }
+
+      // The Liquid Auth server derives the expected WebAuthn origin from the
+      // User-Agent. If the caller didn't set one, URLSession would send a
+      // default the server can't classify, and attestation/assertion fails —
+      // the same trap the Android module documents.
+      let hasUserAgent = headers?.keys.contains { $0.caseInsensitiveCompare("User-Agent") == .orderedSame } ?? false
+      if !hasUserAgent {
+        request.setValue(Self.defaultUserAgent(), forHTTPHeaderField: "User-Agent")
+      }
+
+      // Mirror Android: default the body's content type to JSON, and never
+      // attach a body to GET/HEAD.
+      if verb != "GET", verb != "HEAD" {
+        let hasContentType = headers?.keys
+          .contains { $0.caseInsensitiveCompare("Content-Type") == .orderedSame } ?? false
+        if !hasContentType {
+          request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        request.httpBody = (body ?? "").data(using: .utf8)
+      }
+
+      Self.httpSession.dataTask(with: request) { data, response, error in
+        if let error {
+          promise.reject("E_REQUEST", error.localizedDescription)
+          return
+        }
+        guard let httpResponse = response as? HTTPURLResponse else {
+          promise.reject("E_REQUEST", "Missing or non-HTTP response for \(url)")
+          return
+        }
+        let status = httpResponse.statusCode
+        promise.resolve([
+          "ok": (200 ..< 300).contains(status),
+          "status": status,
+          // URLSession does not expose the raw HTTP reason phrase, so derive
+          // the closest equivalent to Android's `response.message`.
+          "statusText": HTTPURLResponse.localizedString(forStatusCode: status),
+          "body": data.flatMap { String(data: $0, encoding: .utf8) } ?? "",
+        ])
+      }.resume()
     }
 
     /**
@@ -234,7 +352,38 @@ public class LiquidAuthNativeModule: Module {
     }
   }
 
+  // MARK: - HTTP helpers
+
+  /// Build a User-Agent identifying this iOS app to the Liquid Auth server
+  /// (e.g. `app.perawallet.ac2-wallet/1.0 (iOS 17.4; iPhone)`), mirroring the
+  /// shape the Android module sends.
+  ///
+  /// ⚠️ UNVERIFIED AGAINST THE SERVER. On Android this string is load-bearing:
+  /// the server parses it to resolve the expected WebAuthn origin (an APK
+  /// client resolves to `android:apk-key-hash:<hash>`). The equivalent
+  /// classification for an iOS client — most likely the associated-domain
+  /// origin rather than a bundle-derived one — has not been confirmed against
+  /// the Liquid Auth server, so this is a best-effort mirror of the Android
+  /// shape. If attestation/assertion fails with an origin mismatch while the
+  /// HTTP calls themselves succeed, this is the first thing to change; it is
+  /// deliberately the only place the value is constructed.
+  private static func defaultUserAgent() -> String {
+    let bundle = Bundle.main
+    let identifier = bundle.bundleIdentifier ?? "liquid-auth"
+    let version = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    let device = UIDevice.current
+    return "\(identifier)/\(version) (iOS \(device.systemVersion); \(device.model))"
+  }
+
   // MARK: - Parsing helpers
+
+  /// Extract `options.queueChannels` — the channel labels eligible for offline
+  /// buffering — from the JS options map. `nil` (absent) means "all channels",
+  /// matching the Android default.
+  private static func parseQueueChannels(_ options: [String: Any]?) -> Set<String>? {
+    guard let raw = options?["queueChannels"] as? [String] else { return nil }
+    return Set(raw)
+  }
 
   /// Parse a `liquid://<host>/?requestId=<id>` URI into its origin + requestId.
   private static func parseLiquidUri(_ uri: String) -> (origin: String, requestId: String)? {

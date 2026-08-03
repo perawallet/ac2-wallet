@@ -71,6 +71,49 @@ no `@available` annotations, the imports are only `CoreImage` /
 `ExpoModulesCore` / `Foundation` / `SocketIO` / `WebRTC`, and the highest
 dependency minimum is ExpoModulesCore's 15.1 — so lowering it is safe if needed.
 
+### Behavioral local divergence (TEMPORARY — must go upstream)
+
+Unlike the build-config divergences above, this one **changes native
+behavior** and therefore breaks the one-way-mirror rule. It exists because the
+vendored iOS module was missing three functions the Android module exposes, so
+the wallet crashed at runtime on iOS
+(`LiquidAuthNativeModule.default.request is not a function`) even once the pod
+was building and linking. Port this upstream and re-vendor; until then a naive
+re-sync will silently revert iOS support.
+
+- **`ios/LiquidAuthNativeModule.swift` — added `request`, `setActive`,
+  `flushQueue`.** These bring iOS to function parity with Android (all other
+  functions and all seven events already matched).
+  - `request` performs the Liquid Auth HTTP exchange through a shared
+    cookie-jar `URLSession`, mirroring Android's shared `OkHttpClient` +
+    `LiquidCookieJar` (including its JSON content-type default and its
+    `{ ok, status, statusText, body }` result shape). It deliberately uses
+    `HTTPCookieStorage.shared`, because Socket.IO-Client-Swift builds its
+    engine session from `URLSessionConfiguration.default` (same shared storage)
+    and replays those cookies onto the WebSocket upgrade — that is what lets
+    `connect.sid` ride the signaling socket without threading anything through
+    `SignalClient`. **Switching to a private cookie storage would silently
+    unauthenticate the socket.**
+  - The default `User-Agent` is **unverified against the server** — see the
+    warning comment on `defaultUserAgent()`. On Android the UA is load-bearing
+    (the server parses it to resolve the expected WebAuthn origin); the iOS
+    equivalent has not been confirmed. It is constructed in exactly one place
+    so it is a one-line fix.
+
+- **`ios/LiquidAuthSDK/SignalService.swift` — added a foreground-only inbound
+  message queue** (`setActive` / `flushQueue`, plus a single `deliver(...)`
+  chokepoint every `onMessage` path routes through, and `queueChannels` support
+  that iOS previously discarded from the `attach` options).
+
+  This is **not** full parity with Android, and cannot be: Android's queue is
+  backed by a foreground `Service` that keeps receiving while the app is
+  backgrounded or killed, so its queue also covers messages that arrived while
+  the app was gone. iOS has no such service — when the app is suspended nothing
+  receives. What the iOS queue does provide is the other half of the Android
+  behavior: it stops inbound messages racing ahead of the JS listeners while a
+  fresh sink is being wired (`connect` / `attach` / relaunch), which would
+  otherwise drop them into a dead runtime.
+
 ## What was copied / trimmed
 
 Copied from upstream (verbatim):
