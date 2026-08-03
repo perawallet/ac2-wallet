@@ -17,7 +17,7 @@ import { Stack } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Alert, FlatList, View } from 'react-native';
+import { Alert, FlatList, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function getSignature(entry: Ac2MessageEntry): string | null {
@@ -125,14 +125,22 @@ export default function HistoryScreen() {
       .sort((a, b) => a.receivedAt - b.receivedAt),
   );
 
-  const handleExport = React.useCallback(async () => {
+  const getExportPayload = React.useCallback(() => {
     if (entries.length === 0) {
       Alert.alert('Nothing to export', 'There are no AC2 messages to export yet.');
-      return;
+      return null;
     }
+    return {
+      json: JSON.stringify(entries, null, 2),
+      filename: `ac2-telemetry-${new Date().toISOString().replace(/:/g, '-')}.json`,
+    };
+  }, [entries]);
+
+  const handleShare = React.useCallback(async () => {
+    const payload = getExportPayload();
+    if (!payload) return;
+    const { json, filename } = payload;
     try {
-      const json = JSON.stringify(entries, null, 2);
-      const filename = `ac2-telemetry-${new Date().toISOString().replace(/:/g, '-')}.json`;
       const fileUri = `${FileSystem.documentDirectory}${filename}`;
       await FileSystem.writeAsStringAsync(fileUri, json);
       if (await Sharing.isAvailableAsync()) {
@@ -147,7 +155,29 @@ export default function HistoryScreen() {
     } catch {
       Alert.alert('Export failed', 'Could not export the telemetry trace.');
     }
-  }, [entries]);
+  }, [getExportPayload]);
+
+  // Android's share sheet doesn't reliably persist to a user-chosen location,
+  // so this lets the user pick a destination directory directly via SAF.
+  const handleSaveAndroid = React.useCallback(async () => {
+    const payload = getExportPayload();
+    if (!payload) return;
+    const { json, filename } = payload;
+    try {
+      const permissions =
+        await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!permissions.granted) return;
+      const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        permissions.directoryUri,
+        filename,
+        'application/json',
+      );
+      await FileSystem.writeAsStringAsync(fileUri, json);
+      Alert.alert('Export saved', `Saved telemetry trace to ${filename}.`);
+    } catch {
+      Alert.alert('Export failed', 'Could not export the telemetry trace.');
+    }
+  }, [getExportPayload]);
 
   return (
     <View className="flex-1 bg-background">
@@ -160,11 +190,21 @@ export default function HistoryScreen() {
             fontSize: 16,
             fontWeight: '600',
           },
-          headerRight: () => (
-            <Button variant="secondary" size="sm" onPress={handleExport}>
-              <Text className="text-sm">Export JSON</Text>
-            </Button>
-          ),
+          headerRight: () =>
+            Platform.OS === 'android' ? (
+              <View className="flex-row gap-2">
+                <Button variant="secondary" size="sm" onPress={handleSaveAndroid}>
+                  <Text className="text-sm">Export</Text>
+                </Button>
+                <Button variant="secondary" size="sm" onPress={handleShare}>
+                  <Text className="text-sm">Share</Text>
+                </Button>
+              </View>
+            ) : (
+              <Button variant="secondary" size="sm" onPress={handleShare}>
+                <Text className="text-sm">Export</Text>
+              </Button>
+            ),
         }}
       />
 
