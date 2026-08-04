@@ -1,4 +1,3 @@
-import { Modal } from '@/components/Modal';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ChatTimeline, type TimelineEntry } from '@/components/chat/ChatTimeline';
 import { ConnectionNoticeBanner } from '@/components/chat/ConnectionNoticeBanner';
@@ -24,11 +23,20 @@ import { clearAgentIdentitiesByConnection } from '@/stores/agentIdentities';
 import { clearMessages, clearMessagesByConnection, messagesStore } from '@/stores/messages';
 import { removeSession, renameSession } from '@/stores/sessions';
 import { clearCurrentConnection, setActiveThid } from '@/stores/ui';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useStore } from '@tanstack/react-store';
 import * as React from 'react';
 import { useColorScheme } from 'nativewind';
-import { Alert, KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
+import {
+  Alert,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  TextInput,
+  View,
+} from 'react-native';
 
 interface ChatScreenProps {
   origin: string;
@@ -211,6 +219,21 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
     setRenameVisible(false);
   };
 
+  // Mirrors the hardware back button behavior a native Modal's onRequestClose
+  // would give us — needed because the rename dialog below is rendered
+  // in-tree (not via RN's Modal) so it can share this screen's already
+  // keyboard-avoiding layout. RN's Modal opens a separate native window on
+  // Android whose content sits in a disconnected coordinate space, which is
+  // why KeyboardAvoidingView inside it can't compute the right offset.
+  React.useEffect(() => {
+    if (!renameVisible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setRenameVisible(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [renameVisible]);
+
   const handleDisconnect = React.useCallback(() => {
     Alert.alert('Disconnect?', 'Close the connection to this agent? You can reconnect later.', [
       { text: 'Cancel', style: 'cancel' },
@@ -354,29 +377,51 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
           serviceUnavailable={!isSocketConnected}
         />
       )}
-      <Modal
-        visible={renameVisible}
-        onClose={() => setRenameVisible(false)}
-        title="Rename connection"
-      >
-        <TextInput
-          className="rounded-lg border border-border bg-background px-3 py-2 text-foreground"
-          value={renameText}
-          onChangeText={setRenameText}
-          placeholder="Display name"
-          placeholderTextColor={palette.mutedForeground}
-          returnKeyType="done"
-          onSubmitEditing={commitRename}
-        />
-        <View className="mt-4 flex-row justify-end gap-3">
-          <Pressable onPress={() => setRenameVisible(false)} className="px-4 py-2">
-            <Text className="text-muted-foreground">Cancel</Text>
-          </Pressable>
-          <Pressable onPress={commitRename} className="rounded-lg bg-primary px-4 py-2">
-            <Text className="font-medium text-primary-foreground">Save</Text>
-          </Pressable>
-        </View>
-      </Modal>
+      {renameVisible ? (
+        // Rendered in-tree (not via RN's Modal) so it lives in the same
+        // window as the rest of the screen — see the effect above for why
+        // that matters on Android. It needs its own KeyboardAvoidingView
+        // rather than relying on the screen's outer one: an absolutely
+        // positioned child ignores a parent's dynamic keyboard padding in
+        // RN's layout engine, so nothing here would move otherwise.
+        <KeyboardAvoidingView
+          className="absolute inset-0 items-center justify-center bg-black/50 p-5"
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={headerHeight}
+        >
+          <View className="max-h-[80%] w-full rounded-3xl bg-card shadow-lg">
+            <View className="flex-row items-center justify-between border-b border-border p-5">
+              <Text className="text-lg font-bold text-card-foreground">Rename connection</Text>
+              <Pressable
+                onPress={() => setRenameVisible(false)}
+                accessibilityRole="button"
+                className="p-1"
+              >
+                <MaterialIcons name="close" size={24} color={palette.mutedForeground} />
+              </Pressable>
+            </View>
+            <View className="p-5">
+              <TextInput
+                className="rounded-lg border border-border bg-background px-3 py-2 text-foreground"
+                value={renameText}
+                onChangeText={setRenameText}
+                placeholder="Display name"
+                placeholderTextColor={palette.mutedForeground}
+                returnKeyType="done"
+                onSubmitEditing={commitRename}
+              />
+              <View className="mt-4 flex-row justify-end gap-3">
+                <Pressable onPress={() => setRenameVisible(false)} className="px-4 py-2">
+                  <Text className="text-muted-foreground">Cancel</Text>
+                </Pressable>
+                <Pressable onPress={commitRename} className="rounded-lg bg-primary px-4 py-2">
+                  <Text className="font-medium text-primary-foreground">Save</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
