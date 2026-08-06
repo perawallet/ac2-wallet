@@ -304,6 +304,10 @@ public class SignalClient {
         peerClient?.close()
         peerClient = nil
         lastPresence = nil
+        // An explicit stop abandons any queued negotiation events; if this
+        // client is later reused (`ensureSocket`), flushing them would replay
+        // a long-dead negotiation onto the fresh socket.
+        eventQueue.removeAll()
         handleDisconnect()
     }
 
@@ -326,6 +330,15 @@ public class SignalClient {
         // peer, and the next negotiation on the SAME socket starts clean.
         detachNegotiationListeners()
         candidatesBuffer.removeAll()
+        // Drop this negotiation's queued outbound events too. `send` queues
+        // `link`/`offer-description` while the socket is down, and
+        // `processEventQueue` flushes the queue verbatim on the next
+        // `.connect` — so without this, an attempt cancelled during a network
+        // outage still emits its dead offer when the socket reconnects. The
+        // remote answers the FIRST offer it hears (a one-shot listener), so a
+        // flushed stale offer poisons the live attempt's handshake and wedges
+        // the peer until it is restarted.
+        eventQueue.removeAll()
     }
 
     /// Re-emit the pending offer on an interval until the peer answers, so a
