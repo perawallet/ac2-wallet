@@ -259,8 +259,13 @@ public class SignalService {
             signalClient?.onSignalingState = onSignalingState
         }
 
-        // Wait for socket connection before starting signaling
-        signalClient?.onSocketConnected = { [weak self] in
+        // Wait for socket connection before starting signaling. One-shot: the
+        // continuation runs exactly once for THIS negotiation (immediately if
+        // the socket is already up, otherwise on its next `.connect`), so a
+        // later socket auto-reconnect can never replay it — replaying closed
+        // the live peer and emitted a duplicate link/offer that poisoned the
+        // wallet's re-link handshake after a network switch.
+        let negotiateWhenConnected: () -> Void = { [weak self] in
             guard let self else { return }
             Logger.debug("Socket connected, now starting WebRTC signaling.")
             _ = signalClient?.connectToPeer(
@@ -308,11 +313,7 @@ public class SignalService {
             )
         }
 
-        if signalClient?.isSignalingConnected() == true {
-            signalClient?.onSocketConnected?()
-        } else {
-            signalClient?.connectSocket()
-        }
+        signalClient?.runWhenSocketConnected(negotiateWhenConnected)
 
         Logger.debug("ICE servers: \(iceServers)")
         Logger.debug("Waiting for socket to connect before signaling.")

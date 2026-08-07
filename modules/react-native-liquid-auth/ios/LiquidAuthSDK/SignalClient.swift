@@ -30,7 +30,16 @@ public class SignalClient {
     private var eventQueue: [(String, QueuedEventData)] = []
     private var dataChannelDelegates: [RTCDataChannel: DataChannelDelegate] = [:]
     var onLinkError: ((LinkError) -> Void)?
-    var onSocketConnected: (() -> Void)?
+    /// One-shot continuation armed by ``runWhenSocketConnected(_:)``. Consumed
+    /// (nilled before invocation) the first time the socket connects, and
+    /// cleared by ``cancel()``. It must NEVER survive its negotiation: a
+    /// persistent handler here re-ran the whole negotiation closure on every
+    /// socket.io auto-reconnect — resurrecting cancelled attempts (whose
+    /// duplicate link/offer poisoned the live attempt's handshake) and, worse,
+    /// destroying a LIVE peer mid-session, since `connectToPeer` starts by
+    /// closing the previous peer. The p2p connection is supposed to outlive
+    /// signaling blips; retry orchestration belongs to the consumer.
+    private var onSocketConnected: (() -> Void)?
     /// Signaling-socket connectivity changes (`"connected"` / `"disconnected"`),
     /// including socket.io auto-reconnects. Lets consumers surface a
     /// "signaling offline" state that is independent of the p2p connection —
@@ -107,6 +116,28 @@ public class SignalClient {
             Logger.debug("SignalClient: Socket is not connected. Attempting to connect...")
             socket.connect()
         }
+    }
+
+    /// Run `action` once the signaling socket is connected: immediately when it
+    /// already is, otherwise one-shot on the next `.connect`. Replaces any
+    /// previously pending action — a superseded negotiation's continuation must
+    /// never fire later.
+    func runWhenSocketConnected(_ action: @escaping () -> Void) {
+        if isSignalingConnected() {
+            onSocketConnected = nil
+            action()
+        } else {
+            onSocketConnected = action
+            ensureSocket()
+        }
+    }
+
+    /// Consume the pending one-shot connected continuation, if any. Nils the
+    /// slot BEFORE invoking so a re-arm from inside the action is preserved.
+    private func consumeSocketConnected() {
+        guard let action = onSocketConnected else { return }
+        onSocketConnected = nil
+        action()
     }
 
     // swiftlint:disable:next function_body_length
@@ -325,6 +356,10 @@ public class SignalClient {
         stopOfferResend()
         peerClient?.close()
         peerClient = nil
+        // A cancelled negotiation's pending connected-continuation must not
+        // fire on a later socket reconnect (it would resurrect the dead
+        // attempt — duplicate link/offer racing the live one).
+        onSocketConnected = nil
         // Drop this negotiation's socket listeners (candidates + the one-shot
         // description waiters) so a stray late frame can't hit a destroyed
         // peer, and the next negotiation on the SAME socket starts clean.
@@ -452,7 +487,7 @@ public class SignalClient {
         socket.on(clientEvent: .connect) { _, _ in
             Logger.debug("Socket.IO connected")
             self.onSignalingState?("connected")
-            self.onSocketConnected?()
+            self.consumeSocketConnected()
             self.processEventQueue()
         }
 
