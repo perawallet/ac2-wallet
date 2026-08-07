@@ -260,6 +260,17 @@ export interface CreateNativeAc2TransportOptions {
    * caller can attach the connectivity monitor (as with the JS path).
    */
   onPeerConnection?: (peerConnection: NativePeerConnection) => void;
+  /**
+   * How this attempt must reach the peer, as decided by the connection
+   * machine. `attach` (the default, and what a hydrating relaunch wants) may
+   * re-bind to a live native peer the background service kept alive; `connect`
+   * REQUIRES a fresh negotiation and force-cancels any peer the service still
+   * holds for this `requestId`. Honouring the mode matters because a peer that
+   * survived a long background can be a zombie whose control channel still
+   * reads OPEN — silently attaching to it is exactly the "reconnect that never
+   * reconnects" the machine asked us to escape.
+   */
+  mode?: 'connect' | 'attach';
   /** Optional abort signal; cancels the in-flight native negotiation. */
   signal?: AbortSignal;
   /** Optional presence listener for server-broadcast device counts. */
@@ -461,6 +472,17 @@ export function isSnapshotChannelOpen(
 }
 
 /**
+ * Whether a {@link getNativeConnectionState} snapshot describes an ICE session
+ * nothing can travel through any more. `disconnected` is deliberately absent:
+ * ICE recovers from it on its own, and treating it as dead would tear down
+ * connections that are merely on a flaky network.
+ */
+function isDeadIce(snapshot: NativeConnectionStateSnapshot): boolean {
+  const state = snapshot.iceConnectionState?.toLowerCase();
+  return state === 'failed' || state === 'closed';
+}
+
+/**
  * Extract the cached last `presence` broadcast from a
  * {@link getNativeConnectionState} snapshot, normalized and scoped to
  * `requestId`. Returns `null` when the native side has no cached presence
@@ -535,6 +557,7 @@ export async function createNativeAc2Transport(
     requestId,
     onSideChannel,
     onPeerConnection,
+    mode = 'attach',
     signal,
     onPresence,
     onLinkError,
@@ -629,7 +652,18 @@ export async function createNativeAc2Transport(
     // as already open (hydration). No SDP/ICE renegotiation, so the live p2p
     // connection is never torn down.
     const existing = native.getConnectionState();
-    if (existing.connected && existing.requestId === requestId) {
+    const holdsPeer = existing.connected && existing.requestId === requestId;
+    // Only hydrate off a peer that is BOTH the one the machine wants and
+    // demonstrably usable: the control channel open and ICE not failed/closed.
+    // A snapshot that merely says `connected` is not enough — the native side
+    // reports the last state it saw, which after a long background can describe
+    // a peer nothing can travel through any more.
+    if (
+      holdsPeer &&
+      mode !== 'connect' &&
+      isSnapshotChannelOpen(existing) &&
+      !isDeadIce(existing)
+    ) {
       await native.attach({
         dataChannels,
         notifications,
@@ -640,6 +674,17 @@ export async function createNativeAc2Transport(
       await waitForChannelOpen(controlChannel as any, CHANNEL_OPEN_TIMEOUT_MS, signal);
       onPeerConnection?.(peerConnection);
       return { datachannel: controlChannel, channels, peerConnection, disposePresence, dispose };
+    }
+
+    // A peer the service still holds for this `requestId` — but which we just
+    // refused to attach to — must go before a fresh offer: leaving it in place
+    // keeps the ICE session to the agent alive, so the agent ignores the new
+    // offer and the reconnect silently goes nowhere.
+    if (holdsPeer) {
+      await native.cancel().catch(() => {
+        /* best-effort; the fresh negotiation supersedes any lingering peer */
+      });
+      if (signal?.aborted) throw makeAbortError();
     }
 
     // Race the native negotiation against the abort signal; on abort, ask the

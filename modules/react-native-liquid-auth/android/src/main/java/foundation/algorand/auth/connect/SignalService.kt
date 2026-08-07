@@ -381,12 +381,29 @@ class SignalService : Service() {
      * connection exists with negotiated channels, its ICE connection state, the
      * `requestId` it is bound to, and each negotiated channel's current state
      * keyed by label. Read-only: this never mutates the connection.
+     *
+     * `connected` is deliberately STRICT: a peer object with a channel map is
+     * not proof that anything can travel over it. After a long doze/background
+     * the peer can survive as a zombie — the channel map still lists OPEN
+     * channels while ICE has moved to DISCONNECTED/FAILED — and a consumer that
+     * believes such a snapshot re-attaches to a dead link instead of
+     * renegotiating (the "stuck reconnecting" class of bug). So we require ICE
+     * to be genuinely usable (CONNECTED/COMPLETED) AND at least one negotiated
+     * data channel to be OPEN. The raw `iceConnectionState` / `channels` fields
+     * are reported unchanged for diagnostics, so a consumer can still see the
+     * detail behind the verdict.
      */
     fun getConnectionState(): Map<String, Any?> {
         val peer = signalClient?.peerClient
         val channels = peer?.dataChannels?.mapValues { it.value.state().toString() } ?: emptyMap()
+        val iceState = peer?.peerConnection?.iceConnectionState()
+        val iceUsable = iceState === PeerConnection.IceConnectionState.CONNECTED ||
+            iceState === PeerConnection.IceConnectionState.COMPLETED
+        val anyChannelOpen = peer?.dataChannels?.values?.any {
+            it.state() === DataChannel.State.OPEN
+        } == true
         return mapOf(
-            "connected" to (peer != null && peer.dataChannels.isNotEmpty()),
+            "connected" to (peer != null && iceUsable && anyChannelOpen),
             "requestId" to connectedRequestId,
             "iceConnectionState" to peer?.peerConnection?.iceConnectionState()?.toString(),
             "channels" to channels,

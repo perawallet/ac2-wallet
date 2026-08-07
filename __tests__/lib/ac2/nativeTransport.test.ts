@@ -241,6 +241,67 @@ describe('createNativeAc2Transport', () => {
     await promise;
   });
 
+  it("never attaches in 'connect' mode: the held peer is cancelled and renegotiated", async () => {
+    const fake = createFakeNative();
+    // The service still reports a perfectly healthy-looking peer for this
+    // requestId — which is exactly the zombie the machine is recovering from
+    // when it asks for `connect`. Attaching to it would silently reinstate the
+    // dead link instead of forcing a fresh negotiation.
+    fake.setConnectionState({
+      connected: true,
+      requestId: 'req-1',
+      iceConnectionState: 'CONNECTED',
+      channels: { 'ac2-v1': 'OPEN', 'ac2-stream': 'OPEN', 'ac2-heartbeat': 'OPEN' },
+    });
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      mode: 'connect',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    expect(fake.api.attach).not.toHaveBeenCalled();
+    // The lingering peer is force-cancelled first: left in place it keeps the
+    // ICE session to the agent alive, so the agent ignores the fresh offer.
+    expect(fake.api.cancel).toHaveBeenCalledTimes(1);
+    expect(fake.api.connect).toHaveBeenCalledTimes(1);
+
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    fake.resolveConnect();
+    await promise;
+  });
+
+  it.each([
+    ['the control channel is not open', 'CONNECTED', { 'ac2-v1': 'CLOSED' }],
+    ['ICE has failed', 'FAILED', { 'ac2-v1': 'OPEN' }],
+  ])('renegotiates in attach mode when %s', async (_case, ice, channels) => {
+    const fake = createFakeNative();
+    fake.setConnectionState({
+      connected: true,
+      requestId: 'req-1',
+      iceConnectionState: ice,
+      channels,
+    });
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    expect(fake.api.attach).not.toHaveBeenCalled();
+    expect(fake.api.connect).toHaveBeenCalledTimes(1);
+
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    fake.resolveConnect();
+    await promise;
+  });
+
   it('routes native messages to the matching channel shim', async () => {
     const fake = createFakeNative();
     const streamFrames: string[] = [];
