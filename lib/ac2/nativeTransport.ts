@@ -676,16 +676,19 @@ export async function createNativeAc2Transport(
       return { datachannel: controlChannel, channels, peerConnection, disposePresence, dispose };
     }
 
-    // A peer the service still holds for this `requestId` — but which we just
-    // refused to attach to — must go before a fresh offer: leaving it in place
-    // keeps the ICE session to the agent alive, so the agent ignores the new
-    // offer and the reconnect silently goes nowhere.
-    if (holdsPeer) {
-      await native.cancel().catch(() => {
-        /* best-effort; the fresh negotiation supersedes any lingering peer */
-      });
-      if (signal?.aborted) throw makeAbortError();
-    }
+    // ANY peer the service still holds — usable-looking or zombie — must go
+    // before a fresh offer: leaving it in place keeps its ICE session alive,
+    // so the agent ignores the new offer and the reconnect silently goes
+    // nowhere, while its dying transitions later fire label-keyed events into
+    // THIS session's shims. Deliberately unconditional (not gated on the
+    // snapshot's `connected`): the strict native snapshot reports ICE
+    // DISCONNECTED/FAILED/CLOSED peers as not-connected even while the service
+    // still holds the peer object — exactly the zombies that most need
+    // destroying. `cancel()` is a no-op when no peer is held.
+    await native.cancel().catch(() => {
+      /* best-effort; the fresh negotiation supersedes any lingering peer */
+    });
+    if (signal?.aborted) throw makeAbortError();
 
     // Race the native negotiation against the abort signal; on abort, ask the
     // native service to cancel the in-flight negotiation.

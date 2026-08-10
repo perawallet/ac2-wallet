@@ -239,6 +239,15 @@ class SignalClient(
                 // listeners a previous (cancelled/failed) negotiation left
                 // behind before re-registering this run's own.
                 detachNegotiationListeners()
+                // Destroy any peer a previous negotiation left behind BEFORE
+                // replacing it (mirrors the iOS SignalClient). Overwriting the
+                // reference alone leaks the old PeerApi (its PeerConnectionFactory
+                // and native threads are never reclaimed) and leaves its
+                // observers attached, so the dying peer's label-keyed state
+                // events would be mis-delivered into THIS negotiation's
+                // channels. destroy() detaches observers first, so the old peer
+                // goes silent (see PeerApi.destroy).
+                peerClient?.destroy()
                 peerClient = PeerApi(context)
                 peerClient?.onConnectionStateChange = onConnectionStateChange
                 // Note: the peer continuation is resumed at most once via
