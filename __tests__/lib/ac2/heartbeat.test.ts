@@ -98,9 +98,7 @@ describe('sendHeartbeatPing', () => {
 
       expect(sendHeartbeatPing(channel as any, WARN_BYTES)).toBe(true);
       expect(channel.send).toHaveBeenCalledWith('ping');
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('Heartbeat send buffer high'),
-      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Heartbeat send buffer high'));
     } finally {
       warn.mockRestore();
     }
