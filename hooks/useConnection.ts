@@ -30,6 +30,7 @@ import {
   selectConnectionNoticeForRequest,
   sendConversationClose,
   sendConversationOpen,
+  sendHeartbeatPing,
   setNativeActive,
   startNativeService,
   stopNativeService,
@@ -1239,28 +1240,16 @@ export function useConnection(
   const startServiceRef = useRef(startService);
   startServiceRef.current = startService;
 
-  // Put one keepalive `ping` on the wire, preferring the dedicated
-  // `ac2-heartbeat` channel and falling back to `ac2-v1` (which has no pong
-  // contract — see the monitor's `timeoutMs`). Returns false when there is no
-  // open channel to send on; throws whatever the channel throws, so callers can
-  // treat a failed send as a dead transport. Shared by the heartbeat watchdog
-  // and the resume liveness probe so both speak the same wire language.
-  const sendKeepalivePing = useCallback((): boolean => {
-    const hb = heartbeatChannelRef.current;
-    const dc = dataChannelRef.current;
-    const channel =
-      hb && hb.readyState === 'open' ? hb : dc && dc.readyState === 'open' ? dc : null;
-    if (!channel) return false;
-    // A growing send buffer means frames aren't draining to the peer — an early
-    // signal the transport is stalling before ICE even flips state.
-    if (channel.bufferedAmount > HEARTBEAT_BUFFERED_WARN_BYTES) {
-      console.warn(
-        `Heartbeat send buffer high (${channel.bufferedAmount} bytes) — transport may be stalling`,
-      );
-    }
-    channel.send(channel === hb ? 'ping' : '');
-    return true;
-  }, []);
+  // Put one keepalive `ping` on the wire — on the dedicated `ac2-heartbeat`
+  // channel ONLY (see `sendHeartbeatPing`: `ac2-v1` has no pong contract, so
+  // a ping there could never prove liveness). Returns false when the
+  // heartbeat channel is not open — itself evidence the transport is broken
+  // when the snapshot claims connected. Shared by the heartbeat watchdog and
+  // the resume liveness probe so both speak the same wire language.
+  const sendKeepalivePing = useCallback(
+    (): boolean => sendHeartbeatPing(heartbeatChannelRef.current, HEARTBEAT_BUFFERED_WARN_BYTES),
+    [],
+  );
   const sendKeepalivePingRef = useRef(sendKeepalivePing);
   sendKeepalivePingRef.current = sendKeepalivePing;
 
@@ -1493,14 +1482,14 @@ export function useConnection(
                   },
                 })
               : null;
-            // Start the liveness watchdog. It pings on `ac2-heartbeat` and
+            // Start the liveness watchdog. It pings on `ac2-heartbeat` — the
+            // sole keepalive path (both sides always negotiate it) — and
             // fails if the peer stops responding (a silent stall) even while
-            // ICE still reads "connected". Over the `ac2-v1` fallback there is
-            // no pong contract, so run keepalives without a timeout.
+            // ICE still reads "connected".
             if (heartbeatMonitorRef.current) heartbeatMonitorRef.current.stop();
             heartbeatMonitorRef.current = createHeartbeatMonitor({
               intervalMs: HEARTBEAT_INTERVAL_MS,
-              timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
+              timeoutMs: HEARTBEAT_TIMEOUT_MS,
               send: () => {
                 try {
                   sendKeepalivePingRef.current();

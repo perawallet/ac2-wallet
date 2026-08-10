@@ -1,7 +1,8 @@
-import { attachHeartbeatChannel } from '@/lib/ac2/heartbeat';
+import { attachHeartbeatChannel, sendHeartbeatPing } from '@/lib/ac2/heartbeat';
 
 type FakeHeartbeatChannel = {
   readyState: string;
+  bufferedAmount: number;
   onmessage: ((event: { data: unknown }) => void) | null;
   onopen: (() => void) | null;
   onclose: (() => void) | null;
@@ -11,6 +12,7 @@ type FakeHeartbeatChannel = {
 function createFakeChannel(readyState = 'open'): FakeHeartbeatChannel {
   return {
     readyState,
+    bufferedAmount: 0,
     onmessage: null,
     onopen: null,
     onclose: null,
@@ -61,5 +63,55 @@ describe('attachHeartbeatChannel', () => {
 
     expect(onInbound).toHaveBeenCalledTimes(1);
     expect(channel.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('sendHeartbeatPing', () => {
+  const WARN_BYTES = 256 * 1024;
+
+  it('sends a ping on an open heartbeat channel', () => {
+    const channel = createFakeChannel('open');
+
+    expect(sendHeartbeatPing(channel as any, WARN_BYTES)).toBe(true);
+    expect(channel.send).toHaveBeenCalledWith('ping');
+  });
+
+  it('reports unsendable when there is no heartbeat channel at all', () => {
+    // The heartbeat channel is the SOLE keepalive path: there is no `ac2-v1`
+    // fallback (it has no pong contract, so a ping there could never prove
+    // liveness — a probe over it would hard-reset a healthy quiet session).
+    expect(sendHeartbeatPing(null, WARN_BYTES)).toBe(false);
+  });
+
+  it('reports unsendable (and sends nothing) when the heartbeat channel is not open', () => {
+    const channel = createFakeChannel('closed');
+
+    expect(sendHeartbeatPing(channel as any, WARN_BYTES)).toBe(false);
+    expect(channel.send).not.toHaveBeenCalled();
+  });
+
+  it('still pings (with a diagnostic) when the send buffer is backing up', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const channel = createFakeChannel('open');
+      channel.bufferedAmount = WARN_BYTES + 1;
+
+      expect(sendHeartbeatPing(channel as any, WARN_BYTES)).toBe(true);
+      expect(channel.send).toHaveBeenCalledWith('ping');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Heartbeat send buffer high'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('propagates a send failure so callers can treat the transport as dead', () => {
+    const channel = createFakeChannel('open');
+    channel.send.mockImplementation(() => {
+      throw new Error('send failed');
+    });
+
+    expect(() => sendHeartbeatPing(channel as any, WARN_BYTES)).toThrow('send failed');
   });
 });

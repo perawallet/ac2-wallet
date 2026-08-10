@@ -14,7 +14,7 @@ export {
   sendConversationOpen,
 } from './conversations';
 export type { ConversationControllerOptions } from './conversations';
-export { attachHeartbeatChannel } from './heartbeat';
+export { attachHeartbeatChannel, sendHeartbeatPing } from './heartbeat';
 export type { HeartbeatChannelOptions } from './heartbeat';
 export { createHeartbeatMonitor } from './heartbeatMonitor';
 export type { HeartbeatMonitor, HeartbeatMonitorOptions } from './heartbeatMonitor';
