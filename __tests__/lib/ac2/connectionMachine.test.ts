@@ -9,6 +9,7 @@
 import {
   BACKOFF_BASE_MS,
   BACKOFF_MAX_MS,
+  LIVENESS_PROBE_TIMEOUT_MS,
   NEGOTIATING_DEADLINE_MS,
   STARTING_DEADLINE_MS,
   backoffDelayMs,
@@ -171,8 +172,10 @@ describe('connectionMachine', () => {
       const fresh = expectPhase(result.state, 'negotiating');
       expect(fresh.mode).toBe('connect');
       expect(fresh.attemptId).toBeGreaterThan(staleAttemptId);
+      // First miss: the peer is cancelled but the signaling service is kept,
+      // so a genuine short blip is cheap to retry.
       expect(effectsOfType(result.effects, 'teardown')).toEqual([
-        { type: 'teardown', preserveNativePeer: false },
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
       ]);
       expect(effectsOfType(result.effects, 'negotiate')).toEqual([
         { type: 'negotiate', attemptId: fresh.attemptId, mode: 'connect' },
@@ -209,7 +212,7 @@ describe('connectionMachine', () => {
       // The stale in-flight attempt is torn down WITHOUT killing the live
       // native peer we are about to attach to.
       expect(effectsOfType(result.effects, 'teardown')).toEqual([
-        { type: 'teardown', preserveNativePeer: true },
+        { type: 'teardown', preserveNativePeer: true, dropSignaling: false },
       ]);
     });
 
@@ -226,9 +229,22 @@ describe('connectionMachine', () => {
       const backoff = expectPhase(dead.state, 'backoff');
       expect(backoff.delayMs).toBe(BACKOFF_BASE_MS);
       expect(effectsOfType(dead.effects, 'scheduleRetry')).toHaveLength(1);
+      // The native side is PROVEN gone, so recovery drops signaling too: the
+      // agent must see presence fall to 1 before it re-arms its offer listener.
+      expect(effectsOfType(dead.effects, 'teardown')).toEqual([
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: true },
+      ]);
+      expect(backoff.serviceUp).toBe(false);
+      expect(backoff.socketReady).toBe(false);
+      expect(backoff.peerPresent).toBeNull();
+      // …and the retry therefore restarts the service instead of negotiating
+      // over the one that is being dropped.
+      const retry = transition(backoff, { type: 'RETRY_DUE' });
+      expectPhase(retry.state, 'starting');
+      expect(effectsOfType(retry.effects, 'startService')).toHaveLength(1);
     });
 
-    it('keeps a healthy connection untouched when the snapshot is alive', () => {
+    it('probes (rather than believes) a snapshot that claims the channel is still open', () => {
       const connected = bootToConnected();
       const resumed = run([{ type: 'APP_BACKGROUND' }, { type: 'APP_FOREGROUND' }], connected);
       const result = transition(resumed.state, {
@@ -236,8 +252,96 @@ describe('connectionMachine', () => {
         alive: true,
         channelOpen: true,
       });
+      // A zombie DataChannel reads OPEN, so the snapshot alone proves nothing:
+      // the phase is untouched but a live probe is demanded.
       expectPhase(result.state, 'connected');
-      expect(result.effects).toEqual([]);
+      expect(result.effects).toEqual([{ type: 'probeLiveness', ms: LIVENESS_PROBE_TIMEOUT_MS }]);
+    });
+
+    it('hard-resets when the probe reports the transport is dead after all', () => {
+      const connected = bootToConnected();
+      const result = transition(connected, {
+        type: 'CONNECTION_LOST',
+        reason: 'liveness probe timed out',
+        confirmedDead: true,
+      });
+      const backoff = expectPhase(result.state, 'backoff');
+      expect(backoff.reason).toBe('liveness probe timed out');
+      expect(effectsOfType(result.effects, 'teardown')).toEqual([
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: true },
+      ]);
+    });
+  });
+
+  describe('hard recovery on a confirmed-dead transport', () => {
+    it.each(['heartbeat timeout', 'ice failed', 'stale after background', 'send failed'])(
+      'drops signaling on the FIRST loss when "%s" proves the peer is dead',
+      (reason) => {
+        const connected = bootToConnected();
+        const result = transition(connected, {
+          type: 'CONNECTION_LOST',
+          reason,
+          confirmedDead: true,
+        });
+        const backoff = expectPhase(result.state, 'backoff');
+        // Presence 2→1→2: only a dropped socket makes the agent tear down and
+        // re-arm its offer listener, so the next attempt can actually land.
+        expect(effectsOfType(result.effects, 'teardown')).toEqual([
+          { type: 'teardown', preserveNativePeer: false, dropSignaling: true },
+        ]);
+        expect(backoff.serviceUp).toBe(false);
+        expect(
+          expectPhase(transition(backoff, { type: 'RETRY_DUE' }).state, 'starting'),
+        ).toBeTruthy();
+      },
+    );
+
+    it('keeps an ordinary blip on the soft path, then escalates once it has failed', () => {
+      const connected = bootToConnected();
+      // No `confirmedDead`: this could be a transient hiccup, so only the peer
+      // is cancelled and the live service is reused.
+      const soft = transition(connected, {
+        type: 'CONNECTION_LOST',
+        reason: 'data channel closed',
+      });
+      const softBackoff = expectPhase(soft.state, 'backoff');
+      expect(effectsOfType(soft.effects, 'teardown')).toEqual([
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
+      ]);
+      expect(softBackoff.serviceUp).toBe(true);
+
+      // The soft retry runs… and fails again. One failed soft attempt is
+      // enough evidence that re-offering over the same socket is not working.
+      const retry = expectPhase(
+        transition(softBackoff, { type: 'RETRY_DUE' }).state,
+        'negotiating',
+      );
+      const escalated = transition(retry, {
+        type: 'ATTEMPT_FAILED',
+        attemptId: retry.attemptId,
+        reason: 'boom',
+      });
+      expect(effectsOfType(escalated.effects, 'teardown')).toEqual([
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: true },
+      ]);
+    });
+
+    it('does not drop signaling for a terminal failure or an idle close', () => {
+      const negotiating = bootToNegotiating();
+      const full = transition(negotiating, {
+        type: 'ATTEMPT_FAILED',
+        attemptId: negotiating.attemptId,
+        reason: 'session full',
+        terminal: 'session-full',
+      });
+      expect(effectsOfType(full.effects, 'teardown')).toEqual([
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
+      ]);
+
+      const idle = transition(bootToConnected(), { type: 'SESSION_IDLE' });
+      expect(effectsOfType(idle.effects, 'teardown')).toEqual([
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
+      ]);
     });
   });
 
@@ -282,10 +386,24 @@ describe('connectionMachine', () => {
         expect(effectsOfType(failure.effects, 'teardown')).toHaveLength(1);
 
         const retry = transition(backoff, { type: 'RETRY_DUE' });
-        const next = expectPhase(retry.state, 'negotiating');
+        if (index === 0) {
+          // First failure: soft recovery, so the retry negotiates straight over
+          // the still-live service.
+          const next = expectPhase(retry.state, 'negotiating');
+          expect(next.attemptId).toBeGreaterThan(negotiating.attemptId);
+          expect(effectsOfType(retry.effects, 'negotiate')).toHaveLength(1);
+          state = retry.state;
+          continue;
+        }
+        // From the second consecutive failure on, recovery is the hard one: the
+        // signaling service was dropped, so the retry walks back through
+        // `starting` — and the delay schedule keeps counting up regardless.
+        expectPhase(retry.state, 'starting');
+        expect(effectsOfType(retry.effects, 'startService')).toHaveLength(1);
+        const back = run([{ type: 'SERVICE_READY' }, { type: 'SOCKET_UP' }], retry.state);
+        const next = expectPhase(back.state, 'negotiating');
         expect(next.attemptId).toBeGreaterThan(negotiating.attemptId);
-        expect(effectsOfType(retry.effects, 'negotiate')).toHaveLength(1);
-        state = retry.state;
+        state = back.state;
       }
     });
 
@@ -449,7 +567,15 @@ describe('connectionMachine', () => {
         alive: false,
         channelOpen: false,
       });
-      const fresh = expectPhase(result.state, 'negotiating');
+      // A soft attempt has already failed once, so resuming onto a dead native
+      // side takes the hard path: the signaling service is dropped and brought
+      // back up (presence 2→1→2) instead of re-offering over the old socket.
+      expectPhase(result.state, 'starting');
+      expect(effectsOfType(result.effects, 'teardown')).toEqual([
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: true },
+      ]);
+      const restarted = run([{ type: 'SERVICE_READY' }, { type: 'SOCKET_UP' }], result.state);
+      const fresh = expectPhase(restarted.state, 'negotiating');
       expect(fresh.mode).toBe('connect');
 
       // The snapshot restart resets the delay schedule back to the base.
@@ -533,7 +659,7 @@ describe('connectionMachine', () => {
         const stopped = transition(state, { type: 'STOP' });
         expectPhase(stopped.state, 'stopped');
         expect(effectsOfType(stopped.effects, 'teardown')).toEqual([
-          { type: 'teardown', preserveNativePeer: false },
+          { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
         ]);
         expect(effectsOfType(stopped.effects, 'cancelTimers')).toHaveLength(1);
 
@@ -691,7 +817,7 @@ describe('connectionMachine', () => {
       expect(failed.kind).toBe('idle');
       expect(failed.reason).toBe('Session idle');
       expect(effectsOfType(result.effects, 'teardown')).toEqual([
-        { type: 'teardown', preserveNativePeer: false },
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
       ]);
       expect(deriveUiState(result.state)).toMatchObject({
         isConnected: false,

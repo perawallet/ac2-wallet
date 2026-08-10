@@ -166,9 +166,11 @@ describe('createNativeAc2Transport', () => {
 
     await flush();
 
-    // The live connection is re-attached, not renegotiated.
+    // The live connection is re-attached, not renegotiated — and the healthy
+    // peer is never cancelled out from under the attach.
     expect(fake.api.attach).toHaveBeenCalledTimes(1);
     expect(fake.api.connect).not.toHaveBeenCalled();
+    expect(fake.api.cancel).not.toHaveBeenCalled();
 
     // attach() re-emits the current channel state so the control channel opens.
     fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
@@ -239,6 +241,164 @@ describe('createNativeAc2Transport', () => {
     fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
     fake.resolveConnect();
     await promise;
+  });
+
+  it("never attaches in 'connect' mode: the held peer is cancelled and renegotiated", async () => {
+    const fake = createFakeNative();
+    // The service still reports a perfectly healthy-looking peer for this
+    // requestId — which is exactly the zombie the machine is recovering from
+    // when it asks for `connect`. Attaching to it would silently reinstate the
+    // dead link instead of forcing a fresh negotiation.
+    fake.setConnectionState({
+      connected: true,
+      requestId: 'req-1',
+      iceConnectionState: 'CONNECTED',
+      channels: { 'ac2-v1': 'OPEN', 'ac2-stream': 'OPEN', 'ac2-heartbeat': 'OPEN' },
+    });
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      mode: 'connect',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    expect(fake.api.attach).not.toHaveBeenCalled();
+    // The lingering peer is force-cancelled first: left in place it keeps the
+    // ICE session to the agent alive, so the agent ignores the fresh offer.
+    expect(fake.api.cancel).toHaveBeenCalledTimes(1);
+    expect(fake.api.connect).toHaveBeenCalledTimes(1);
+
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    fake.resolveConnect();
+    await promise;
+  });
+
+  it.each([
+    ['the control channel is not open', 'CONNECTED', { 'ac2-v1': 'CLOSED' }],
+    ['ICE has failed', 'FAILED', { 'ac2-v1': 'OPEN' }],
+  ])('renegotiates in attach mode when %s', async (_case, ice, channels) => {
+    const fake = createFakeNative();
+    fake.setConnectionState({
+      connected: true,
+      requestId: 'req-1',
+      iceConnectionState: ice,
+      channels,
+    });
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    expect(fake.api.attach).not.toHaveBeenCalled();
+    expect(fake.api.connect).toHaveBeenCalledTimes(1);
+
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    fake.resolveConnect();
+    await promise;
+  });
+
+  it('cancels a zombie peer the strict snapshot rejects (connected: false, dead ICE) before the fresh offer', async () => {
+    const fake = createFakeNative();
+    // The stricter native `connected` turns false as soon as ICE dies — even
+    // while the service still holds the peer object. That zombie must still
+    // be destroyed before a fresh negotiation: skipping the cancel leaks the
+    // old peer on Android and lets its dying transitions fire label-keyed
+    // events into the NEW session's shims.
+    fake.setConnectionState({
+      connected: false,
+      requestId: 'req-1',
+      iceConnectionState: 'FAILED',
+      channels: { 'ac2-v1': 'OPEN' },
+    });
+    let resolveCancel: () => void = () => {};
+    (fake.api.cancel as jest.Mock).mockImplementation(
+      () =>
+        new Promise<void>((res) => {
+          resolveCancel = res;
+        }),
+    );
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    // The cancel is AWAITED: no fresh offer until the native teardown settles.
+    expect(fake.api.cancel).toHaveBeenCalledTimes(1);
+    expect(fake.api.attach).not.toHaveBeenCalled();
+    expect(fake.api.connect).not.toHaveBeenCalled();
+
+    resolveCancel();
+    await flush();
+    expect(fake.api.connect).toHaveBeenCalledTimes(1);
+
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    fake.resolveConnect();
+    await promise;
+  });
+
+  it('still cancels (a native no-op) when the service holds no peer at all', async () => {
+    const fake = createFakeNative();
+    // Default snapshot: connected false, no requestId, no channels — nothing
+    // to destroy, but the unconditional cancel must not block the connect.
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+    });
+
+    await flush();
+    expect(fake.api.cancel).toHaveBeenCalledTimes(1);
+    expect(fake.api.connect).toHaveBeenCalledTimes(1);
+
+    fake.emitState(AC2_CONTROL_CHANNEL, 'OPEN');
+    fake.resolveConnect();
+    await promise;
+  });
+
+  it('does not send a fresh offer when aborted while the zombie cancel is in flight', async () => {
+    const fake = createFakeNative();
+    fake.setConnectionState({
+      connected: false,
+      requestId: 'req-1',
+      iceConnectionState: 'FAILED',
+      channels: {},
+    });
+    const controller = new AbortController();
+    let resolveCancel: () => void = () => {};
+    (fake.api.cancel as jest.Mock).mockImplementation(
+      () =>
+        new Promise<void>((res) => {
+          resolveCancel = res;
+        }),
+    );
+
+    const promise = createNativeAc2Transport({
+      url: 'https://signal.example',
+      requestId: 'req-1',
+      native: fake.api,
+      onSideChannel: () => {},
+      signal: controller.signal,
+    });
+    const rejection = expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+
+    await flush();
+    controller.abort();
+    resolveCancel();
+
+    await rejection;
+    expect(fake.api.connect).not.toHaveBeenCalled();
   });
 
   it('routes native messages to the matching channel shim', async () => {

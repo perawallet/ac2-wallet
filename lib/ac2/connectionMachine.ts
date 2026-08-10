@@ -22,6 +22,11 @@
  *   attach to a surviving native peer, or abandon any stale in-flight attempt
  *   and start a fresh connect immediately. This is the fix for the
  *   stuck-"Connecting" bug on suspend → resume.
+ * - **Hard recovery.** A p2p failure that is PROVEN dead (heartbeat timeout,
+ *   ICE failed/closed, a stale-after-background close, or a snapshot reporting
+ *   the native peer gone) drops the signaling socket too, not just the peer —
+ *   see {@link shouldHardReset} for why the presence 2→1→2 sequence is the
+ *   only recovery the agent actually reacts to.
  * - **Retry policy.** Exponential backoff (2s → 4s → 8s → 16s → 30s cap),
  *   unlimited attempts while foregrounded, paused while backgrounded. A gate
  *   REOPENING mid-backoff (peer returns to presence, signaling socket
@@ -44,6 +49,13 @@ export const NEGOTIATING_DEADLINE_MS = 30_000;
 export const BACKOFF_BASE_MS = 2_000;
 /** Retry delay ceiling. */
 export const BACKOFF_MAX_MS = 30_000;
+/**
+ * How long a resume liveness probe waits for the peer to answer. Short on
+ * purpose: the app is in the user's hands at this point, so a zombie transport
+ * must be escalated to a hard reset in seconds rather than after a full
+ * heartbeat window.
+ */
+export const LIVENESS_PROBE_TIMEOUT_MS = 8_000;
 
 /** Terminal failure classification (drives copy + whether retry is offered). */
 export type FailureKind = 'session-full' | 'auth' | 'service' | 'idle' | 'generic';
@@ -109,7 +121,17 @@ export type ConnectionEvent =
   | { type: 'ATTEMPT_OK'; attemptId: number }
   | { type: 'ATTEMPT_FAILED'; attemptId: number; reason: string; terminal?: FailureKind }
   | { type: 'DEADLINE'; attemptId: number }
-  | { type: 'CONNECTION_LOST'; reason: string }
+  | {
+      type: 'CONNECTION_LOST';
+      reason: string;
+      /**
+       * The transport is PROVEN dead (heartbeat timeout, ICE failed/closed,
+       * a stale-after-background close, a failed resume liveness probe) as
+       * opposed to "an attempt did not work out". Escalates recovery to the
+       * hard path that also drops the signaling socket.
+       */
+      confirmedDead?: boolean;
+    }
   | { type: 'SESSION_IDLE' }
   | { type: 'RETRY_DUE' }
   | { type: 'APP_BACKGROUND' }
@@ -123,8 +145,23 @@ export type ConnectionEffect =
   | { type: 'armDeadline'; attemptId: number; ms: number }
   | { type: 'scheduleRetry'; delayMs: number }
   | { type: 'cancelTimers' }
-  | { type: 'teardown'; preserveNativePeer: boolean }
-  | { type: 'queryNativeState' };
+  | {
+      type: 'teardown';
+      preserveNativePeer: boolean;
+      /**
+       * Also drop the persistent signaling service (socket + native peer) and
+       * bring it back from scratch, instead of cancelling the peer alone. See
+       * {@link shouldHardReset}.
+       */
+      dropSignaling: boolean;
+    }
+  | { type: 'queryNativeState' }
+  /**
+   * Ping the peer and require real inbound traffic within `ms`. Emitted when a
+   * native snapshot claims the connection survived a background: a zombie
+   * DataChannel still reads OPEN, so only an answered ping proves liveness.
+   */
+  | { type: 'probeLiveness'; ms: number };
 
 export interface TransitionResult {
   state: ConnectionState;
@@ -254,21 +291,53 @@ function beginNegotiation(ctx: ConnectionContext, mode: NegotiationMode): Transi
 }
 
 /**
+ * Whether a failure must escalate to the HARD recovery path — the one that
+ * drops the signaling socket instead of only cancelling the p2p peer.
+ *
+ * Why this exists (the "stuck on Reconnecting… forever" bug): the native
+ * foreground service keeps the signaling socket registered in the `requestId`
+ * room across a long background — it even answers the agent's heartbeat pings
+ * with pongs — while the WebRTC data path is a zombie. The soft recovery
+ * (cancel the peer, keep the socket) therefore leaves the agent seeing TWO
+ * devices in presence: it never tears its side down, never re-arms its offer
+ * listener, and every fresh offer the wallet sends goes unanswered until the
+ * backoff pins at 30s and the UI reads "Reconnecting…" forever. Switching chat
+ * sessions fixed it only because the unmount ran a full service stop: the
+ * socket left the room, the agent saw presence 2→1, tore down and re-armed,
+ * and the remount produced 1→2 and a fresh link. Reproducing that 2→1→2
+ * sequence WITHOUT unmounting is the whole point of the hard path.
+ *
+ * It is deliberately NOT the default: a genuine short blip (one negotiation
+ * that didn't land) is cheaper and less disruptive to retry against the live
+ * service. We escalate only when the transport is proven dead, or once the
+ * soft retry has already failed at least once against an unchanged world.
+ */
+function shouldHardReset(ctx: ConnectionContext, confirmedDead: boolean): boolean {
+  return confirmedDead || ctx.retryCount >= 1;
+}
+
+/**
  * Enters `backoff` after a failure. Increments the consecutive-failure count,
  * schedules the retry while foregrounded, or enters paused when backgrounded
  * (the foreground snapshot reconcile takes over from there).
+ *
+ * With `dropSignaling` the teardown is the hard one: the whole native service
+ * goes away, so the gates are reset to "nothing is up" and the next attempt
+ * necessarily walks back through `starting` (auth + `startService`) rather
+ * than negotiating over a service that is being torn down.
  */
 function enterBackoff(
   ctx: ConnectionContext,
   reason: string,
-  options?: { teardown?: boolean },
+  options?: { teardown?: boolean; dropSignaling?: boolean },
 ): TransitionResult {
   const attempt = ctx.retryCount + 1;
   const delayMs = backoffDelayMs(attempt);
   const pausedInBackground = !ctx.foreground;
+  const dropSignaling = !!options?.dropSignaling;
   const effects: ConnectionEffect[] = [{ type: 'cancelTimers' }];
-  if (options?.teardown) {
-    effects.push({ type: 'teardown', preserveNativePeer: false });
+  if (options?.teardown || dropSignaling) {
+    effects.push({ type: 'teardown', preserveNativePeer: false, dropSignaling });
   }
   if (!pausedInBackground) {
     effects.push({ type: 'scheduleRetry', delayMs });
@@ -282,6 +351,7 @@ function enterBackoff(
       reason,
       pausedInBackground,
       retryCount: attempt,
+      ...(dropSignaling ? { serviceUp: false, socketReady: false, peerPresent: null } : null),
     },
     effects,
   };
@@ -321,14 +391,24 @@ function reconcileSnapshot(
   const effects: ConnectionEffect[] = [{ type: 'cancelTimers' }];
   if (event.alive && event.channelOpen) {
     if (options?.teardownStaleAttempt) {
-      effects.push({ type: 'teardown', preserveNativePeer: true });
+      effects.push({ type: 'teardown', preserveNativePeer: true, dropSignaling: false });
     }
     return withEffects(effects, beginNegotiation(fresh, 'attach'));
   }
-  if (options?.teardownStaleAttempt) {
-    effects.push({ type: 'teardown', preserveNativePeer: false });
+  // The native peer is gone. Whether the socket goes with it follows the same
+  // escalation rule as any other failure: a first miss retries against the
+  // live service, a repeat (we are already in backoff, so the soft path has
+  // failed at least once) drops signaling so the agent sees presence 2→1→2.
+  const dropSignaling = shouldHardReset(ctx, false);
+  if (options?.teardownStaleAttempt || dropSignaling) {
+    effects.push({ type: 'teardown', preserveNativePeer: false, dropSignaling });
   }
-  return withEffects(effects, beginFreshAttempt(fresh));
+  return withEffects(
+    effects,
+    beginFreshAttempt(
+      dropSignaling ? { ...fresh, serviceUp: false, socketReady: false, peerPresent: null } : fresh,
+    ),
+  );
 }
 
 function transitionStarting(
@@ -343,9 +423,14 @@ function transitionStarting(
       }
       return { state: { ...ctx, phase: 'waiting' }, effects: [{ type: 'cancelTimers' }] };
     }
-    case 'DEADLINE':
+    case 'DEADLINE': {
       if (event.attemptId !== state.attemptId) return ignore(state);
-      return enterBackoff(contextOf(state), 'service start timed out', { teardown: true });
+      const ctx = contextOf(state);
+      return enterBackoff(ctx, 'service start timed out', {
+        teardown: true,
+        dropSignaling: shouldHardReset(ctx, false),
+      });
+    }
     case 'SOCKET_UP':
       return patch(state, { socketReady: true });
     case 'SOCKET_DOWN':
@@ -428,15 +513,32 @@ function transitionNegotiating(
             reason: event.reason,
             kind: event.terminal,
           },
-          effects: [{ type: 'cancelTimers' }, { type: 'teardown', preserveNativePeer: false }],
+          effects: [
+            { type: 'cancelTimers' },
+            { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
+          ],
         };
       }
-      return enterBackoff(contextOf(state), event.reason, { teardown: true });
+      // A first failed negotiate is an ordinary blip: retry against the live
+      // service. A repeat means the soft path is not getting through, so the
+      // next attempt starts from a dropped socket.
+      const ctx = contextOf(state);
+      return enterBackoff(ctx, event.reason, {
+        teardown: true,
+        dropSignaling: shouldHardReset(ctx, false),
+      });
     }
-    case 'DEADLINE':
+    case 'DEADLINE': {
       if (event.attemptId !== state.attemptId) return ignore(state);
-      return enterBackoff(contextOf(state), 'negotiation deadline expired', { teardown: true });
+      const ctx = contextOf(state);
+      return enterBackoff(ctx, 'negotiation deadline expired', {
+        teardown: true,
+        dropSignaling: shouldHardReset(ctx, false),
+      });
+    }
     case 'SOCKET_DOWN':
+      // The socket dropping on its own already produces the presence change the
+      // hard path exists to force, so this stays the soft recovery.
       return enterBackoff({ ...contextOf(state), socketReady: false }, 'signaling socket lost', {
         teardown: true,
       });
@@ -470,15 +572,28 @@ function transitionConnected(
   event: ConnectionEvent,
 ): TransitionResult {
   switch (event.type) {
-    case 'CONNECTION_LOST':
-      return enterBackoff(contextOf(state), event.reason, { teardown: true });
+    case 'CONNECTION_LOST': {
+      const ctx = contextOf(state);
+      // A proven-dead transport (heartbeat timeout, ICE failed/closed, stale
+      // after background, a failed resume probe) takes the hard path
+      // immediately: cancelling only the peer leaves our socket in the
+      // requestId room, the agent still counts two devices and never re-arms
+      // its offer listener, so every retry we make is shouted into a void.
+      return enterBackoff(ctx, event.reason, {
+        teardown: true,
+        dropSignaling: shouldHardReset(ctx, !!event.confirmedDead),
+      });
+    }
     case 'SESSION_IDLE':
       // A genuinely quiet session is closed for good: auto-retrying would
       // churn connections nobody is using, so recovery is the manual
       // Reconnect bar (USER_RECONNECT).
       return {
         state: { ...contextOf(state), phase: 'failed', reason: 'Session idle', kind: 'idle' },
-        effects: [{ type: 'cancelTimers' }, { type: 'teardown', preserveNativePeer: false }],
+        effects: [
+          { type: 'cancelTimers' },
+          { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
+        ],
       };
     case 'PEER_ABSENT':
       return enterBackoff({ ...contextOf(state), peerPresent: false }, 'peer went offline', {
@@ -502,10 +617,24 @@ function transitionConnected(
         effects: [{ type: 'queryNativeState' }],
       };
     case 'NATIVE_SNAPSHOT':
-      if (event.alive && event.channelOpen) return ignore(state);
-      // Snapshot says the native side died while we were suspended.
+      if (event.alive && event.channelOpen) {
+        // "Open" from a snapshot means MAYBE, never yes: a zombie DataChannel
+        // left behind by a long background still reads OPEN (and the native
+        // service keeps answering the agent's pings), which is exactly how the
+        // wallet used to sit on a dead link believing it was healthy. Demand
+        // an answered ping before staying `connected`; the probe reports a
+        // silent peer back as a confirmed-dead CONNECTION_LOST.
+        return {
+          state,
+          effects: [{ type: 'probeLiveness', ms: LIVENESS_PROBE_TIMEOUT_MS }],
+        };
+      }
+      // Snapshot says the native side died while we were suspended. That is
+      // proof, not suspicion, so recovery drops signaling too (presence
+      // 2→1→2) instead of cancelling a peer that is already gone.
       return enterBackoff(contextOf(state), 'native connection dead after resume', {
         teardown: true,
+        dropSignaling: true,
       });
     default:
       return ignore(state);
@@ -624,7 +753,10 @@ export function transition(state: ConnectionState, event: ConnectionEvent): Tran
         hadSession: false,
         retryCount: 0,
       },
-      effects: [{ type: 'cancelTimers' }, { type: 'teardown', preserveNativePeer: false }],
+      effects: [
+        { type: 'cancelTimers' },
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
+      ],
     };
   }
 
@@ -637,7 +769,10 @@ export function transition(state: ConnectionState, event: ConnectionEvent): Tran
         kind: event.kind ?? 'service',
         serviceUp: false,
       },
-      effects: [{ type: 'cancelTimers' }, { type: 'teardown', preserveNativePeer: false }],
+      effects: [
+        { type: 'cancelTimers' },
+        { type: 'teardown', preserveNativePeer: false, dropSignaling: false },
+      ],
     };
   }
 

@@ -30,6 +30,7 @@ import {
   selectConnectionNoticeForRequest,
   sendConversationClose,
   sendConversationOpen,
+  sendHeartbeatPing,
   setNativeActive,
   startNativeService,
   stopNativeService,
@@ -287,6 +288,23 @@ export function useConnection(
   // outbound keepalive can never be mistaken for peer presence.
   const lastInboundActivityRef = useRef<number>(Date.now());
   const lastLocalActivityRef = useRef<number>(Date.now());
+  // Monotonic counter of frames that ACTUALLY crossed the wire from the peer.
+  // Deliberately narrower than `lastInboundActivityRef`, which optimistic
+  // paths also refresh (e.g. the idle watchdog accepting a native snapshot as
+  // proof of life): the resume liveness probe compares this counter before and
+  // after its ping, and must only be satisfied by a real answer.
+  const inboundSeqRef = useRef(0);
+  // In-flight native peer cancel, published so the NEXT negotiation can await
+  // it. The native `cancel()` is asynchronous, and starting a fresh offer
+  // while the previous peer is still being torn down races the native service
+  // (the new negotiation can be cancelled by the old teardown landing late).
+  const nativeCancelRef = useRef<Promise<void> | null>(null);
+  // In-flight native SERVICE stop (the hard recovery path / an explicit
+  // disconnect), published so a service (re)start serializes behind it instead
+  // of racing a socket that is still leaving the requestId room.
+  const serviceStopRef = useRef<Promise<void> | null>(null);
+  // Deadline for the resume liveness probe (see the `probeLiveness` effect).
+  const livenessProbeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Guards against two concurrent auth flows (and therefore two blocking
   // biometric prompts). The machine never emits two `startService` effects for
   // one attempt, but a slow prompt can outlive a `starting` deadline, so the
@@ -464,9 +482,20 @@ export function useConnection(
     // we must NOT cancel it. Cancelling here is exactly what closed the live
     // peer on relaunch and forced a full renegotiation instead of the cheap
     // `attach()` hydrate path in `createNativeAc2Transport`.
+    //
+    // The cancel is PUBLISHED (not fire-and-forget): the native call is
+    // asynchronous, and a fresh negotiate that starts while the previous peer
+    // is still being cancelled races it — the late cancel can kill the new
+    // peer. `negotiate` awaits this promise before opening its transport, which
+    // is how the two are serialized without making teardown itself async (the
+    // effect interpreter is synchronous by design).
     if (nativeStartedRef.current && !options?.preserveNativePeer) {
-      cancelNativeNegotiation().catch(() => {
+      const cancelling = cancelNativeNegotiation().catch(() => {
         /* best-effort */
+      });
+      nativeCancelRef.current = cancelling;
+      void cancelling.finally(() => {
+        if (nativeCancelRef.current === cancelling) nativeCancelRef.current = null;
       });
     }
   }, []);
@@ -505,8 +534,17 @@ export function useConnection(
       nativeStartedRef.current = false;
       // Fully tears down the native foreground service: disconnects the
       // signaling socket and the WebRTC peer.
-      stopNativeService().catch(() => {
+      //
+      // Published (see `serviceStopRef`) because the hard recovery path starts
+      // the service again straight afterwards: the whole point of that path is
+      // that the agent observes presence 2→1→2, and it can only observe the
+      // 2→1 if our socket has actually left the room before we rejoin it.
+      const stopping = stopNativeService().catch(() => {
         /* best-effort teardown */
+      });
+      serviceStopRef.current = stopping;
+      void stopping.finally(() => {
+        if (serviceStopRef.current === stopping) serviceStopRef.current = null;
       });
     }
   }, []);
@@ -666,7 +704,14 @@ export function useConnection(
           // crashing, and don't echo a frame we never sent. The machine only
           // reacts while `connected`, so a stale/racing failure is a no-op.
           console.warn('Failed to send message; treating as a dropped connection', err);
-          dispatchRef.current({ type: 'CONNECTION_LOST', reason: 'send failed' });
+          // A throw from an "open" channel is the zombie signature: the peer is
+          // gone, so recover the hard way rather than re-offering into a room
+          // the agent still believes is full.
+          dispatchRef.current({
+            type: 'CONNECTION_LOST',
+            reason: 'send failed',
+            confirmedDead: true,
+          });
           return;
         }
         addMessage({
@@ -816,7 +861,14 @@ export function useConnection(
         wasBackgroundedRef.current = false;
         // Recoverable: the machine tears down and retries with backoff (or
         // pauses until foregrounded, where the snapshot reconcile takes over).
-        dispatchRef.current({ type: 'CONNECTION_LOST', reason: 'stale after background' });
+        // Flagged as confirmed dead: the transport stayed silent across the
+        // whole idle window and the native side could not vouch for it either,
+        // so recovery must drop signaling rather than only cancel the peer.
+        dispatchRef.current({
+          type: 'CONNECTION_LOST',
+          reason: 'stale after background',
+          confirmedDead: true,
+        });
       } else {
         // Terminal until the user acts (the manual Reconnect bar).
         dispatchRef.current({ type: 'SESSION_IDLE' });
@@ -895,6 +947,18 @@ export function useConnection(
     const setupStartedAt = Date.now();
 
     try {
+      // A hard recovery reset (or an explicit disconnect) may still be tearing
+      // the native service down. Wait it out before touching the native side
+      // again: the service is idempotent, but restarting it while the socket is
+      // mid-disconnect can rejoin the requestId room before the server ever
+      // broadcast our departure — and the agent needs to SEE presence drop to
+      // 1 before it re-arms its offer listener, which is the entire reason the
+      // hard path dropped the socket.
+      if (serviceStopRef.current) {
+        await serviceStopRef.current;
+        if (!active()) return;
+      }
+
       const currentSessions = sessionsStore.state.sessions;
       const currentKeys = keyStore.state.keys;
       const currentAccounts = accountsStore.state.accounts;
@@ -1176,6 +1240,19 @@ export function useConnection(
   const startServiceRef = useRef(startService);
   startServiceRef.current = startService;
 
+  // Put one keepalive `ping` on the wire — on the dedicated `ac2-heartbeat`
+  // channel ONLY (see `sendHeartbeatPing`: `ac2-v1` has no pong contract, so
+  // a ping there could never prove liveness). Returns false when the
+  // heartbeat channel is not open — itself evidence the transport is broken
+  // when the snapshot claims connected. Shared by the heartbeat watchdog and
+  // the resume liveness probe so both speak the same wire language.
+  const sendKeepalivePing = useCallback(
+    (): boolean => sendHeartbeatPing(heartbeatChannelRef.current, HEARTBEAT_BUFFERED_WARN_BYTES),
+    [],
+  );
+  const sendKeepalivePingRef = useRef(sendKeepalivePing);
+  sendKeepalivePingRef.current = sendKeepalivePing;
+
   // ---------------------------------------------------------------------
   // Effect handler: `negotiate` — one p2p transport attempt over the
   // PERSISTENT native service. Each attempt carries the machine's `attemptId`;
@@ -1204,6 +1281,15 @@ export function useConnection(
       // liveness detectors wired below stay live and a stale run's late
       // callbacks are no-ops.
       const isCurrent = () => negotiationAbortRef.current === runAbort && !runAbort.signal.aborted;
+
+      // Serialize behind the teardown's native peer cancel. `cancel()` is
+      // asynchronous native work, so opening a fresh transport on top of an
+      // unfinished cancel lets the old teardown land on the NEW peer — which
+      // reads as yet another unanswered offer and feeds the reconnect loop.
+      if (nativeCancelRef.current) {
+        await nativeCancelRef.current;
+        if (!isCurrent()) return;
+      }
 
       const setupStartedAt = Date.now();
       console.log(`[ac2] negotiate: opening p2p transport (attempt=${attemptId}, mode=${mode})`);
@@ -1258,6 +1344,11 @@ export function useConnection(
         const transport = await createNativeAc2Transport({
           url: origin,
           requestId,
+          // The machine's intent is authoritative: in `connect` mode the
+          // transport must NOT silently hydrate off whatever peer the service
+          // still reports — that peer is precisely the zombie we are recovering
+          // from.
+          mode,
           signal: runAbort.signal,
           onPeerConnection: (pc) => {
             // Stash the peer connection; the connectivity monitor is attached
@@ -1273,6 +1364,7 @@ export function useConnection(
                 {
                   onInbound: () => {
                     if (!isCurrent()) return;
+                    inboundSeqRef.current += 1;
                     wasBackgroundedRef.current = false;
                     lastInboundActivityRef.current = Date.now();
                     heartbeatMonitorRef.current?.noteInbound();
@@ -1287,6 +1379,7 @@ export function useConnection(
               channel.onmessage = (event) => {
                 if (!isCurrent()) return;
                 // Any inbound stream frame is proof of peer liveness.
+                inboundSeqRef.current += 1;
                 heartbeatMonitorRef.current?.noteInbound();
                 if (typeof event.data === 'string') applyControlFrame(event.data);
               };
@@ -1338,6 +1431,7 @@ export function useConnection(
           onInboundEnvelope: () => {
             console.log('[ac2] client received inbound AC2 envelope on ac2-v1');
             updateSessionActivity(requestId, origin);
+            inboundSeqRef.current += 1;
             wasBackgroundedRef.current = false;
             lastInboundActivityRef.current = Date.now();
             heartbeatMonitorRef.current?.noteInbound();
@@ -1356,6 +1450,7 @@ export function useConnection(
               thid: activeThidRef.current,
             });
             updateSessionActivity(requestId, origin);
+            inboundSeqRef.current += 1;
             wasBackgroundedRef.current = false;
             lastInboundActivityRef.current = Date.now();
             heartbeatMonitorRef.current?.noteInbound();
@@ -1377,47 +1472,47 @@ export function useConnection(
               ? monitorPeerConnection(peerConnectionRef.current, {
                   onFailed: (reason) => {
                     if (!isCurrent()) return;
-                    dispatchRef.current({ type: 'CONNECTION_LOST', reason: `ice ${reason}` });
+                    // ICE failed/closed is the transport telling us it is dead;
+                    // no soft peer-only retry can bring it back.
+                    dispatchRef.current({
+                      type: 'CONNECTION_LOST',
+                      reason: `ice ${reason}`,
+                      confirmedDead: true,
+                    });
                   },
                 })
               : null;
-            // Start the liveness watchdog. It pings on `ac2-heartbeat` and
+            // Start the liveness watchdog. It pings on `ac2-heartbeat` — the
+            // sole keepalive path (both sides always negotiate it) — and
             // fails if the peer stops responding (a silent stall) even while
-            // ICE still reads "connected". Over the `ac2-v1` fallback there is
-            // no pong contract, so run keepalives without a timeout.
+            // ICE still reads "connected".
             if (heartbeatMonitorRef.current) heartbeatMonitorRef.current.stop();
             heartbeatMonitorRef.current = createHeartbeatMonitor({
               intervalMs: HEARTBEAT_INTERVAL_MS,
-              timeoutMs: heartbeatChannelRef.current ? HEARTBEAT_TIMEOUT_MS : Infinity,
+              timeoutMs: HEARTBEAT_TIMEOUT_MS,
               send: () => {
-                const hb = heartbeatChannelRef.current;
-                const dc = dataChannelRef.current;
-                const channel =
-                  hb && hb.readyState === 'open' ? hb : dc && dc.readyState === 'open' ? dc : null;
-                if (!channel) return;
-                // A growing send buffer means frames aren't draining to the
-                // peer — an early signal the transport is stalling before ICE
-                // even flips state.
-                if (channel.bufferedAmount > HEARTBEAT_BUFFERED_WARN_BYTES) {
-                  console.warn(
-                    `Heartbeat send buffer high (${channel.bufferedAmount} bytes) — transport may be stalling`,
-                  );
-                }
                 try {
-                  channel.send(channel === hb ? 'ping' : '');
+                  sendKeepalivePingRef.current();
                 } catch (err) {
                   console.warn('Heartbeat send failed; treating as a dropped connection', err);
                   if (isCurrent()) {
                     dispatchRef.current({
                       type: 'CONNECTION_LOST',
                       reason: 'heartbeat send failed',
+                      confirmedDead: true,
                     });
                   }
                 }
               },
               onTimeout: () => {
                 if (isCurrent()) {
-                  dispatchRef.current({ type: 'CONNECTION_LOST', reason: 'heartbeat timeout' });
+                  // The peer went silent for two full heartbeat windows: the
+                  // transport is proven dead, so recovery drops signaling too.
+                  dispatchRef.current({
+                    type: 'CONNECTION_LOST',
+                    reason: 'heartbeat timeout',
+                    confirmedDead: true,
+                  });
                 }
               },
             });
@@ -1530,6 +1625,10 @@ export function useConnection(
           clearTimeout(retryTimerRef.current);
           retryTimerRef.current = null;
         }
+        if (livenessProbeTimerRef.current) {
+          clearTimeout(livenessProbeTimerRef.current);
+          livenessProbeTimerRef.current = null;
+        }
         break;
       case 'teardown':
         // Abort the current attempt's in-flight native work (the transport
@@ -1540,6 +1639,26 @@ export function useConnection(
           negotiationAbortRef.current = null;
         }
         clearTransport({ preserveNativePeer: effect.preserveNativePeer });
+        // HARD RECOVERY. The p2p transport is confirmed dead, and cancelling
+        // the peer alone is not enough: the native service keeps our signaling
+        // socket in the requestId room (it even answers the agent's heartbeat
+        // pings), so the agent still counts two devices, never tears its side
+        // down and never re-arms its offer listener — every fresh offer we send
+        // is ignored and the UI sits on "Reconnecting…" forever. Dropping the
+        // service reproduces the presence 2→1→2 sequence that switching chat
+        // sessions (unmount → STOP + closeSocket → remount) has always used to
+        // recover; doing it here gets the same result without unmounting.
+        //
+        // The service comes back on its own: the machine reset its gates with
+        // this teardown, so the pending backoff retry walks through `starting`
+        // → `startService`, which re-uses the still-valid `/auth/session`
+        // cookie (no passkey prompt) and awaits this stop first (see
+        // `serviceStopRef`). Idempotent: `closeSocket` no-ops once the service
+        // is already down, so overlapping hard resets collapse into one.
+        if (effect.dropSignaling) {
+          console.log('[ac2] hard recovery: dropping the signaling service to force presence 2→1');
+          closeSocket();
+        }
         break;
       case 'queryNativeState': {
         // Pull the native truth (push events can be lost while the JS runtime
@@ -1558,21 +1677,51 @@ export function useConnection(
         } catch {
           /* native module unavailable (tests / web) — treat as dead */
         }
-        if (channelOpen) {
-          // The snapshot just proved the native connection survived — treat it
-          // as fresh liveness evidence, exactly like an inbound heartbeat.
-          // After a long background the liveness clocks are hours old (JS
-          // timers were suspended), and without this the idle watchdog fires
-          // on resume BEFORE the first post-resume heartbeat arrives, tearing
-          // down the verified-live connection as "stale after background". If
-          // the peer is in fact gone despite the open channel, the heartbeat
-          // watchdog / ICE monitor catch it within their (much shorter)
-          // windows.
-          wasBackgroundedRef.current = false;
-          lastInboundActivityRef.current = Date.now();
-          heartbeatMonitorRef.current?.noteInbound();
-        }
+        // NOTE: an "open" channel here is deliberately NOT counted as liveness.
+        // A zombie DataChannel left behind by a long background still reports
+        // OPEN, and refreshing the heartbeat clocks off that report is what let
+        // the wallet keep believing a dead link was healthy. The machine turns
+        // an open-looking snapshot into a `probeLiveness` effect instead: only
+        // an answered ping refreshes liveness.
         dispatchRef.current({ type: 'NATIVE_SNAPSHOT', alive, channelOpen });
+        break;
+      }
+      case 'probeLiveness': {
+        // Resume liveness probe: put a ping on the wire and require REAL
+        // inbound traffic (`inboundSeqRef`, bumped only by frames that actually
+        // arrived) before the short window closes. Anything else is treated as
+        // a confirmed-dead transport so recovery takes the hard path.
+        if (livenessProbeTimerRef.current) {
+          clearTimeout(livenessProbeTimerRef.current);
+          livenessProbeTimerRef.current = null;
+        }
+        const seqBefore = inboundSeqRef.current;
+        let sent = false;
+        try {
+          sent = sendKeepalivePingRef.current();
+        } catch (err) {
+          console.warn('Liveness probe send failed; treating as a dead transport', err);
+        }
+        if (!sent) {
+          dispatchRef.current({
+            type: 'CONNECTION_LOST',
+            reason: 'liveness probe could not be sent',
+            confirmedDead: true,
+          });
+          break;
+        }
+        livenessProbeTimerRef.current = setTimeout(() => {
+          livenessProbeTimerRef.current = null;
+          // A teardown/reconnect since the ping already superseded the probe.
+          if (machineRef.current.phase !== 'connected') return;
+          if (inboundSeqRef.current !== seqBefore) return;
+          console.warn('[ac2] liveness probe went unanswered; the transport is a zombie');
+          dispatchRef.current({
+            type: 'CONNECTION_LOST',
+            reason: 'liveness probe timed out',
+            confirmedDead: true,
+          });
+        }, effect.ms);
         break;
       }
     }

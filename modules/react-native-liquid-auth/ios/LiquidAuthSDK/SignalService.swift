@@ -360,10 +360,23 @@ public class SignalService {
      * connection exists with negotiated channels, its ICE connection state, the
      * `requestId` it is bound to, and each negotiated channel's current state
      * keyed by label. Read-only: this never mutates the connection.
+     *
+     * `connected` is deliberately STRICT (mirroring the Android SDK): a peer
+     * object with a channel map is not proof that anything can travel over it.
+     * After a long background the peer can survive as a zombie — the channels
+     * still read OPEN while ICE has moved to DISCONNECTED/FAILED — and a
+     * consumer that believes such a snapshot re-attaches to a dead link instead
+     * of renegotiating (the "stuck reconnecting" class of bug). So we require
+     * ICE to be genuinely usable (CONNECTED/COMPLETED) AND at least one
+     * negotiated data channel to be OPEN. The raw `iceConnectionState` /
+     * `channels` fields are reported unchanged for diagnostics.
      */
     public func getConnectionState() -> [String: Any?] {
         let peer = signalClient?.peerClient
         let channels = namedDataChannels.mapValues { $0.readyState.stateDescription }
+        let iceState = peer?.peerConnection?.iceConnectionState
+        let iceUsable = iceState == .connected || iceState == .completed
+        let anyChannelOpen = namedDataChannels.values.contains { $0.readyState == .open }
         // The last server `presence` broadcast (`{ requestId, deviceCount,
         // online }`), or nil before the first one. The broadcast fired at
         // room join typically lands during service start — before the
@@ -379,7 +392,7 @@ public class SignalService {
             ]
         }
         return [
-            "connected": peer != nil && !namedDataChannels.isEmpty,
+            "connected": peer != nil && iceUsable && anyChannelOpen,
             "requestId": connectedRequestId,
             "iceConnectionState": peer?.peerConnection?.iceConnectionState.stateDescription,
             "channels": channels,
