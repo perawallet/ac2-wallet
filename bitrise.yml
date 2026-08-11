@@ -245,8 +245,14 @@ workflows:
       - restore-cache@3:
           title: Restore CocoaPods
           inputs:
+            # Native build inputs beyond the JS lockfile: local Expo modules
+            # (modules/), config plugins in app.config.js, and patches all
+            # change the generated iOS project without touching
+            # pnpm-lock.yaml. Builds 105-120 shipped without the vendored
+            # LiquidAuthNative module because these caches never invalidated
+            # when modules/react-native-liquid-auth was added.
             - key: |-
-                ios-pods-{{ checksum "pnpm-lock.yaml" }}
+                ios-pods-{{ checksum "pnpm-lock.yaml" "app.config.js" "modules/**/*" "patches/**/*" }}
                 ios-pods-
       - script@1:
           title: Expo prebuild (iOS)
@@ -258,7 +264,7 @@ workflows:
       - save-cache@1:
           title: Save CocoaPods
           inputs:
-            - key: ios-pods-{{ checksum "pnpm-lock.yaml" }}
+            - key: ios-pods-{{ checksum "pnpm-lock.yaml" "app.config.js" "modules/**/*" "patches/**/*" }}
             - paths: ios/Pods
       # Installs the distribution certificate AND every provisioning profile
       # uploaded to this app's "Code Signing & Files" section onto the VM, with
@@ -276,9 +282,11 @@ workflows:
       - restore-cache@3:
           title: Restore Xcode DerivedData
           inputs:
-            - key: |-
-                ios-derived-data-{{ checksum "pnpm-lock.yaml" }}
-                ios-derived-data-
+            # No bare `ios-derived-data-` fallback: the gym build runs with
+            # clean:false, so restoring DerivedData from a build with
+            # different native inputs risks shipping a stale binary (see the
+            # CocoaPods cache note above). A key miss = one slow clean build.
+            - key: ios-derived-data-{{ checksum "pnpm-lock.yaml" "app.config.js" "modules/**/*" "patches/**/*" }}
       - script@1:
           title: Build + upload to TestFlight (fastlane)
           inputs:
@@ -290,7 +298,7 @@ workflows:
       - save-cache@1:
           title: Save Xcode DerivedData
           inputs:
-            - key: ios-derived-data-{{ checksum "pnpm-lock.yaml" }}
+            - key: ios-derived-data-{{ checksum "pnpm-lock.yaml" "app.config.js" "modules/**/*" "patches/**/*" }}
             - paths: ~/Library/Developer/Xcode/DerivedData
       - deploy-to-bitrise-io@2:
           inputs:
