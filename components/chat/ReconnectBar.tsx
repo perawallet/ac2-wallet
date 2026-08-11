@@ -22,6 +22,13 @@ interface ReconnectBarProps {
    * peer/error/disconnected copy.
    */
   serviceUnavailable?: boolean;
+  /**
+   * The underlying failure message (e.g. the error that killed the signaling
+   * setup). Shown in small type under the headline so a broken build or
+   * server misconfiguration identifies itself instead of hiding behind a
+   * generic banner.
+   */
+  detail?: string;
 }
 
 // Footer shown in place of the composer when the transport has dropped. Mirrors
@@ -32,6 +39,7 @@ function ReconnectBar({
   isError,
   peerOffline,
   serviceUnavailable,
+  detail,
 }: ReconnectBarProps) {
   const { colorScheme } = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
@@ -48,7 +56,14 @@ function ReconnectBar({
       style={{ paddingBottom: 12 }}
     >
       <MaterialIcons name="cloud-off" size={20} color={palette.mutedForeground} />
-      <Text className="flex-1 text-sm text-muted-foreground">{message}</Text>
+      <View className="flex-1">
+        <Text className="text-sm text-muted-foreground">{message}</Text>
+        {detail ? (
+          <Text className="mt-0.5 text-[11px] text-muted-foreground" numberOfLines={3}>
+            {detail}
+          </Text>
+        ) : null}
+      </View>
       <Pressable
         onPress={onReconnect}
         accessibilityRole="button"

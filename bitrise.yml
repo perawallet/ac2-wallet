@@ -261,6 +261,23 @@ workflows:
                 #!/usr/bin/env bash
                 set -ex
                 pnpm expo prebuild --platform ios --clean
+      - script@1:
+          title: Assert vendored native modules autolinked
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                # Builds 105-120 shipped without the vendored LiquidAuthNative
+                # module (pairing crashed / signaling dead). Fail the build
+                # here — in seconds, with a clear reason — if autolinking ever
+                # drops it again.
+                PROVIDER="ios/Pods/Target Support Files/Pods-AC2/ExpoModulesProvider.swift"
+                if ! grep -q "LiquidAuthNativeModule" "$PROVIDER"; then
+                  echo "FATAL: LiquidAuthNativeModule is missing from $PROVIDER."
+                  echo "The vendored modules/react-native-liquid-auth did not autolink;"
+                  echo "this binary would fail at pairing (no signaling connection)."
+                  exit 1
+                fi
       - save-cache@1:
           title: Save CocoaPods
           inputs:

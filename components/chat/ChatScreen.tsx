@@ -46,6 +46,7 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
   const {
     isConnected,
     isError,
+    error,
     isLoading,
     isReconnecting,
     peerOffline,
@@ -352,6 +353,7 @@ function ChatScreen({ origin, requestId, allowPasskeyCreation = false }: ChatScr
           isError={isError}
           peerOffline={peerOffline}
           serviceUnavailable={!isSocketConnected}
+          detail={error?.message}
         />
       )}
       <Modal
