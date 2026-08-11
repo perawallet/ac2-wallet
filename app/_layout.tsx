@@ -6,6 +6,7 @@ import { RootErrorBoundary } from '@/components/RootErrorBoundary';
 import '@/global.css';
 import { biometricOptions } from '@/lib/keystore/auth-options';
 import { bootstrap } from '@/lib/keystore/bootstrap';
+import { consumeLastFatal } from '@/lib/runtime/fatal-guard';
 import { globalPolyfill, setupNavigatorPolyfill } from '@/lib/runtime/polyfill';
 import { NAV_THEME } from '@/lib/theme';
 import { PreventScreenshotProvider } from '@/providers/PreventScreenshotProvider';
@@ -146,6 +147,22 @@ export default Sentry.wrap(function RootLayout() {
 
   React.useEffect(() => {
     bootstrap(biometricOptions).catch((e) => console.error('Bootstrap promise error:', e));
+
+    // Surface the black-box record of the previous launch's fatal error (the
+    // crash itself is unreportable in the moment — on iOS it aborts the
+    // process before anything can flush).
+    const lastFatal = consumeLastFatal();
+    if (lastFatal) {
+      console.error(
+        `Previous launch died from a fatal JS error${lastFatal.duringStartup ? ' during startup' : ''}:`,
+        lastFatal.message,
+        lastFatal.stack,
+      );
+      Sentry.captureMessage(`Fatal error on previous launch: ${lastFatal.message}`, {
+        level: 'fatal',
+        extra: { ...lastFatal },
+      });
+    }
   }, []);
 
   useEventListener(ReactNativePasskeyAutofill, 'onPasskeyAdded', (event) => {
@@ -168,16 +185,16 @@ export default Sentry.wrap(function RootLayout() {
 
   return (
     <FontLoadingContext.Provider value={{ fontsLoaded }}>
-      <PreventScreenshotProvider>
-        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-        <WalletProvider provider={provider}>
-          <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
-            <RootErrorBoundary>
+      <RootErrorBoundary>
+        <PreventScreenshotProvider>
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+          <WalletProvider provider={provider}>
+            <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
               <RootNavigation fontsLoaded={fontsLoaded} />
-            </RootErrorBoundary>
-          </ThemeProvider>
-        </WalletProvider>
-      </PreventScreenshotProvider>
+            </ThemeProvider>
+          </WalletProvider>
+        </PreventScreenshotProvider>
+      </RootErrorBoundary>
     </FontLoadingContext.Provider>
   );
 });
