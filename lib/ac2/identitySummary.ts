@@ -39,7 +39,7 @@ export function getAgentMaterialHeld(
     if (entry.origin !== params.origin || entry.requestId !== params.requestId) continue;
     const env = entry.envelope;
     if (env.type !== KEY_RESPONSE) continue;
-    const body = env.body as { status?: string; public_key?: string; material?: string };
+    const body = (env.body ?? {}) as { status?: string; public_key?: string; material?: string };
     if (body.status !== 'approved' || body.public_key !== params.publicKey) continue;
     if (entry.receivedAt >= latestAt) {
       latestAt = entry.receivedAt;
@@ -70,7 +70,7 @@ export function extractAgentKeyFromMessages(
   for (const entry of ac2Messages) {
     const env = entry.envelope;
     if (env.type !== KEY_RESPONSE) continue;
-    const body = env.body as { status?: string; public_key?: string; material?: string };
+    const body = (env.body ?? {}) as { status?: string; public_key?: string; material?: string };
     if (body.status !== 'approved') continue;
     const publicKey = body.public_key ?? '';
     // Derive both DIDs from the underlying key material (`entry.address` /

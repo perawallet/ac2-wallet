@@ -55,7 +55,12 @@ const loadInitialMessages = (): MessagesState => {
     const stored = messagesLocalStorage.getString('messages');
     if (stored) {
       const parsed = JSON.parse(stored);
-      return { messages: parsed };
+      // Never trust the persisted shape: a non-array or null entry would
+      // throw in every consumer's `.filter`/`.map` on first render, which is
+      // a fatal crash on iOS. Same defensive pattern as `sessions.ts`.
+      if (Array.isArray(parsed)) {
+        return { messages: parsed.filter((m: Message | null) => m && typeof m === 'object') };
+      }
     }
   } catch (error) {
     console.error('Failed to load messages from storage:', error);

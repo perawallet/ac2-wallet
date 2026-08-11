@@ -2,6 +2,7 @@
 // (`index.js`) before any route module is evaluated. See that file for why.
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { Drawer } from '@/components/navigation/Drawer';
+import { RootErrorBoundary } from '@/components/RootErrorBoundary';
 import '@/global.css';
 import { biometricOptions } from '@/lib/keystore/auth-options';
 import { bootstrap } from '@/lib/keystore/bootstrap';
@@ -171,7 +172,9 @@ export default Sentry.wrap(function RootLayout() {
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
         <WalletProvider provider={provider}>
           <ThemeProvider value={colorScheme === 'dark' ? NAV_THEME.dark : NAV_THEME.light}>
-            <RootNavigation fontsLoaded={fontsLoaded} />
+            <RootErrorBoundary>
+              <RootNavigation fontsLoaded={fontsLoaded} />
+            </RootErrorBoundary>
           </ThemeProvider>
         </WalletProvider>
       </PreventScreenshotProvider>

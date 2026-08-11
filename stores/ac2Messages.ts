@@ -40,7 +40,18 @@ const ac2LocalStorage = createMMKV({ id: 'ac2-messages' });
 const loadInitial = (): Ac2MessagesState => {
   try {
     const stored = ac2LocalStorage.getString('messages');
-    if (stored) return { messages: JSON.parse(stored) };
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Never trust the persisted shape (see `messages.ts`): entries also
+      // need an `envelope`, which every consumer dereferences unguarded.
+      if (Array.isArray(parsed)) {
+        return {
+          messages: parsed.filter(
+            (m: Ac2MessageEntry | null) => m && typeof m === 'object' && !!m.envelope,
+          ),
+        };
+      }
+    }
   } catch (error) {
     console.error('Failed to load ac2 messages from storage:', error);
   }
