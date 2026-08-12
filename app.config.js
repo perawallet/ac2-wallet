@@ -127,6 +127,21 @@ module.exports = {
       favicon: './assets/favicon.png',
     },
     plugins: [
+      // The vendored LiquidAuthNative module's podspec requires iOS >= 16.4
+      // (modules/react-native-liquid-auth/ios/LiquidAuthNative.podspec). With
+      // the Podfile's default 15.1 deployment target, Expo autolinking
+      // SILENTLY skips the pod ("doesn't support iOS platform", verbose-only)
+      // and the binary ships without it — pairing then fails with no
+      // signaling connection (and crashed outright before the JS-side stub
+      // existed). Pin the target explicitly so the platform check passes.
+      [
+        'expo-build-properties',
+        {
+          ios: {
+            deploymentTarget: '16.4',
+          },
+        },
+      ],
       'expo-router',
       [
         'expo-splash-screen',

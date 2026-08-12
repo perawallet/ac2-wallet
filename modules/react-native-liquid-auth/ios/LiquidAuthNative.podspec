@@ -15,10 +15,13 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
   # Native dependencies for the vendored LiquidAuthSDK signaling stack
   # (ported from liquid-auth-ios — see VENDORED.md). Socket.IO drives the
-  # signaling transport; WebRTC (stasel/WebRTC binary, module `WebRTC`) provides
-  # the peer connection / data channels.
+  # signaling transport; WebRTC (Swift module `WebRTC`) provides the peer
+  # connection / data channels. Must be JitsiWebRTC — the same binary
+  # react-native-webrtc depends on — NOT stasel's 'WebRTC-lib': both vend a
+  # framework named WebRTC.xcframework, and CocoaPods rejects the target with
+  # "frameworks with conflicting names" when both are present.
   s.dependency 'Socket.IO-Client-Swift'
-  s.dependency 'WebRTC-lib'
+  s.dependency 'JitsiWebRTC', '~> 124.0.0'
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
