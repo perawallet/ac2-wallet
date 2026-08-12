@@ -68,8 +68,16 @@ public class SignalClient {
     init(url: String, service: SignalService) {
         self.service = service
 
-        // Initialize the Socket.IO manager and client
-        manager = SocketManager(socketURL: URL(string: "https://\(url)")!, config: [.log(false), .compress])
+        // Initialize the Socket.IO manager and client. Callers pass a full
+        // origin (`https://debug.liquidauth.com`) — the same value the Android
+        // client feeds `IO.socket(url)` verbatim. Only prepend a scheme when
+        // one is missing (the upstream liquid-auth-ios SDK took a bare host):
+        // blindly prefixing produced `https://https://…`, whose "hostname"
+        // is `https` — the socket then dies with "A server with the specified
+        // hostname could not be found" and the wallet never reaches signaling.
+        let socketOrigin =
+            url.hasPrefix("https://") || url.hasPrefix("http://") ? url : "https://\(url)"
+        manager = SocketManager(socketURL: URL(string: socketOrigin)!, config: [.log(false), .compress])
         socket = manager.defaultSocket
 
         // Set up event listeners
