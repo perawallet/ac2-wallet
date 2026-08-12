@@ -16,15 +16,10 @@ jest.mock('@/lib/liquid-auth/helpers', () => ({
 }));
 jest.mock('@/stores/keystore', () => ({ keyStore: { state: { keys: [] } } }));
 jest.mock('@/stores/sessions', () => ({ updateSessionPasskeyCredentialId: jest.fn() }));
-jest.mock('@/utils/algorand', () => ({ decodeAddress: jest.fn() }));
-jest.mock('@algorandfoundation/keystore', () => ({ encodeAddress: jest.fn() }));
+jest.mock('@/utils/algorand', () => ({ decodeAddress: jest.fn(), encodeAddress: jest.fn() }));
 jest.mock('@algorandfoundation/liquid-client', () => ({
   assertion: { encoder: {} },
   encoding: {},
-}));
-jest.mock('@algorandfoundation/react-native-keystore', () => ({
-  fetchSecret: jest.fn(),
-  readMasterKey: jest.fn(),
 }));
 jest.mock('@algorandfoundation/react-native-passkey-autofill', () => ({
   __esModule: true,

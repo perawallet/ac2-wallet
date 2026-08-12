@@ -5,8 +5,8 @@
 // `helpers.ts` imports native/keystore modules at load time, so they are mocked
 // here to keep the unit under test free of the native bridge.
 jest.mock('@algorandfoundation/react-native-keystore', () => ({
-  encode: jest.fn(),
-  encryptData: jest.fn(),
+  METADATA_PREFIX: 'k/',
+  serializeKey: jest.fn((key: unknown) => JSON.stringify(key)),
   storage: { set: jest.fn() },
 }));
 jest.mock('@/stores/keystore', () => ({
@@ -14,9 +14,6 @@ jest.mock('@/stores/keystore', () => ({
 }));
 jest.mock('@/utils/base64', () => ({
   toUrlSafe: (value: string) => value,
-}));
-jest.mock('@algorandfoundation/keystore', () => ({
-  encodeAddress: (publicKey: Uint8Array) => `ADDR(${Array.from(publicKey).join(',')})`,
 }));
 jest.mock('@algorandfoundation/liquid-client', () => ({
   encoding: {
@@ -34,13 +31,14 @@ jest.mock('@/utils/algorand', () => ({
     if (address === 'MATCHING_ADDRESS') return { publicKey: new Uint8Array([1, 2, 3, 4]) };
     return { publicKey: new Uint8Array([9, 9, 9, 9]) };
   },
+  encodeAddress: (publicKey: Uint8Array) => `ADDR(${Array.from(publicKey).join(',')})`,
 }));
 
 import {
   sessionAlreadyAuthenticatedForRequest,
   sessionRequestIdFromData,
 } from '@/lib/liquid-auth/helpers';
-import type { Key } from '@algorandfoundation/keystore';
+import type { Key } from '@algorandfoundation/react-native-keystore';
 
 const REQUEST_ID = '019097ff-bb8c-7d5d-9822-7c9eb2c0d419';
 const walletKey = { id: 'key-1', publicKey: MATCHING_PUBLIC_KEY } as unknown as Key;

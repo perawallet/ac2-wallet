@@ -1,4 +1,4 @@
-import { encodeAddress } from '@algorandfoundation/keystore';
+import { encodeAddress } from '@/utils/algorand';
 import { Buffer } from 'buffer';
 
 const PUBLIC_KEY = new Uint8Array(32).map((_, i) => i);

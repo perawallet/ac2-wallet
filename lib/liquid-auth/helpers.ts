@@ -5,27 +5,30 @@
  */
 import type { Passkey } from '@/extensions/passkeys';
 import { keyStore } from '@/stores/keystore';
-import { decodeAddress } from '@/utils/algorand';
+import { decodeAddress, encodeAddress } from '@/utils/algorand';
 import { toUrlSafe } from '@/utils/base64';
-import type { Key, KeyData } from '@algorandfoundation/keystore';
-import { encodeAddress } from '@algorandfoundation/keystore';
+import type { Key, KeyData } from '@algorandfoundation/react-native-keystore';
 import { encoding } from '@algorandfoundation/liquid-client';
-import { encode, encryptData, storage } from '@algorandfoundation/react-native-keystore';
+import { METADATA_PREFIX, serializeKey, storage } from '@algorandfoundation/react-native-keystore';
 import { Buffer } from 'buffer';
 
 /**
- * Re-encrypt a key record with the supplied master key and reflect the new
- * metadata in the reactive key store, bypassing the keystore library's
- * `commit()` (which would re-fetch the master key and prompt again).
+ * Persist a key's metadata and reflect it in the reactive key store.
+ *
+ * Under the split record layout, metadata lives in its own plaintext `k/<id>`
+ * record, separate from the sealed `m/<id>` material — so a metadata-only
+ * update never touches the master key and never raises a biometric prompt
+ * (the old flat layout forced a full decrypt/re-encrypt of the record).
  */
-export function persistKeyMetadata(keyData: KeyData, masterKey: Buffer): void {
-  // Re-encrypt the full key record (incl. private material) and store it.
-  storage.set(keyData.id, encryptData(Buffer.from(masterKey), encode(keyData)));
-  // Reflect the metadata change in the reactive store without leaking the
-  // private key/seed, de-duplicating by id so we don't append a stale copy.
+export function persistKeyMetadata(keyData: Key | KeyData): void {
+  // Strip any material before writing: `k/<id>` records are plaintext and
+  // must only ever carry UI-safe metadata.
   const { privateKey, seed, ...keyState } = keyData as any;
   void privateKey;
   void seed;
+  storage.set(`${METADATA_PREFIX}${keyState.id}`, serializeKey(keyState));
+  // Reflect the metadata change in the reactive store, de-duplicating by id
+  // so we don't append a stale copy.
   keyStore.setState((state) => ({
     ...state,
     keys: [{ ...keyState }, ...state.keys.filter((k) => k.id !== keyState.id)],

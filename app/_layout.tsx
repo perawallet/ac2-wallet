@@ -4,6 +4,7 @@ import { LoadingScreen } from '@/components/LoadingScreen';
 import { Drawer } from '@/components/navigation/Drawer';
 import { RootErrorBoundary } from '@/components/RootErrorBoundary';
 import '@/global.css';
+import { useMigrations } from '@/hooks/useMigrations';
 import { biometricOptions } from '@/lib/keystore/auth-options';
 import { bootstrap } from '@/lib/keystore/bootstrap';
 import { consumeLastFatal } from '@/lib/runtime/fatal-guard';
@@ -15,6 +16,7 @@ import { accountsStore } from '@/stores/accounts';
 import { keyStoreHooks } from '@/stores/before-after';
 import { identitiesStore } from '@/stores/identities';
 import { keyStore } from '@/stores/keystore';
+import { migrationsLedger } from '@/stores/migrations';
 import { passkeysStore } from '@/stores/passkeys';
 import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -28,6 +30,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
+import { subtle } from 'react-native-quick-crypto';
 import { registerGlobals } from 'react-native-webrtc';
 
 // Sentry is limited to internal testing builds (nightly CI, manual APK, and
@@ -59,12 +62,15 @@ if (Constants.expoConfig?.extra?.sentryEnabled === true) {
 globalPolyfill();
 registerGlobals();
 
-const provider = new ReactNativeProvider(
+// Exported so `lib/keystore/bootstrap.ts` can await `provider.key.store.ready`
+// on the same engine instance the app renders with.
+export const provider = new ReactNativeProvider(
   {
     id: 'react-native-wallet',
     name: 'React Native Wallet',
   },
   {
+    migrations: { ledger: migrationsLedger },
     logs: true,
     accounts: {
       store: accountsStore,
@@ -87,6 +93,12 @@ const provider = new ReactNativeProvider(
     keystore: {
       store: keyStore,
       hooks: keyStoreHooks,
+      // React Native has no reliable global `crypto.subtle`, so the host
+      // Subtle must be supplied explicitly. `react-native-quick-crypto`'s
+      // `subtle` backs the engine's AES-256-GCM at-rest sealing (without it,
+      // sealing a new seed throws "Cannot read property 'importKey' of
+      // undefined").
+      subtle: subtle as unknown as SubtleCrypto,
       authentication: biometricOptions,
     },
   },
@@ -113,12 +125,25 @@ export function useFontsLoaded() {
  * autofill events) briefly flip status back to 'loading' to refresh keys in
  * the background; tearing the navigation tree down there would bounce the user
  * out of whatever screen they're on, so once we've loaded once we stay mounted.
+ *
+ * The gate also waits for the provider's one-time data migration run to
+ * settle (`provider.migrations.ready`), so no screen reads keystore records
+ * mid-rewrite. A failed run still releases the gate — the error is logged and
+ * the app proceeds with whatever data is on disk.
  */
 function RootNavigation({ fontsLoaded }: { fontsLoaded: boolean }) {
   const status = useStore(keyStore, (state) => state.status);
+  const { pending: migrationsPending, error: migrationsError } = useMigrations();
   const [hasLoadedOnce, setHasLoadedOnce] = React.useState(false);
 
-  const ready = fontsLoaded && status !== 'loading';
+  React.useEffect(() => {
+    if (migrationsError) {
+      console.error('Data migrations failed:', migrationsError);
+      Sentry.captureException(migrationsError);
+    }
+  }, [migrationsError]);
+
+  const ready = fontsLoaded && status !== 'loading' && !migrationsPending;
   React.useEffect(() => {
     if (ready) setHasLoadedOnce(true);
   }, [ready]);
