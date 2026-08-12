@@ -117,16 +117,22 @@ function InfoLine({
 export function TransactionGroupOverview({
   context,
   txn,
+  txns,
 }: {
   context: TransactionRequestContext;
   txn: TransactionSummary;
+  /** All decoded group members when the request carries a whole group payload. */
+  txns?: TransactionSummary[];
 }) {
   const colorScheme = useColorScheme();
   const palette = colorScheme === 'dark' ? THEME.dark : THEME.light;
-  const groupTotal = context.signingTotal;
+  const members = txns && txns.length > 0 ? txns : [txn];
+  const groupTotal = members.length > 1 ? members.length : context.signingTotal;
   const groupIndex = context.signingIndex;
-  const warnings = getTransactionWarnings(txn);
-  const isGrouped = Boolean(txn.group || (context.signingTotal && context.signingTotal > 1));
+  const warnings = members.flatMap((member) => getTransactionWarnings(member));
+  const isGrouped = Boolean(
+    members.length > 1 || txn.group || (context.signingTotal && context.signingTotal > 1),
+  );
   const groupTitle = isGrouped
     ? groupTotal
       ? `${groupTotal} transaction atomic group`
@@ -143,35 +149,41 @@ export function TransactionGroupOverview({
           <Text className="text-sm font-semibold text-foreground">{groupTitle}</Text>
           <Text className="mt-0.5 text-xs leading-snug text-muted-foreground">
             {isGrouped
-              ? 'Grouped transactions execute together or fail together.'
+              ? members.length > 1
+                ? 'One approval signs every transaction below. Grouped transactions execute together or fail together.'
+                : 'Grouped transactions execute together or fail together.'
               : 'Only this transaction is included in the request.'}
           </Text>
         </View>
       </View>
 
-      <View className="gap-2 rounded-md border border-border bg-card p-2">
-        <View className="flex-row items-start justify-between gap-2">
-          <View className="flex-1">
-            <SmallLabel>Decoded by wallet</SmallLabel>
-            <Text className="mt-0.5 text-xs font-medium text-muted-foreground">
-              {groupIndex && groupTotal
-                ? `Wallet signs ${groupIndex} of ${groupTotal}`
-                : isGrouped
-                  ? 'Wallet signs grouped transaction'
-                  : 'Wallet signs'}
-            </Text>
-            <Text className="text-sm font-semibold text-foreground">
-              {transactionTypeLabel(txn.type)}
+      {members.map((member, index) => (
+        <View key={index} className="gap-2 rounded-md border border-border bg-card p-2">
+          <View className="flex-row items-start justify-between gap-2">
+            <View className="flex-1">
+              <SmallLabel>Decoded by wallet</SmallLabel>
+              <Text className="mt-0.5 text-xs font-medium text-muted-foreground">
+                {members.length > 1
+                  ? `Wallet signs ${index + 1} of ${members.length}`
+                  : groupIndex && groupTotal
+                    ? `Wallet signs ${groupIndex} of ${groupTotal}`
+                    : isGrouped
+                      ? 'Wallet signs grouped transaction'
+                      : 'Wallet signs'}
+              </Text>
+              <Text className="text-sm font-semibold text-foreground">
+                {transactionTypeLabel(member.type)}
+              </Text>
+            </View>
+            <Text className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              {member.type}
             </Text>
           </View>
-          <Text className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            {txn.type}
-          </Text>
+          <TxnDetails txn={member} />
         </View>
-        <TxnDetails txn={txn} />
-      </View>
+      ))}
 
-      {isGrouped && groupTotal !== undefined && groupTotal > 1 && (
+      {members.length === 1 && isGrouped && groupTotal !== undefined && groupTotal > 1 && (
         <View className="flex-row items-start gap-2 rounded-md border border-border bg-card p-2">
           <MaterialIcons name="info-outline" size={15} color={palette.primary} />
           <Text className="flex-1 text-xs leading-snug text-foreground">

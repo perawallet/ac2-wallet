@@ -14,7 +14,15 @@ import {
   transactionTypeLabel,
   type Outcome,
 } from '@/lib/ac2/messageDisplay';
-import { getTransactionSummary, type TransactionSummary } from '@/lib/algorand/transactions';
+import {
+  decodeTransactionGroupPayload,
+  isGroupSigningSchema,
+} from '@/lib/algorand/groupPayload';
+import {
+  getTransactionSummary,
+  summarizeDecodedTransaction,
+  type TransactionSummary,
+} from '@/lib/algorand/transactions';
 import { THEME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
@@ -23,6 +31,7 @@ import type {
   AC2SigningRequest as SigningRequestMessage,
 } from '@algorandfoundation/ac2-sdk/schema';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Buffer } from 'buffer';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
@@ -36,10 +45,19 @@ function formatTimeRemaining(expiresAt: number, now: number): string {
   return mins > 0 ? `Expires in ${mins}m ${secs}s` : `Expires in ${secs}s`;
 }
 
-/** Decode a fund-moving request's payload, swallowing decode errors. */
-function tryGetSummary(payload: string): TransactionSummary | null {
+/**
+ * Decode a fund-moving request's payload into one summary per transaction,
+ * swallowing decode errors. Group-schema payloads carry a whole atomic group;
+ * anything else is a single transaction.
+ */
+function tryGetSummaries(payload: string, schema: string | undefined): TransactionSummary[] | null {
   try {
-    return getTransactionSummary(payload);
+    if (isGroupSigningSchema(schema)) {
+      return decodeTransactionGroupPayload(new Uint8Array(Buffer.from(payload, 'base64'))).map(
+        summarizeDecodedTransaction,
+      );
+    }
+    return [getTransactionSummary(payload)];
   } catch {
     return null;
   }
@@ -121,8 +139,10 @@ function Ac2MessageCard({
   const expired = actionable?.expires_time !== undefined && actionable.expires_time * 1000 < now;
 
   const fundMoving = req ? isFundMovingRequest(entry.envelope) : false;
-  const txnSummary = fundMoving && req ? tryGetSummary(req.body.payload) : null;
-  const isAppCall = txnSummary ? 'appId' in txnSummary : false;
+  const txnSummaries =
+    fundMoving && req ? tryGetSummaries(req.body.payload, req.body.schema) : null;
+  const txnSummary = txnSummaries?.[0] ?? null;
+  const isAppCall = txnSummaries?.some((summary) => 'appId' in summary) ?? false;
   const requestContext =
     fundMoving && req ? getTransactionRequestContext(req.body.description, entry.origin) : null;
   const [appCallInfoVisible, setAppCallInfoVisible] = React.useState(false);
@@ -155,9 +175,11 @@ function Ac2MessageCard({
     fundMoving && requestContext
       ? requestContext.resourceName
         ? `Review ${
-            txnSummary
-              ? transactionTypeLabel(txnSummary.type).toLowerCase()
-              : 'Algorand transaction'
+            txnSummaries && txnSummaries.length > 1
+              ? `${txnSummaries.length}-transaction atomic group`
+              : txnSummary
+                ? transactionTypeLabel(txnSummary.type).toLowerCase()
+                : 'Algorand transaction'
           } for ${requestContext.resourceName}`
         : (requestContext.purpose ?? 'Review Algorand transaction')
       : description;
@@ -206,7 +228,11 @@ function Ac2MessageCard({
 
       {/* ── Value summary (fund-moving) ────────────────────── */}
       {fundMoving && requestContext && txnSummary && (
-        <TransactionGroupOverview context={requestContext} txn={txnSummary} />
+        <TransactionGroupOverview
+          context={requestContext}
+          txn={txnSummary}
+          {...(txnSummaries && txnSummaries.length > 1 ? { txns: txnSummaries } : {})}
+        />
       )}
 
       {/* ── Expiry countdown ───────────────────────────────── */}
