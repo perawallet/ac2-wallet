@@ -288,7 +288,8 @@ public class LiquidAuthNativeModule: Module {
         maxPacketLifeTime: packetLifeTime?.intValue,
         channelProtocol: config["protocol"] as? String,
         negotiated: config["negotiated"] as? Bool,
-        channelId: (config["id"] as? NSNumber)?.intValue
+        channelId: (config["id"] as? NSNumber)?.intValue,
+        order: (config["order"] as? NSNumber)?.intValue
       )
     }
     return result

@@ -239,7 +239,16 @@ public class SignalClient {
             // channel (or the first one created) is returned as the primary.
             let channels = dataChannels.isEmpty ? DataChannelConfig.defaultChannels : dataChannels
             var primaryChannel: RTCDataChannel?
-            for (label, config) in channels {
+            // Create in explicit `order` (then by label for determinism):
+            // dictionary iteration order is arbitrary, but the remote peer
+            // receives channels in creation order and the AC2 agent requires
+            // the control channel (`ac2-v1`, order 0) to arrive first.
+            let orderedChannels = channels.sorted { lhs, rhs in
+                let l = lhs.value.order ?? Int.max
+                let r = rhs.value.order ?? Int.max
+                return l != r ? l < r : lhs.key < rhs.key
+            }
+            for (label, config) in orderedChannels {
                 let channel = peerClient.createDataChannel(
                     label: label,
                     config: config,
