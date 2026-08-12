@@ -99,7 +99,9 @@ module.exports = {
           'AC2 uses Face ID to unlock your wallet and authorize sensitive actions.',
         NSCameraUsageDescription: cameraUsageDescription,
       },
-      associatedDomains: ['webcredentials:debug.liquidauth.com'],
+      associatedDomains: [
+        `webcredentials:debug.liquidauth.com${ENV === 'production' ? '' : '?mode=developer'}`,
+      ],
       entitlements: {
         'com.apple.developer.authentication-services.autofill-credential-provider': true,
       },
