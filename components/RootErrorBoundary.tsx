@@ -32,7 +32,9 @@ export class RootErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     // No-op unless Sentry.init() ran (internal testing builds only).
-    Sentry.captureException(error, { contexts: { react: { componentStack: errorInfo.componentStack } } });
+    Sentry.captureException(error, {
+      contexts: { react: { componentStack: errorInfo.componentStack } },
+    });
     console.error('RootErrorBoundary caught render error:', error, errorInfo.componentStack);
   }
 
