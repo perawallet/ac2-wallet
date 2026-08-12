@@ -114,6 +114,10 @@ export function cancel(): Promise<void> {
  * ({@link connect} / {@link attach}) or via an explicit {@link flushQueue}.
  */
 export function setActive(active: boolean): void {
+  // Parity gap: the iOS module doesn't implement the delivery gate yet
+  // (Android-only). A missing method must be a no-op, not a TypeError — this
+  // is called from AppState listeners, where an uncaught throw is fatal.
+  if (typeof LiquidAuthNativeModule.setActive !== 'function') return;
   return LiquidAuthNativeModule.setActive(active);
 }
 
@@ -125,6 +129,9 @@ export function setActive(active: boolean): void {
  * replay can't race the listener setup. No-op when nothing is buffered.
  */
 export function flushQueue(): void {
+  // Parity gap: not implemented on iOS yet (see setActive) — the iOS service
+  // doesn't buffer offline messages, so there is nothing to replay.
+  if (typeof LiquidAuthNativeModule.flushQueue !== 'function') return;
   return LiquidAuthNativeModule.flushQueue();
 }
 
@@ -158,13 +165,27 @@ export function disconnect(): Promise<void> {
  * (attestation/assertion options + response, `/auth/session`) natively so the
  * background service shares the wallet's session.
  */
-export function request(
+export async function request(
   url: string,
   method: string = 'GET',
   headers?: Record<string, string>,
   body?: string,
 ): Promise<LiquidAuthResponse> {
-  return LiquidAuthNativeModule.request(url, method, headers, body);
+  if (typeof LiquidAuthNativeModule.request === 'function') {
+    return LiquidAuthNativeModule.request(url, method, headers, body);
+  }
+  // Parity gap: the iOS module has no native cookie-jar client yet
+  // (Android-only). Fall back to RN's fetch — on iOS both RN networking and
+  // the module's signaling socket use the process-wide NSHTTPCookieStorage,
+  // so the `connect.sid` session cookie still reaches the native socket and
+  // the Liquid Auth exchange stays authenticated.
+  const res = await fetch(url, {
+    method,
+    ...(headers ? { headers } : {}),
+    ...(body != null ? { body } : {}),
+  });
+  const text = await res.text();
+  return { ok: res.ok, status: res.status, statusText: res.statusText, body: text };
 }
 
 /**
