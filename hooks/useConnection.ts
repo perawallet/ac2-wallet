@@ -54,6 +54,7 @@ import {
   addressMatchesKey,
   sessionAddressFromData,
   sessionAlreadyAuthenticatedForRequest,
+  sessionAlreadyAuthenticatedForWallet,
 } from '@/lib/liquid-auth/helpers';
 import { ensureNotificationPermission } from '@/lib/notifications';
 import { addAc2Message, clearAc2MessagesByThread } from '@/stores/ac2Messages';
@@ -1038,9 +1039,31 @@ export function useConnection(
       // re-announces presence for the requestId on the socket's reconnect —
       // which resolves the waiting peer's `link` — so both parties can
       // renegotiate over the socket without a fresh FIDO2 assertion.
-      if (sessionAlreadyAuthenticatedForRequest(initialSessionData, foundKey, requestId)) {
+      const reuseSessionForRequest = sessionAlreadyAuthenticatedForRequest(
+        initialSessionData,
+        foundKey,
+        requestId,
+      );
+      // The session cookie is origin-scoped, so ONE authenticated session is
+      // shared by every connection at this origin. When the session already
+      // authenticates this wallet but is bound to ANOTHER requestId (the user
+      // switched connections), skip the passkey too: the native signaling
+      // client emits `link` for this requestId when it starts negotiating,
+      // which re-binds the server session to this connection (the server
+      // persists `session.requestId` and joins the socket to the request
+      // room) and re-announces the wallet to the agent's waiting `link`.
+      // Gated on a previously-paired connection (`existingSession`): a
+      // first-time pairing must still run the FIDO2 ceremony, because only
+      // its `auth` event resolves the agent's initial `link` rendezvous.
+      const reuseSessionAtOrigin =
+        !reuseSessionForRequest &&
+        !!existingSession &&
+        sessionAlreadyAuthenticatedForWallet(initialSessionData, foundKey);
+      if (reuseSessionForRequest || reuseSessionAtOrigin) {
         console.log(
-          '[ac2] Reusing existing Liquid Auth session for this requestId; skipping passkey assertion',
+          reuseSessionForRequest
+            ? '[ac2] Reusing existing Liquid Auth session for this requestId; skipping passkey assertion'
+            : '[ac2] Reusing Liquid Auth session already authenticated at this origin; re-binding it to this requestId via link',
         );
         if (initialSessionAddress) {
           setAddress(initialSessionAddress);
@@ -1136,6 +1159,18 @@ export function useConnection(
           deviceCount: e.deviceCount,
           online: e.online,
         };
+        // The session cookie is shared by every connection at this origin, so
+        // until the native client re-binds the session to THIS requestId (via
+        // `link` at negotiation start) the socket can still sit in the previous
+        // connection's request room and receive its presence broadcasts. Those
+        // belong to another connection — driving this machine's presence gate
+        // off them would negotiate against the wrong room.
+        if (presence.requestId !== requestId) {
+          console.log(
+            `[ac2] ignoring presence for another connection (${presence.requestId} != ${requestId})`,
+          );
+          return;
+        }
         console.log(
           `[ac2] presence for ${presence.requestId}: ${presence.deviceCount} device(s), online=${presence.online}`,
         );
