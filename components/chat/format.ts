@@ -17,11 +17,14 @@ export interface MessageTextSegment {
 
 /** Strips `mailto:`/`tel:` scheme prefixes, which are never meant to be shown to the user. */
 export function stripHiddenUriSchemes(text: string): string {
-  return text.replace(HIDDEN_SCHEME_REGEX, '');
+  return typeof text === 'string' ? text.replace(HIDDEN_SCHEME_REGEX, '') : '';
 }
 
 /** Splits message text into plain-text and link segments, for rendering tappable URIs. */
 export function splitMessageText(text: string): MessageTextSegment[] {
+  // Persisted/replayed messages may carry a missing `text`; tolerate it — an
+  // uncaught render error is a fatal native crash on iOS.
+  if (typeof text !== 'string') return [];
   const segments: MessageTextSegment[] = [];
   let lastIndex = 0;
 

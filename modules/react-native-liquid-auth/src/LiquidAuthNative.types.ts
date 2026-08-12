@@ -27,6 +27,13 @@ export interface DataChannelInit {
   protocol?: string;
   negotiated?: boolean;
   id?: number;
+  /**
+   * Creation-order rank (lower first). Channel maps cross the iOS bridge as
+   * unordered dictionaries, but the remote peer observes channels in creation
+   * order — set this when the protocol requires a specific channel (e.g. a
+   * control channel) to be announced first.
+   */
+  order?: number;
 }
 
 /**

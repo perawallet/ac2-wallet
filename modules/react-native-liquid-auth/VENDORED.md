@@ -45,6 +45,27 @@ convention (consolidation decisions D1/D7).
   consumption-side adjustment specific to the wallet (which also depends on
   `react-native-webrtc`).
 
+### Local bug fixes pending upstream
+
+- **`ios/LiquidAuthSDK/SignalClient.swift` — accept a full origin in
+  `init(url:)`.** (2026-08-12) The JS contract passes a full origin
+  (`https://debug.liquidauth.com`) to `start(url:)`; Android's `SignalClient`
+  hands it to `IO.socket(url)` verbatim, but the iOS initializer prepended
+  `https://` unconditionally, producing `https://https://…` whose host parses
+  as the literal string `"https"`. Result: the signaling socket could never
+  connect on iOS (`NSURLErrorDomain -1003`, DNS `NoSuchRecord`) while Android
+  worked. The initializer now prepends the scheme only when one is absent.
+  **Back-port this upstream** and drop this note on the next re-vendor.
+- **`ios/LiquidAuthSDK/DataChannelConfig.swift` /
+  `SignalClient.swift` / `LiquidAuthNativeModule.swift` — deterministic data
+  channel creation order (`order` rank on `DataChannelInit`).** (2026-08-12)
+  The agent resolves its side with the FIRST announced data channel and
+  requires it to be `ac2-v1`; iOS iterated an unordered Swift dictionary and
+  often announced `ac2-heartbeat` first, so the agent tore the session down
+  in a re-negotiation loop. Channels are now created sorted by
+  `(order, label)`; Android ignores the extra key. **Back-port this
+  upstream** and drop this note on the next re-vendor.
+
 ## What was copied / trimmed
 
 Copied from upstream (verbatim):

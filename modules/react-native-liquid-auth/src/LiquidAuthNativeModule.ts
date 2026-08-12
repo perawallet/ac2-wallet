@@ -1,4 +1,4 @@
-import { NativeModule, requireNativeModule } from 'expo';
+import { NativeModule, requireOptionalNativeModule } from 'expo';
 
 import {
   IceServer,
@@ -118,5 +118,32 @@ declare class LiquidAuthNativeModule extends NativeModule<LiquidAuthNativeModule
   ): Promise<LiquidAuthResponse>;
 }
 
-// This call loads the native module object from the JSI.
-export default requireNativeModule<LiquidAuthNativeModule>('LiquidAuthNative');
+/**
+ * Stand-in used when the native module is absent from the binary (a mis-built
+ * app, Expo Go, ...). Every method throws a descriptive — and, crucially,
+ * CATCHABLE — error on invocation. `requireNativeModule` instead throws at
+ * module evaluation, which kills the whole JS bundle; on iOS release builds
+ * that is an uncatchable native abort, and once a paired session is persisted
+ * it becomes a crash loop on every launch (the app auto-reconnects at
+ * startup). This exact failure shipped in TestFlight builds 105–120.
+ */
+function createMissingModuleStub(): LiquidAuthNativeModule {
+  return new Proxy({} as LiquidAuthNativeModule, {
+    get(_target, prop) {
+      // Benign answers for introspection (console.log, promise checks, JSON).
+      if (typeof prop === 'symbol' || prop === 'toJSON' || prop === 'then') return undefined;
+      return () => {
+        throw new Error(
+          `Native module 'LiquidAuthNative' is not present in this binary ` +
+            `(called '${String(prop)}'). The app was built without ` +
+            `modules/react-native-liquid-auth — rebuild the native app.`,
+        );
+      };
+    },
+  });
+}
+
+// Loads the native module object from the JSI, or the throwing stub when the
+// binary does not include it.
+export default requireOptionalNativeModule<LiquidAuthNativeModule>('LiquidAuthNative') ??
+  createMissingModuleStub();

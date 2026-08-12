@@ -28,11 +28,18 @@ export const DEFAULT_ICE_SERVERS = [
   },
 ];
 
-/** DataChannel labels requested on the peer (AC2 spec mandated). */
+/**
+ * DataChannel labels requested on the peer (AC2 spec mandated). `order` fixes
+ * the CREATION (and therefore announcement) order: the agent resolves its
+ * connection with the first channel it receives and requires it to be
+ * `ac2-v1`. JS object key order survives Android's bridge but iOS receives an
+ * unordered Swift dictionary — without the explicit order, iOS announced
+ * `ac2-heartbeat` first and the agent dropped the session on every attempt.
+ */
 export const DEFAULT_DATA_CHANNELS = {
-  'ac2-v1': { ordered: true },
-  'ac2-stream': { ordered: true },
-  'ac2-heartbeat': { ordered: true },
+  'ac2-v1': { ordered: true, order: 0 },
+  'ac2-stream': { ordered: true, order: 1 },
+  'ac2-heartbeat': { ordered: true, order: 2 },
 };
 
 const SOCKET_CONNECT_TIMEOUT_MS = 10000;

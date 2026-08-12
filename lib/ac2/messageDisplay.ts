@@ -8,7 +8,7 @@ type Envelope = Ac2MessageEntry['envelope'];
 export function isFundMovingRequest(envelope: Envelope): boolean {
   return (
     envelope.type === 'ac2/SigningRequest' &&
-    (envelope.body as { sig_hint?: string }).sig_hint === 'transaction-algorand'
+    (envelope.body as { sig_hint?: string } | undefined)?.sig_hint === 'transaction-algorand'
   );
 }
 
@@ -52,10 +52,12 @@ function firstMatch(description: string, regex: RegExp): string | undefined {
 
 /** Pulls AC2/x402 context out of descriptions without treating it as decoded tx data. */
 export function getTransactionRequestContext(
-  description: string,
+  description: string | undefined,
   site: string,
 ): TransactionRequestContext {
-  const cleaned = description.replace(/\s+/g, ' ').trim();
+  // A malformed request may omit `description`; treat it as empty rather than
+  // throwing — an uncaught render error is a hard crash on iOS.
+  const cleaned = (typeof description === 'string' ? description : '').replace(/\s+/g, ' ').trim();
   const signing = cleaned.match(/Sign transaction\s+(\d+)\s+of\s+(\d+)\s+as\s+([A-Z2-7]+)/i);
   const resource = cleaned.match(/Resource:\s*(.*?)(?:\s+https?:\/\/|\s+·\s+https?:\/\/|$)/i);
   const resourceUrl = cleaned.match(/(https?:\/\/\S+)/i)?.[1]?.replace(/[.,)]$/, '');
@@ -195,7 +197,7 @@ export function deriveOutcomeByThid(messages: Ac2MessageEntry[]): Map<string, Ou
     if (type === 'ac2/SigningResponse') map.set(thid, 'approved');
     else if (type === 'ac2/SigningRejected') map.set(thid, 'rejected');
     else if (type === 'ac2/KeyResponse') {
-      const status = (m.envelope.body as { status?: string }).status;
+      const status = (m.envelope.body as { status?: string } | undefined)?.status;
       map.set(thid, status === 'approved' ? 'approved' : 'rejected');
     }
   }

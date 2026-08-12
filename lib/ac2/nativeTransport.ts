@@ -45,6 +45,12 @@ export interface NativeDataChannelInit {
   protocol?: string;
   negotiated?: boolean;
   id?: number;
+  /**
+   * Creation-order rank (lower first). Channel maps cross the iOS bridge as
+   * unordered dictionaries, but the remote peer sees channels in creation
+   * order and the AC2 agent requires `ac2-v1` to arrive first.
+   */
+  order?: number;
 }
 
 /** A single notification template (mirrors the module's `NotificationTemplate`). */

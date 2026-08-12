@@ -145,7 +145,12 @@ function Ac2MessageCard({
     );
   }
 
-  const description = req ? req.body.description : keyReq!.body.for_operation;
+  // `body` (and its fields) may be missing on a malformed or partially
+  // persisted envelope; never let this card throw — an uncaught render error
+  // is a fatal native crash on iOS.
+  const description =
+    (req ? req.body?.description : keyReq!.body?.for_operation) ??
+    (req ? 'Signing request' : 'Agent identity request');
   const displayDescription =
     fundMoving && requestContext
       ? requestContext.resourceName

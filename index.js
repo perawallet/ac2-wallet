@@ -10,4 +10,10 @@
 import './lib/runtime/install-crypto';
 import './lib/runtime/install-buffer';
 
+// Record fatal JS errors (which are hard native crashes on iOS release
+// builds) before the process dies, and detect startup crash loops. Must be a
+// side-effect import: imports hoist, so an inline call would run after
+// expo-router/entry evaluated.
+import './lib/runtime/install-fatal-guard';
+
 import 'expo-router/entry';

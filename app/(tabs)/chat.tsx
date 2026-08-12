@@ -3,6 +3,7 @@ import { ChatScreen } from '@/components/chat/ChatScreen';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/text';
+import { didLastLaunchCrashDuringStartup } from '@/lib/runtime/fatal-guard';
 import { localStorage } from '@/stores/mmkv-local';
 import { sessionsStore } from '@/stores/sessions';
 import { setCurrentConnection, uiStore } from '@/stores/ui';
@@ -31,6 +32,12 @@ export default function ChatTab() {
   // connection (set on scan / "open chat" / drawer) — this works even before a
   // freshly-scanned connection has a session row, since `useConnection` creates
   // the row. Otherwise fall back to the most recently active stored session.
+  // Crash-loop breaker: if the previous launch died before finishing startup,
+  // don't auto-resume the persisted session this launch — reconnecting (and
+  // re-rendering its persisted state) is exactly what a poisoned session
+  // would replay. An explicit selection (scan / drawer tap) still connects.
+  const [quarantined] = React.useState(() => didLastLaunchCrashDuringStartup());
+
   let origin: string | null = null;
   let requestId: string | null = null;
   let resolvedFromCurrentConnection = false;
@@ -38,7 +45,7 @@ export default function ChatTab() {
     origin = currentOrigin;
     requestId = currentId;
     resolvedFromCurrentConnection = true;
-  } else {
+  } else if (!quarantined) {
     const ordered = [...sessions].sort((a, b) => b.lastActivity - a.lastActivity);
     const active = ordered.find((s) => s.id === currentId) ?? ordered[0] ?? null;
     if (active) {

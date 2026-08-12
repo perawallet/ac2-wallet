@@ -33,6 +33,12 @@ public struct DataChannelConfig: Sendable, Equatable {
     public var channelProtocol: String?
     public var negotiated: Bool?
     public var channelId: Int?
+    /// Creation-order rank (lower first). The channel map crosses the bridge
+    /// as an UNORDERED Swift dictionary, but the remote peer observes channels
+    /// in creation order and the AC2 agent requires the control channel
+    /// (`ac2-v1`) to arrive first — creating in dictionary order made iOS
+    /// announce `ac2-heartbeat` first and the agent dropped every session.
+    public var order: Int?
 
     public init(
         ordered: Bool? = nil,
@@ -40,7 +46,8 @@ public struct DataChannelConfig: Sendable, Equatable {
         maxPacketLifeTime: Int? = nil,
         channelProtocol: String? = nil,
         negotiated: Bool? = nil,
-        channelId: Int? = nil
+        channelId: Int? = nil,
+        order: Int? = nil
     ) {
         self.ordered = ordered
         self.maxRetransmits = maxRetransmits
@@ -48,6 +55,7 @@ public struct DataChannelConfig: Sendable, Equatable {
         self.channelProtocol = channelProtocol
         self.negotiated = negotiated
         self.channelId = channelId
+        self.order = order
     }
 
     /// The single `liquid` data channel opened when no channels are supplied,

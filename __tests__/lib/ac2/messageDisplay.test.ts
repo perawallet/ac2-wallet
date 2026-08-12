@@ -23,6 +23,11 @@ const env = (
 const entry = (direction: 'inbound' | 'outbound', envelope: Ac2MessageEntry['envelope']) =>
   ({ direction, envelope }) as unknown as Ac2MessageEntry;
 
+// A malformed / partially persisted envelope with no `body` at all. The
+// helpers must tolerate it: throwing during render is a fatal crash on iOS.
+const bodylessEnv = (type: string, extra: Record<string, unknown> = {}) =>
+  ({ type, ...extra }) as unknown as Ac2MessageEntry['envelope'];
+
 describe('isFundMovingRequest', () => {
   it('is true for an algorand transaction signing request', () => {
     expect(
@@ -39,6 +44,10 @@ describe('isFundMovingRequest', () => {
     expect(isFundMovingRequest(env('ac2/KeyRequest', { sig_hint: 'transaction-algorand' }))).toBe(
       false,
     );
+  });
+
+  it('is false (not a throw) for an envelope with no body', () => {
+    expect(isFundMovingRequest(bodylessEnv('ac2/SigningRequest'))).toBe(false);
   });
 });
 
@@ -150,5 +159,20 @@ describe('deriveOutcomeByThid', () => {
     expect(map.get('req-3')).toBe('approved');
     expect(map.get('req-4')).toBe('rejected');
     expect(map.size).toBe(4);
+  });
+
+  it('treats a KeyResponse with no body as rejected instead of throwing', () => {
+    const map = deriveOutcomeByThid([
+      entry('outbound', bodylessEnv('ac2/KeyResponse', { thid: 'req-5' })),
+    ]);
+    expect(map.get('req-5')).toBe('rejected');
+  });
+});
+
+describe('getTransactionRequestContext with missing description', () => {
+  it('returns an empty context instead of throwing', () => {
+    const context = getTransactionRequestContext(undefined, 'https://example.com');
+    expect(context.site).toBe('https://example.com');
+    expect(context.purpose).toBeUndefined();
   });
 });

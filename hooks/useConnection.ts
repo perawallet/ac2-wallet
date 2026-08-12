@@ -833,12 +833,19 @@ export function useConnection(
         userStopped: userStoppedRef.current,
         wasBackgrounded: wasBackgroundedRef.current,
         isNativeChannelOpen: () => {
-          const snapshot = getNativeConnectionState();
-          return (
-            !!snapshot.connected &&
-            snapshot.requestId === requestId &&
-            isSnapshotChannelOpen(snapshot)
-          );
+          try {
+            const snapshot = getNativeConnectionState();
+            return (
+              !!snapshot.connected &&
+              snapshot.requestId === requestId &&
+              isSnapshotChannelOpen(snapshot)
+            );
+          } catch {
+            // Native module unavailable (tests / web) or read failure — stay
+            // optimistic like the snapshot seed does; an uncaught throw in
+            // this timer would be a fatal crash.
+            return true;
+          }
         },
       });
       if (verdict.action === 'none') return;

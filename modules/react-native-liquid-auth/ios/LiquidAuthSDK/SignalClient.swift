@@ -68,8 +68,16 @@ public class SignalClient {
     init(url: String, service: SignalService) {
         self.service = service
 
-        // Initialize the Socket.IO manager and client
-        manager = SocketManager(socketURL: URL(string: "https://\(url)")!, config: [.log(false), .compress])
+        // Initialize the Socket.IO manager and client. Callers pass a full
+        // origin (`https://debug.liquidauth.com`) — the same value the Android
+        // client feeds `IO.socket(url)` verbatim. Only prepend a scheme when
+        // one is missing (the upstream liquid-auth-ios SDK took a bare host):
+        // blindly prefixing produced `https://https://…`, whose "hostname"
+        // is `https` — the socket then dies with "A server with the specified
+        // hostname could not be found" and the wallet never reaches signaling.
+        let socketOrigin =
+            url.hasPrefix("https://") || url.hasPrefix("http://") ? url : "https://\(url)"
+        manager = SocketManager(socketURL: URL(string: socketOrigin)!, config: [.log(false), .compress])
         socket = manager.defaultSocket
 
         // Set up event listeners
@@ -231,7 +239,16 @@ public class SignalClient {
             // channel (or the first one created) is returned as the primary.
             let channels = dataChannels.isEmpty ? DataChannelConfig.defaultChannels : dataChannels
             var primaryChannel: RTCDataChannel?
-            for (label, config) in channels {
+            // Create in explicit `order` (then by label for determinism):
+            // dictionary iteration order is arbitrary, but the remote peer
+            // receives channels in creation order and the AC2 agent requires
+            // the control channel (`ac2-v1`, order 0) to arrive first.
+            let orderedChannels = channels.sorted { lhs, rhs in
+                let l = lhs.value.order ?? Int.max
+                let r = rhs.value.order ?? Int.max
+                return l != r ? l < r : lhs.key < rhs.key
+            }
+            for (label, config) in orderedChannels {
                 let channel = peerClient.createDataChannel(
                     label: label,
                     config: config,
@@ -265,10 +282,20 @@ public class SignalClient {
             Logger.info("Offer (responder): Waiting for remote offer")
             send(event: "link", data: ["requestId": requestId])
 
-            // Listen for the offer-description event (only for responder)
+            // Listen for the offer-description event (only for responder).
+            // The JavaScript SignalClient (and the Android client) emit the
+            // SDP as a RAW STRING — accept both that and the legacy
+            // `{sdp, type}` dictionary. Dropping the string form silently is
+            // what left iOS deaf to the agent's offer while Android paired.
             socket.on("offer-description") { [weak self] data, _ in
-                guard let self, let eventData = data.first as? [String: Any] else { return }
-                self.handleOfferDescription(eventData)
+                guard let self else { return }
+                if let eventData = data.first as? [String: Any] {
+                    self.handleOfferDescription(eventData)
+                } else if let sdp = data.first as? String {
+                    self.handleOfferDescription(sdp)
+                } else {
+                    Logger.error("offer-description payload has unexpected shape")
+                }
             }
             return nil
         }
@@ -453,18 +480,24 @@ public class SignalClient {
     // MARK: - Handle WebSocket Messages
 
     private func handleOfferDescription(_ data: [String: Any]) {
-        guard let sdp = data["sdp"] as? String,
-              let type = sdpType(from: data["type"] as? String)
-        else {
+        guard let sdp = data["sdp"] as? String else {
             Logger.error("Received SDP is missing or invalid.")
             return
         }
+        // Tolerate a missing `type` — on this listener it is always an offer.
+        let type = sdpType(from: data["type"] as? String) ?? .offer
+        applyRemoteOffer(RTCSessionDescription(type: type, sdp: sdp))
+    }
 
-        Logger.debug("handleOfferDescription: Received SDP: \(type) :  \(sdp)")
-        let sessionDescription = RTCSessionDescription(type: type, sdp: sdp)
+    /// Raw-string variant: the wire format the JavaScript and Android clients
+    /// actually emit (`socket.emit('offer-description', sdp)`).
+    private func handleOfferDescription(_ sdp: String) {
+        applyRemoteOffer(RTCSessionDescription(type: .offer, sdp: sdp))
+    }
 
+    private func applyRemoteOffer(_ sessionDescription: RTCSessionDescription) {
         if peerClient?.peerConnection?.signalingState == .haveLocalOffer {
-            Logger.error("HandleOfferDescription: cannot set remote offer while in have-local-offer state")
+            Logger.error("applyRemoteOffer: cannot set remote offer while in have-local-offer state")
             return
         }
 
@@ -486,7 +519,10 @@ public class SignalClient {
                             Logger.error("Failed to set local description: \(error)")
                         } else {
                             Logger.debug("Local description set successfully.")
-                            self.socket.emit("answer-description", ["sdp": answer.sdp])
+                            // Raw string, matching the JavaScript client's
+                            // `socket.once('answer-description', (sdp: string))`
+                            // — a `{sdp:}` dictionary is unparseable there.
+                            self.send(event: "answer-description", sdp: answer.sdp)
                         }
                     }
                 }
