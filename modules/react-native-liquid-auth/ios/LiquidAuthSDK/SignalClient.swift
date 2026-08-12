@@ -265,10 +265,20 @@ public class SignalClient {
             Logger.info("Offer (responder): Waiting for remote offer")
             send(event: "link", data: ["requestId": requestId])
 
-            // Listen for the offer-description event (only for responder)
+            // Listen for the offer-description event (only for responder).
+            // The JavaScript SignalClient (and the Android client) emit the
+            // SDP as a RAW STRING — accept both that and the legacy
+            // `{sdp, type}` dictionary. Dropping the string form silently is
+            // what left iOS deaf to the agent's offer while Android paired.
             socket.on("offer-description") { [weak self] data, _ in
-                guard let self, let eventData = data.first as? [String: Any] else { return }
-                self.handleOfferDescription(eventData)
+                guard let self else { return }
+                if let eventData = data.first as? [String: Any] {
+                    self.handleOfferDescription(eventData)
+                } else if let sdp = data.first as? String {
+                    self.handleOfferDescription(sdp)
+                } else {
+                    Logger.error("offer-description payload has unexpected shape")
+                }
             }
             return nil
         }
@@ -453,18 +463,24 @@ public class SignalClient {
     // MARK: - Handle WebSocket Messages
 
     private func handleOfferDescription(_ data: [String: Any]) {
-        guard let sdp = data["sdp"] as? String,
-              let type = sdpType(from: data["type"] as? String)
-        else {
+        guard let sdp = data["sdp"] as? String else {
             Logger.error("Received SDP is missing or invalid.")
             return
         }
+        // Tolerate a missing `type` — on this listener it is always an offer.
+        let type = sdpType(from: data["type"] as? String) ?? .offer
+        applyRemoteOffer(RTCSessionDescription(type: type, sdp: sdp))
+    }
 
-        Logger.debug("handleOfferDescription: Received SDP: \(type) :  \(sdp)")
-        let sessionDescription = RTCSessionDescription(type: type, sdp: sdp)
+    /// Raw-string variant: the wire format the JavaScript and Android clients
+    /// actually emit (`socket.emit('offer-description', sdp)`).
+    private func handleOfferDescription(_ sdp: String) {
+        applyRemoteOffer(RTCSessionDescription(type: .offer, sdp: sdp))
+    }
 
+    private func applyRemoteOffer(_ sessionDescription: RTCSessionDescription) {
         if peerClient?.peerConnection?.signalingState == .haveLocalOffer {
-            Logger.error("HandleOfferDescription: cannot set remote offer while in have-local-offer state")
+            Logger.error("applyRemoteOffer: cannot set remote offer while in have-local-offer state")
             return
         }
 
@@ -486,7 +502,10 @@ public class SignalClient {
                             Logger.error("Failed to set local description: \(error)")
                         } else {
                             Logger.debug("Local description set successfully.")
-                            self.socket.emit("answer-description", ["sdp": answer.sdp])
+                            // Raw string, matching the JavaScript client's
+                            // `socket.once('answer-description', (sdp: string))`
+                            // — a `{sdp:}` dictionary is unparseable there.
+                            self.send(event: "answer-description", sdp: answer.sdp)
                         }
                     }
                 }
