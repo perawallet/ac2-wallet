@@ -1,15 +1,17 @@
+import { isGroupSigningSchema } from '@/lib/algorand/groupPayload';
 import type { TransactionSummary } from '@/lib/algorand/transactions';
 import type { Ac2Direction, Ac2MessageEntry } from '@/stores/ac2Messages';
 import { TransactionType } from '@algorandfoundation/algokit-utils/transact';
 
 type Envelope = Ac2MessageEntry['envelope'];
 
-/** A signing request that moves Algorand value (vs. an identity/ownership proof). */
+/** A signing request that moves Algorand value (vs. an identity/ownership proof).
+ *  Gates the review card, so it must stay as permissive as every `approveSigning`
+ *  branch that reaches the keystore — `sig_hint` is optional, `schema` alone signs. */
 export function isFundMovingRequest(envelope: Envelope): boolean {
-  return (
-    envelope.type === 'ac2/SigningRequest' &&
-    (envelope.body as { sig_hint?: string } | undefined)?.sig_hint === 'transaction-algorand'
-  );
+  if (envelope.type !== 'ac2/SigningRequest') return false;
+  const body = envelope.body as { sig_hint?: string; schema?: string } | undefined;
+  return body?.sig_hint === 'transaction-algorand' || isGroupSigningSchema(body?.schema);
 }
 
 export type ValueSummaryData = { lead: string; amount: string; to?: string };
