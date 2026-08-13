@@ -14,10 +14,7 @@ import {
   transactionTypeLabel,
   type Outcome,
 } from '@/lib/ac2/messageDisplay';
-import {
-  decodeTransactionGroupPayload,
-  isGroupSigningSchema,
-} from '@/lib/algorand/groupPayload';
+import { decodeTransactionGroupPayload, isGroupSigningSchema } from '@/lib/algorand/groupPayload';
 import {
   getTransactionSummary,
   summarizeDecodedTransaction,
