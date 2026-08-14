@@ -30,6 +30,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
+import { AppState } from 'react-native';
 import { subtle } from 'react-native-quick-crypto';
 import { registerGlobals } from 'react-native-webrtc';
 
@@ -188,6 +189,30 @@ export default Sentry.wrap(function RootLayout() {
         extra: { ...lastFatal },
       });
     }
+  }, []);
+
+  // A credential created from the system passkey sheet is written by the
+  // native provider's own process, so it is invisible here until bootstrap
+  // re-reads the keystore records and re-lists the native credentials. The
+  // sheet backgrounds this app, and iOS raises no autofill event for a
+  // credential created outside it, so the return to foreground is the only
+  // reliable moment to refresh.
+  React.useEffect(() => {
+    let wasBackgrounded = false;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background' || state === 'inactive') {
+        wasBackgrounded = true;
+        return;
+      }
+      if (state === 'active' && wasBackgrounded) {
+        wasBackgrounded = false;
+        bootstrap(biometricOptions, false).catch((e) =>
+          console.error('Failed to reload keys after app became active:', e),
+        );
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
 
   useEventListener(ReactNativePasskeyAutofill, 'onPasskeyAdded', (event) => {

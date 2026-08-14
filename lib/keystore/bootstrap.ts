@@ -17,6 +17,8 @@ import {
   findDomainMainKey,
   isSeed,
 } from '@/lib/keystore/passkey-root';
+import { mergeNativePasskeys, type NativeStoredCredential } from '@/lib/keystore/native-passkeys';
+import { passkeysStore } from '@/stores/passkeys';
 import { addLog } from '@algorandfoundation/log-store';
 
 import { generateId } from '@algorandfoundation/wallet-provider';
@@ -49,6 +51,40 @@ function readPersistedKeys(): Key[] {
     .getAllKeys()
     .filter((k) => k.startsWith(METADATA_PREFIX))
     .map((k) => deserializeKey(storage.getString(k)!));
+}
+
+/**
+ * Folds the credentials the native AutoFill provider holds into the passkey
+ * store.
+ *
+ * The engine only ever populates the store from the keystore's own `k/<id>`
+ * records, so a credential the native provider created (in its own process,
+ * from the system passkey sheet) stays invisible to the app until it is listed
+ * here — which is why the credentials screen showed nothing. Merged by id
+ * rather than replaced, so the keystore's metadata (origin, `keyId`, scheme,
+ * `registered`) survives a resync.
+ */
+async function syncNativeStoredPasskeys(logMsg: (message: string, level?: string) => void) {
+  const credentials = (await ReactNativePasskeyAutofill.getStoredCredentials().catch(
+    (e: unknown) => {
+      logMsg(`ReactNativePasskeyAutofill.getStoredCredentials error: ${e}`, 'error');
+      return [];
+    },
+  )) as NativeStoredCredential[];
+
+  logMsg(`Native passkey credentials visible to app: ${credentials.length}`);
+  await ReactNativePasskeyAutofill.refreshCredentialIdentities?.().catch((e: unknown) => {
+    logMsg(`ReactNativePasskeyAutofill.refreshCredentialIdentities error: ${e}`, 'error');
+  });
+
+  if (credentials.length === 0) {
+    return;
+  }
+
+  passkeysStore.setState((state) => ({
+    ...state,
+    passkeys: mergeNativePasskeys(state.passkeys, credentials),
+  }));
 }
 
 let activeBootstrap: Promise<void> | null = null;
@@ -113,6 +149,8 @@ async function runBootstrap(options?: AuthenticationOptions, showAlert = true) {
       ).catch((e) => {
         logMsg(`ReactNativePasskeyAutofill.configureIntentActions error: ${e}`, 'error');
       });
+
+      await syncNativeStoredPasskeys(logMsg);
 
       logMsg('No keys found, setting keystore status to idle');
       keyStore.setState((state) => ({ ...state, status: 'idle' }));
@@ -207,6 +245,8 @@ async function runBootstrap(options?: AuthenticationOptions, showAlert = true) {
     ).catch((e) => {
       logMsg(`ReactNativePasskeyAutofill.configureIntentActions error: ${e}`, 'error');
     });
+
+    await syncNativeStoredPasskeys(logMsg);
 
     if (keys.length > 0) {
       logMsg('Setting keystore status to ready');

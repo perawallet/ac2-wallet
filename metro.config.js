@@ -21,6 +21,17 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return context.resolveRequest(context, 'react-native-quick-crypto', platform);
   }
 
+  if (moduleName === 'falcon-1024') {
+    // `falcon-1024` is the WASM Falcon binding behind keystore-core's lazy
+    // `import('falcon-1024')` default — an *optional* peer that pnpm
+    // auto-installs, which makes Metro bundle its ESM build whose
+    // `import.meta.url` is a syntax error under Hermes. React Native uses the
+    // native `@joe-p/react-native-falcon` binding instead, so resolve the WASM
+    // module to an empty stub; keystore-core treats the empty module like a
+    // missing library and leaves the Falcon shim out of the default stack.
+    return { type: 'empty' };
+  }
+
   // otherwise chain to the standard Metro resolver.
   return context.resolveRequest(context, moduleName, platform);
 };
