@@ -22,6 +22,11 @@ import { recordAgentIdentity } from '@/stores/agentIdentities';
 import { keyStore } from '@/stores/keystore';
 import { useProvider } from '@/hooks/useProvider';
 import { decodeAddress } from '@/utils/algorand';
+import {
+  decodeTransactionGroupPayload,
+  isGroupSigningSchema,
+  transactionSigningBytes,
+} from '@/lib/algorand/groupPayload';
 
 export interface Ac2RespondersOptions {
   /** Active wallet address (`did:key:<address>`). */
@@ -60,7 +65,25 @@ export function useAc2Responders(opts: Ac2RespondersOptions): Ac2Responders {
           throw new Error('No matching key for active address');
         }
         const payload = new Uint8Array(Buffer.from(request.body.payload, 'base64'));
-        const signature: Uint8Array = await key.store.sign(matchedKey.id, payload);
+        let signature: Uint8Array;
+        if (isGroupSigningSchema(request.body.schema)) {
+          // One approval covers the whole atomic group: sign each member's
+          // canonical signing bytes and reply with the signatures
+          // concatenated in group order.
+          const txns = decodeTransactionGroupPayload(payload);
+          const sigs: Uint8Array[] = [];
+          for (const txn of txns) {
+            sigs.push(await key.store.sign(matchedKey.id, transactionSigningBytes(txn)));
+          }
+          signature = new Uint8Array(sigs.reduce((total, sig) => total + sig.length, 0));
+          let offset = 0;
+          for (const sig of sigs) {
+            signature.set(sig, offset);
+            offset += sig.length;
+          }
+        } else {
+          signature = await key.store.sign(matchedKey.id, payload);
+        }
         sendAc2(
           buildApprovedSigning({
             request,

@@ -12,6 +12,7 @@ import {
   isResponseEnvelope,
   signatureLabel,
 } from '@/lib/ac2/messageDisplay';
+import { X402_ALGORAND_GROUP_SIGNING_SCHEMA } from '@/lib/algorand/groupPayload';
 
 // Minimal envelope/entry builders — we only populate the fields the helpers read.
 const env = (
@@ -48,6 +49,21 @@ describe('isFundMovingRequest', () => {
 
   it('is false (not a throw) for an envelope with no body', () => {
     expect(isFundMovingRequest(bodylessEnv('ac2/SigningRequest'))).toBe(false);
+  });
+
+  // `approveSigning` group-signs on `schema` alone, so this gate must too.
+  it('is true for a group-schema request that omits sig_hint', () => {
+    expect(
+      isFundMovingRequest(
+        env('ac2/SigningRequest', { schema: X402_ALGORAND_GROUP_SIGNING_SCHEMA }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is false for an unrelated schema with no sig_hint', () => {
+    expect(isFundMovingRequest(env('ac2/SigningRequest', { schema: 'x402/exact/evm/v1' }))).toBe(
+      false,
+    );
   });
 });
 

@@ -67,7 +67,11 @@ export type TransactionSummary =
  * @returns A {@link TransactionSummary} discriminated by transaction type.
  */
 export function getTransactionSummary(encoded: string): TransactionSummary {
-  const txn = decodeTransaction(Buffer.from(encoded, 'base64'));
+  return summarizeDecodedTransaction(decodeTransaction(Buffer.from(encoded, 'base64')));
+}
+
+/** Summarizes an already-decoded transaction (see {@link getTransactionSummary}). */
+export function summarizeDecodedTransaction(txn: Transaction): TransactionSummary {
   const base = {
     type: txn.type,
     from: txn.sender,
