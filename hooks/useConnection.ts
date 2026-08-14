@@ -69,7 +69,7 @@ import {
 } from '@/stores/sessions';
 import { Ac2Client } from '@algorandfoundation/ac2-sdk';
 import type { AC2BaseMessage as Ac2Message } from '@algorandfoundation/ac2-sdk/schema';
-import { encodeAddress } from '@algorandfoundation/keystore';
+import { encodeAddress } from '@/utils/algorand';
 import { useStore } from '@tanstack/react-store';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, type AppStateStatus } from 'react-native';

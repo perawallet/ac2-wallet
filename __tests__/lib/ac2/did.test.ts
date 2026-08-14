@@ -4,7 +4,7 @@ import {
   didKeyFromPublicKeyBase64,
   isDidKeyMultibase,
 } from '@/lib/ac2/did';
-import { encodeAddress } from '@algorandfoundation/keystore';
+import { encodeAddress } from '@/utils/algorand';
 import { Buffer } from 'buffer';
 
 // Fixed 32-byte Ed25519 public key so `did:key` output is a stable vector.

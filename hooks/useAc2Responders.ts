@@ -116,24 +116,22 @@ export function useAc2Responders(opts: Ac2RespondersOptions): Ac2Responders {
     async (request: KeyRequestMessage) => {
       try {
         if (!address) throw new Error('No active address');
-        // Mint a fresh BIP39 seed → Ed25519 identity key through the keystore.
-        const seedId = await key.store.generate({
-          type: 'seed',
-          algorithm: 'raw',
-          extractable: true,
-          keyUsages: ['deriveKey', 'deriveBits'],
-          params: { purpose: 'agent-identity' },
-        });
+        // Mint a fresh EXTRACTABLE Ed25519 identity key through the keystore:
+        // a granted agent identity is exactly the case extractable keys exist
+        // for, since its private half is handed to the agent. `export` only
+        // releases material for a key generated `extractable: true` (and
+        // unlocks it through the keychain, so the user authenticates the
+        // grant).
         const identityKeyId = await key.store.generate({
           type: 'ed25519',
           algorithm: 'EdDSA',
           extractable: true,
           keyUsages: ['sign', 'verify'],
-          params: { parentKeyId: seedId, purpose: 'agent-identity' },
+          params: { purpose: 'agent-identity' },
         });
         const identityKey = await key.store.export(identityKeyId);
         if (!identityKey.publicKey || !identityKey.privateKey) {
-          throw new Error('Failed to generate agent identity keypair');
+          throw new Error('Failed to export agent identity keypair');
         }
         const publicKey = new Uint8Array(identityKey.publicKey);
         const privateKey = new Uint8Array(identityKey.privateKey);

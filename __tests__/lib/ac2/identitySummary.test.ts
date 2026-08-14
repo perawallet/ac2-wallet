@@ -1,6 +1,6 @@
 import { extractAgentKeyFromMessages, getAgentMaterialHeld } from '@/lib/ac2/identitySummary';
 import type { Ac2MessageEntry } from '@/stores/ac2Messages';
-import { encodeAddress } from '@algorandfoundation/keystore';
+import { encodeAddress } from '@/utils/algorand';
 import { Buffer } from 'buffer';
 
 const CONTROLLER_PUBLIC_KEY = new Uint8Array(32).map((_, i) => i);

@@ -29,13 +29,10 @@ import {
 import type { ReactNativeProvider } from '@/providers/ReactNativeProvider';
 import { keyStore } from '@/stores/keystore';
 import { updateSessionPasskeyCredentialId } from '@/stores/sessions';
-import { decodeAddress } from '@/utils/algorand';
-import type { Key, KeyData } from '@algorandfoundation/keystore';
-import { encodeAddress } from '@algorandfoundation/keystore';
+import { decodeAddress, encodeAddress } from '@/utils/algorand';
+import type { Key } from '@algorandfoundation/react-native-keystore';
 import { assertion, encoding } from '@algorandfoundation/liquid-client';
-import { fetchSecret, readMasterKey } from '@algorandfoundation/react-native-keystore';
 import ReactNativePasskeyAutofill from '@algorandfoundation/react-native-passkey-autofill';
-import { Buffer } from 'buffer';
 import type { MutableRefObject } from 'react';
 
 type FetchWithTimeout = (
@@ -411,22 +408,18 @@ export async function authenticateLiquidAuth(
 
     if (matchedKey) {
       try {
-        // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-        // can zero its own buffer in `finally` without wiping ours.
-        const masterKey = await readMasterKey(biometricOptions);
-        const keyData = await fetchSecret<KeyData>({
-          keyId: matchedKey.id,
-          options: { masterKey: Buffer.from(masterKey) },
-        });
-        if (keyData) {
-          keyData.metadata = {
-            ...keyData.metadata,
+        // Metadata-only update: the split record layout keeps metadata in its
+        // own plaintext `k/<id>` record, so no master-key read (and no
+        // biometric prompt) is needed to mark the key registered.
+        persistKeyMetadata({
+          ...matchedKey,
+          metadata: {
+            ...matchedKey.metadata,
             origin,
             ...(selectedAddress ? { userHandle: selectedAddress } : {}),
             registered: true,
-          };
-          persistKeyMetadata(keyData, masterKey);
-        }
+          },
+        });
       } catch (error) {
         console.error('Failed to update key metadata after assertion:', error);
       }
@@ -552,22 +545,18 @@ export async function authenticateLiquidAuth(
 
     if (matchedKey) {
       try {
-        // Pass a defensive copy via `options.masterKey` so `fetchSecret`
-        // can zero its own buffer in `finally` without wiping ours.
-        const masterKey = await readMasterKey(biometricOptions);
-        const keyData = await fetchSecret<KeyData>({
-          keyId: matchedKey.id,
-          options: { masterKey: Buffer.from(masterKey) },
-        });
-        if (keyData) {
-          keyData.metadata = {
-            ...keyData.metadata,
+        // Metadata-only update: the split record layout keeps metadata in its
+        // own plaintext `k/<id>` record, so no master-key read (and no
+        // biometric prompt) is needed to mark the key registered.
+        persistKeyMetadata({
+          ...matchedKey,
+          metadata: {
+            ...matchedKey.metadata,
             origin,
             userHandle: liquidOptions.address,
             registered: true,
-          };
-          persistKeyMetadata(keyData, masterKey);
-        }
+          },
+        });
       } catch (error) {
         console.error('Failed to update key metadata after attestation:', error);
       }

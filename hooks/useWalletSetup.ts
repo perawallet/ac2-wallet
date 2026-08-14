@@ -1,5 +1,7 @@
 import { useProvider } from '@/hooks/useProvider';
 import { bootstrap } from '@/lib/keystore/bootstrap';
+import { ADDRESS_CONTEXT, deriveContextKey, IDENTITY_CONTEXT } from '@/lib/keystore/hd-keys';
+import { importSeed } from '@/lib/keystore/passkey-root';
 import { localStorage } from '@/stores/mmkv-local';
 import * as bip39 from '@scure/bip39';
 import { mnemonicToSeed } from '@scure/bip39';
@@ -28,16 +30,7 @@ export function useWalletSetup() {
       await identity.store.clear();
       await passkey.store.clear();
 
-      const seedId = await key.store.import(
-        {
-          type: 'hd-seed',
-          algorithm: 'raw',
-          extractable: true,
-          keyUsages: ['deriveKey', 'deriveBits'],
-          privateKey: await mnemonicToSeed(recoveryPhrase.join(' ')),
-        },
-        'bytes',
-      );
+      const seedId = await importSeed(key.store, await mnemonicToSeed(recoveryPhrase.join(' ')));
 
       const rootKeyId = await key.store.generate({
         type: 'hd-root-key',
@@ -47,21 +40,9 @@ export function useWalletSetup() {
         params: { parentKeyId: seedId },
       });
 
-      await key.store.generate({
-        type: 'hd-derived-ed25519',
-        algorithm: 'EdDSA',
-        extractable: true,
-        keyUsages: ['sign', 'verify'],
-        params: { parentKeyId: rootKeyId, context: 0, account: 0, index: 0, derivation: 9 },
-      });
+      await deriveContextKey(key.store, rootKeyId, { context: ADDRESS_CONTEXT });
 
-      await key.store.generate({
-        type: 'hd-derived-ed25519',
-        algorithm: 'EdDSA',
-        extractable: true,
-        keyUsages: ['sign', 'verify'],
-        params: { parentKeyId: rootKeyId, context: 1, account: 0, index: 0, derivation: 9 },
-      });
+      await deriveContextKey(key.store, rootKeyId, { context: IDENTITY_CONTEXT });
 
       await bootstrap(undefined, true);
 

@@ -5,20 +5,36 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@algorandfoundation/accounts-store': 1.0.0-canary.2
+  '@algorandfoundation/log-store': 1.0.0-canary.3
+  '@algorandfoundation/react-native-keystore': 1.0.0-canary.19
   '@tanstack/store': 0.9.3
+  react-native-mmkv: ^4.3.1
+  react-native-quick-crypto: 1.1.5
   '@xmldom/xmldom': ^0.9.10
   '@expo/plist>@xmldom/xmldom': ^0.8.11
   ajv: ^8.18.0
+  brace-expansion: ^2.1.4
   diff: ^8.0.3
+  fast-uri: ^3.1.5
+  form-data: ^4.0.6
+  joi: ^17.13.4
+  js-yaml@^3.0.0: ^3.15.1
+  js-yaml@^4.0.0: ^4.3.1
   lightningcss: 1.30.1
   minimatch: ^9.0.5
+  nanoid: ^3.3.17
   node-forge: ^1.4.0
-  postcss: ^8.5.10
+  postcss: ^8.5.18
   react: 19.1.0
   react-dom: 19.1.0
   react-test-renderer: 19.1.0
-  tar: ^7.5.11
+  shell-quote: ^1.8.5
+  socket.io-parser: ^4.2.7
+  tar: ^7.5.19
+  undici: ^6.27.0
   uuid: ^11.1.1
+  ws@^8.0.0: ^8.21.0
   yaml: ^2.9.0
 
 importers:
@@ -29,38 +45,38 @@ importers:
         specifier: 1.0.0-canary.1
         version: 1.0.0-canary.1
       '@algorandfoundation/accounts-keystore-extension':
-        specifier: npm:@wjbeau/accounts-keystore-extension@1.0.0-canary.5
-        version: '@wjbeau/accounts-keystore-extension@1.0.0-canary.5(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)'
+        specifier: 1.0.0-canary.10
+        version: 1.0.0-canary.10(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
       '@algorandfoundation/accounts-store':
-        specifier: npm:@wjbeau/accounts-store@1.0.0-canary.2
-        version: '@wjbeau/accounts-store@1.0.0-canary.2(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)'
+        specifier: 1.0.0-canary.2
+        version: 1.0.0-canary.2(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
       '@algorandfoundation/algokit-utils':
         specifier: 10.0.0-beta.4
         version: 10.0.0-beta.4
       '@algorandfoundation/identities-extension':
-        specifier: npm:@wjbeau/identities-extension@1.0.0-canary.1
-        version: '@wjbeau/identities-extension@1.0.0-canary.1(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)'
+        specifier: 1.0.0-canary.5
+        version: 1.0.0-canary.5(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
       '@algorandfoundation/identities-keystore-extension':
-        specifier: npm:@wjbeau/identities-keystore-extension@1.0.0-canary.1
-        version: '@wjbeau/identities-keystore-extension@1.0.0-canary.1(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)'
+        specifier: 1.0.0-canary.5
+        version: 1.0.0-canary.5(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
       '@algorandfoundation/identities-store':
-        specifier: npm:@wjbeau/identities-store@1.0.0-canary.1
-        version: '@wjbeau/identities-store@1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)'
-      '@algorandfoundation/keystore':
-        specifier: npm:@wjbeau/keystore@1.0.0-canary.16
-        version: '@wjbeau/keystore@1.0.0-canary.16(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)'
+        specifier: 1.0.0-canary.1
+        version: 1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
       '@algorandfoundation/liquid-client':
         specifier: ^1.0.0-canary.9
         version: 1.0.0-canary.9(qr-code-styling@1.9.2)(socket.io-client@4.8.3)
       '@algorandfoundation/log-store':
-        specifier: npm:@wjbeau/log-store@1.0.0-canary.3
-        version: '@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)'
+        specifier: 1.0.0-canary.3
+        version: 1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
+      '@algorandfoundation/provider-migrations':
+        specifier: 1.0.0-canary.1
+        version: 1.0.0-canary.1(before-after-hook@4.0.0)
       '@algorandfoundation/react-native-keystore':
-        specifier: 1.0.0-canary.13
-        version: 1.0.0-canary.13(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+        specifier: 1.0.0-canary.19
+        version: 1.0.0-canary.19(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@algorandfoundation/provider-migrations@1.0.0-canary.1(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(falcon-1024@0.2.0)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       '@algorandfoundation/react-native-passkey-autofill':
-        specifier: 1.0.0-canary.21
-        version: 1.0.0-canary.21(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+        specifier: 1.0.0-canary.24
+        version: 1.0.0-canary.24(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@algorandfoundation/provider-migrations@1.0.0-canary.1(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(falcon-1024@0.2.0)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       '@algorandfoundation/wallet-provider':
         specifier: 1.0.0-canary.5
         version: 1.0.0-canary.5
@@ -310,15 +326,8 @@ packages:
   '@algorandfoundation/ac2-sdk@1.0.0-canary.1':
     resolution: {integrity: sha512-OYP/TpCWTLpcjWtG9+RLxMhCKFb7mQwmF2KgI/Kv/7F5vILZoSoE8jAnrbkRfjo4zylvhmI7bb4G92AGzlZM1A==}
 
-  '@algorandfoundation/algokit-utils@10.0.0-beta.4':
-    resolution: {integrity: sha512-+X06PW7w2zWJWPp91pHoLMQizrq7E33Y1Mj/Hz/hkLiASXWwMKVX5QsQCbvsMYk+guqayCwB6782VngLR8d1RA==}
-    engines: {node: '>=22.0'}
-
-  '@algorandfoundation/dp256@1.1.0':
-    resolution: {integrity: sha512-s+ZQG3WK6eWskfmjh0bbMImyO+SIR297s+7vQoercbM0hYvilzTBT/rEcvs4ZQxU6TxkTXLq4BRj1USjGFpsCA==}
-
-  '@algorandfoundation/keystore@1.0.0-canary.16':
-    resolution: {integrity: sha512-nqimJI+L0InFRvtgy6x/kn/nvl5u2Cqa8J7hDC0j6xa8qnQepPcqv/ONtAPkp5y3i3AKB6XKZfDo9LO29n06OQ==}
+  '@algorandfoundation/accounts-keystore-extension@1.0.0-canary.10':
+    resolution: {integrity: sha512-a1IIz3bM/bePMELVLBCfXdfqP2uzo9UtOdh9EIhjjE0TbBEJzn5W+H1GMGYBPiUSIR53IOBwFNrIHnM7UkpNSg==}
     peerDependencies:
       '@algorandfoundation/log-store': 1.0.0-canary.3
       '@tanstack/store': 0.9.3
@@ -327,14 +336,56 @@ packages:
       '@algorandfoundation/log-store':
         optional: true
 
-  '@algorandfoundation/keystore@1.0.0-canary.17':
-    resolution: {integrity: sha512-HviZXtMfG1lXT+OeSQac84YiogKRnIsoXL64XMPEYZaffyT+WHGDktrYJu1CHz1uvoKqUN4BidsQs99S5LXiFw==}
+  '@algorandfoundation/accounts-store@1.0.0-canary.2':
+    resolution: {integrity: sha512-IwohwXvBGL9zqCUs8uJ9J4oqFfC1BXKs01yW3EqYcUT+8YHhFIusKOo62pWmsbdgW9GwaZOtXdKdH2ZG51QByg==}
     peerDependencies:
-      '@algorandfoundation/log-store': 1.0.0-canary.4
+      '@algorandfoundation/log-store': 1.0.0-canary.3
       '@tanstack/store': 0.9.3
       before-after-hook: 4.0.0
     peerDependenciesMeta:
       '@algorandfoundation/log-store':
+        optional: true
+
+  '@algorandfoundation/algokit-utils@10.0.0-beta.4':
+    resolution: {integrity: sha512-+X06PW7w2zWJWPp91pHoLMQizrq7E33Y1Mj/Hz/hkLiASXWwMKVX5QsQCbvsMYk+guqayCwB6782VngLR8d1RA==}
+    engines: {node: '>=22.0'}
+
+  '@algorandfoundation/dp256@1.1.0':
+    resolution: {integrity: sha512-s+ZQG3WK6eWskfmjh0bbMImyO+SIR297s+7vQoercbM0hYvilzTBT/rEcvs4ZQxU6TxkTXLq4BRj1USjGFpsCA==}
+
+  '@algorandfoundation/identities-extension@1.0.0-canary.5':
+    resolution: {integrity: sha512-i3ALb6t419KxiCYprVMHadg02wOMHAGD7yM05Im4HyQky5jdQhlEbSZzpAqibVCxdIkvTVXujOVsU4NDe3eZww==}
+    peerDependencies:
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/identities-keystore-extension@1.0.0-canary.5':
+    resolution: {integrity: sha512-X3lxL27u5tGHII564OZoM/ZxDhEVFpeQEE9vQbAvGt/v4Ty30KWjLKQa4Sa/lSEBML8+b9E4rmTlQWYBk/viBA==}
+    peerDependencies:
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/identities-store@1.0.0-canary.1':
+    resolution: {integrity: sha512-L2lnripoM3h+K9Z1XRrPE3uUxSR9n5ams87eRoRw3Yt3Q11wEa6IP91sQajYggfOCNaLI2S17kS0KNlFv8Yd1A==}
+    peerDependencies:
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/keystore-core@1.0.0-canary.3':
+    resolution: {integrity: sha512-BYHhQSu5ENQSux9dQBBBbeWlR2SK9rGQ7w6WupLInKtb5tcb29noxPIlEIFbvN0jsSaC4qpCQMBxz4uQzVFNKw==}
+    peerDependencies:
+      '@algorandfoundation/dp256': 1.1.0
+      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
+      '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+      falcon-1024: 0.2.0
+    peerDependenciesMeta:
+      '@algorandfoundation/dp256':
+        optional: true
+      '@algorandfoundation/xhd-wallet-api':
+        optional: true
+      falcon-1024:
         optional: true
 
   '@algorandfoundation/liquid-client@1.0.0-canary.9':
@@ -348,28 +399,35 @@ packages:
       socket.io-client:
         optional: true
 
-  '@algorandfoundation/react-native-keystore@1.0.0-canary.12':
-    resolution: {integrity: sha512-imCpcdI09mUE17jr/T7g0NhHzg4c23OHOF/kCl1medi2hRSCJ9HjdnW6IVQGNZj8c8NMjVF72GHBV5Z2Dz0ddw==}
+  '@algorandfoundation/log-store@1.0.0-canary.3':
+    resolution: {integrity: sha512-5v6NqxtQJKljITNflLS4O6b5i3fhkiZjr+dLuEmeo8eDUSN6Mcwp2LbT3D1P7RpFGBu1T9FmUD0qxTJNXpn0Ew==}
+    peerDependencies:
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/provider-migrations@1.0.0-canary.1':
+    resolution: {integrity: sha512-zI9zA1ETyTvqLEw2ww2/biUih3kuE4I3Vsv4K9uS4ck6p41QlcwOxxB4+aF1oYrSGKzEIJlDs88WfllucjEheg==}
+    peerDependencies:
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/react-native-keystore@1.0.0-canary.19':
+    resolution: {integrity: sha512-VwnuDI4ShYmjuc0zlzYkV7REDgw3mdjIlFz4jO4Iu2CdMyTJi4qKk2aozHyf3H2Uv0wuIJqJgcGLPz188EgAxw==}
     peerDependencies:
       '@algorandfoundation/log-store': 1.0.0-canary.3
+      '@algorandfoundation/provider-migrations': 1.0.0-canary.1
+      '@joe-p/react-native-falcon': ^0.1.0
       '@tanstack/store': 0.9.3
       before-after-hook: 4.0.0
     peerDependenciesMeta:
       '@algorandfoundation/log-store':
         optional: true
-
-  '@algorandfoundation/react-native-keystore@1.0.0-canary.13':
-    resolution: {integrity: sha512-q5IIOWFMvAZQD0Nx8j5gTMkqaXGK+I+IrMCkwkdNPcfC2fdoFf0WXNNs7+DG8KXlxO5jEyvXOsGdOwETbePXkQ==}
-    peerDependencies:
-      '@algorandfoundation/log-store': 1.0.0-canary.4
-      '@tanstack/store': 0.9.3
-      before-after-hook: 4.0.0
-    peerDependenciesMeta:
-      '@algorandfoundation/log-store':
+      '@algorandfoundation/provider-migrations':
+        optional: true
+      '@joe-p/react-native-falcon':
         optional: true
 
-  '@algorandfoundation/react-native-passkey-autofill@1.0.0-canary.21':
-    resolution: {integrity: sha512-mPG2uwxccQ/iwm6FrfnLPYmF72Wg7Mr4uc8BtKMIb5hzaB7EtB1S2QMBseyyqMZf0O/Iuaoi+Pd7CrudINuVSg==}
+  '@algorandfoundation/react-native-passkey-autofill@1.0.0-canary.24':
+    resolution: {integrity: sha512-ScE452csWykTFSDE4FKjZgtdU6nemhFrRtKT1yPIUy9YA4QW1qZ2kcimr030hkNNNXQ0rH4j9+5RLyM4tYvkJA==}
     engines: {node: '>=22'}
     peerDependencies:
       expo: '*'
@@ -961,9 +1019,6 @@ packages:
     resolution: {integrity: sha512-EtRRLXmsU4GcDA3TgIxtqg++eh/CjbI6EV8N/1EFQTtaWI2lpww0fg+S0wd+ndXE0dFWaLqUFvZuyTAaAoOSeA==}
     peerDependencies:
       expo: ^54
-
-  '@craftzdog/react-native-buffer@6.1.0':
-    resolution: {integrity: sha512-lJXdjZ7fTllLbzDrwg/FrJLjQ5sBcAgwcqgAB6OPpXTHdCenEhHZblQpfmBLLe7/S7m0yKXL3kN3jpwOEkpjGg==}
 
   '@craftzdog/react-native-buffer@6.1.2':
     resolution: {integrity: sha512-KV1HitN05FHLLDG7Zb/yftDsa+mKBYBzFMQ0PMldvUicq6vWOtAvz9mDavt7Fzozh+WNqORE+yFDkkdWysZ/SA==}
@@ -2312,67 +2367,15 @@ packages:
     peerDependencies:
       '@urql/core': ^5.0.0
 
-  '@wjbeau/accounts-keystore-extension@1.0.0-canary.5':
-    resolution: {integrity: sha512-8u2VVX1ltJXdkFQN+FlkzuDDdgMoQn3A5WEAcIK/tfxrP/K7/Gaig3MXyqWKEvlvRUUvBqs7/hdmnq5nUXOccQ==}
-    peerDependencies:
-      '@tanstack/store': 0.9.3
-      '@wjbeau/log-store': 1.0.0-canary.3
-      before-after-hook: ^4.0.0
-    peerDependenciesMeta:
-      '@wjbeau/log-store':
-        optional: true
-
-  '@wjbeau/accounts-store@1.0.0-canary.2':
-    resolution: {integrity: sha512-LFI2RQPsRHhthJew8Xjh1tsZ+UB3P9X/0DjCWo1V2U1B2A8hy8no0FkInH+P+VkNUMhR4/j+Jqq/SVzF95EinA==}
-    peerDependencies:
-      '@tanstack/store': 0.9.3
-      '@wjbeau/log-store': 1.0.0-canary.3
-      before-after-hook: ^4.0.0
-    peerDependenciesMeta:
-      '@wjbeau/log-store':
-        optional: true
-
-  '@wjbeau/identities-extension@1.0.0-canary.1':
-    resolution: {integrity: sha512-Xoto2EmontzFX9Jf70HXQiAM5rKkOogHDeMqzcBdGu6xj0RCJx6hRQ2lCiDJvcv25EI9Mpll2Y5JfGx7bpGfRw==}
-    peerDependencies:
-      '@tanstack/store': 0.9.3
-      before-after-hook: ^4.0.0
-
-  '@wjbeau/identities-keystore-extension@1.0.0-canary.1':
-    resolution: {integrity: sha512-zSgRy5X5F0zHuj/ISL4oPIX9NxHA1DNs9W0pfmboDiTkAq+N2+ZLTTRU7cW+fHM7XR9E6VPjGQRfuRRLOb+/SQ==}
-    peerDependencies:
-      '@tanstack/store': 0.9.3
-      before-after-hook: ^4.0.0
-
-  '@wjbeau/identities-store@1.0.0-canary.1':
-    resolution: {integrity: sha512-1jV5xb0HqKiP+RswgsnE26t/E66VsRl0uh8p04cVXWXRxwr2I8l9Pzc2G3fQLQXc5+m4suOKF7wphkPj+0BwXw==}
-    peerDependencies:
-      '@tanstack/store': 0.9.3
-      before-after-hook: ^4.0.0
-
-  '@wjbeau/keystore@1.0.0-canary.16':
-    resolution: {integrity: sha512-17TN6PCkcvZt4YYM6DeYxdobm16SkDym4SXRRiVY98nAHzDhVoIoqdbEZFXXZp1xJe+78U1C4W2tG05S9v2prA==}
-    peerDependencies:
-      '@tanstack/store': 0.9.3
-      '@wjbeau/log-store': 1.0.0-canary.3
-      before-after-hook: ^4.0.0
-    peerDependenciesMeta:
-      '@wjbeau/log-store':
-        optional: true
-
-  '@wjbeau/log-store@1.0.0-canary.3':
-    resolution: {integrity: sha512-oX9egv26F+8nHZByDuGuS2ioZlDTjKE4AWEnr9zP6WFUB6zp7R17Msie9Am2gJuOemsDdHtlKK1beG5YeDIeDg==}
-    peerDependencies:
-      '@tanstack/store': 0.9.3
-      before-after-hook: ^4.0.0
-
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@xmldom/xmldom@0.9.10':
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@yarnpkg/lockfile@1.1.0':
     resolution: {integrity: sha512-GpSwvyXOcOOlV70vbnzjj4fW5xW/FdUF6nQEt1ENy7m4ZCczi1+/buVUPAqmGfqznsORNFzUMjctTIp8a9tuCQ==}
@@ -2692,8 +2695,8 @@ packages:
     resolution: {integrity: sha512-apC2+fspHGI3mMKj+dGevkGo/tCqVB8jMb6i+OX+E29p0Iposz07fABkRIfVUPNd5A5VbuOz1bZbnmkKLYF+wQ==}
     engines: {node: '>= 5.10.0'}
 
-  brace-expansion@2.1.1:
-    resolution: {integrity: sha512-WR1cURNjuvBLMZBMbqM0UoE+WAfdUcEV1ccD8PVBVOI+Z3ND4+SZbN8RsfT2bMuG1qwz5RFvPukSZm5fF2D5eA==}
+  brace-expansion@2.1.4:
+    resolution: {integrity: sha512-hGfVzPxthbf3+2yjg/RBs60cB0FhqBS/zvdV/4wn4/BmN0bNMMHPc4V/BbFieqf1TKAGGAHnY4eSjajCl0f2Xg==}
 
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
@@ -3616,6 +3619,10 @@ packages:
   extendable-error@0.1.7:
     resolution: {integrity: sha512-UOiS2in6/Q0FK0R0q6UY9vYpQ21mr/Qn1KOnte7vsACuNJf514WvCCUHSRCPcgjPT2bAhNIJdlE6bVap1GKmeg==}
 
+  falcon-1024@0.2.0:
+    resolution: {integrity: sha512-zKBiKGbAVmROFJNjy1iZ009V9wclL9lZkRAP7l7cfsHkZg14jyWgJk1XtAnmn2sxaKv2hsRTEVuTot/CSoQnSw==}
+    engines: {node: '>=18'}
+
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
 
@@ -3629,8 +3636,8 @@ packages:
   fast-json-stable-stringify@2.1.0:
     resolution: {integrity: sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==}
 
-  fast-uri@3.1.2:
-    resolution: {integrity: sha512-rVjf7ArG3LTk+FS6Yw81V1DLuZl1bRbNrev6Tmd/9RaroeeRRJhAt7jg/6YFxbvAQXUCavSoZhPPj6oOx+5KjQ==}
+  fast-uri@3.1.5:
+    resolution: {integrity: sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==}
 
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
@@ -3690,8 +3697,8 @@ packages:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
     engines: {node: '>=14'}
 
-  form-data@4.0.5:
-    resolution: {integrity: sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==}
+  form-data@4.0.6:
+    resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
     engines: {node: '>= 6'}
 
   freeport-async@2.0.0:
@@ -4305,11 +4312,8 @@ packages:
   jks-js@1.1.0:
     resolution: {integrity: sha512-irWi8S2V029Vic63w0/TYa8NIZwXu9oeMtHQsX51JDIVBo0lrEaOoyM8ALEEh5PVKD6TrA26FixQK6TzT7dHqA==}
 
-  joi@17.11.0:
-    resolution: {integrity: sha512-NgB+lZLNoqISVy1rZocE9PZI36bL/77ie924Ri43yEvi9GUUMPeyVIr8KdFTMUlby1p0PBYMk9spIxEUQYqrJQ==}
-
-  joi@17.13.3:
-    resolution: {integrity: sha512-otDA4ldcIx+ZXsKHWmp0YizCweVRZG96J10b0FevjfuncLO1oX59THoAmHkNubYJ+9gWsYsp5k8v4ib6oDv1fA==}
+  joi@17.13.4:
+    resolution: {integrity: sha512-1RuuER6kmt8K8I3nIWvPZKi5RQCb568ZPyY4Pwjlua+yo+63ZTmIwxLZH0heBmiKN4uxjvCiarDrjaeH84xicQ==}
 
   join-component@1.1.0:
     resolution: {integrity: sha512-bF7vcQxbODoGK1imE2P9GS9aw4zD0Sd+Hni68IMZLj7zRnquH7dXUmMw9hDI5S/Jzt7q+IyTXN0rSg2GI0IKhQ==}
@@ -4317,12 +4321,12 @@ packages:
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  js-yaml@3.14.2:
-    resolution: {integrity: sha512-PMSmkqxr106Xa156c2M265Z+FTrPl+oxd/rgOQy2tijQeK5TxQ43psO1ZCwhVOSdnn+RzkzlRz/eY4BgJBYVpg==}
+  js-yaml@3.15.1:
+    resolution: {integrity: sha512-S99WuO3HlhO3XN41EtYUNl9zzXjoJx7QvmipxsJVxtCBT0YHEFy+iOJhjSvrmV12nYhWpZaM8lPHkJm0yUMbag==}
     hasBin: true
 
-  js-yaml@4.1.1:
-    resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
+  js-yaml@4.3.1:
+    resolution: {integrity: sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ==}
     hasBin: true
 
   jsc-safe-url@0.2.4:
@@ -4842,13 +4846,8 @@ packages:
   nan@2.27.0:
     resolution: {integrity: sha512-hC+0LidcL3XE4rp1C4H54KujgXKzbfyTngZTwBByQxsOxCEKZT0MPQ4hOKUH2jU1OYstqdDH4onyHPDzcV0XdQ==}
 
-  nanoid@3.3.12:
-    resolution: {integrity: sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==}
-    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
-    hasBin: true
-
-  nanoid@3.3.8:
-    resolution: {integrity: sha512-WNLf5Sd8oZxOm+TzppcYk8gVOgP+l58xNy58D0nbUnOxOWRWvlcCV4kUF7ltmI6PsrLl/BgKEyS4mqsGChFN0w==}
+  nanoid@3.3.18:
+    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -5176,20 +5175,20 @@ packages:
     resolution: {integrity: sha512-hpr+J05B2FVYUAXHeK1YyI267J/dDDhMU6B6civm8hSY1jYJnBXxzKDKDswzJmtLHryrjhnDjqqp/49t8FALew==}
     engines: {node: '>=14.0.0'}
     peerDependencies:
-      postcss: ^8.5.10
+      postcss: ^8.5.18
 
   postcss-js@4.1.0:
     resolution: {integrity: sha512-oIAOTqgIo7q2EOwbhb8UalYePMvYoIeRY2YKntdpFQXNosSu3vLrniGgmH9OKs/qAkfoj5oB3le/7mINW1LCfw==}
     engines: {node: ^12 || ^14 || >= 16}
     peerDependencies:
-      postcss: ^8.5.10
+      postcss: ^8.5.18
 
   postcss-load-config@6.0.1:
     resolution: {integrity: sha512-oPtTM4oerL+UXmx+93ytZVN82RrlY/wPUV8IeDxFrzIjXOLF1pN+EmKPLbubvKHT2HC20xXsCAH2Z+CKV6Oz/g==}
     engines: {node: '>= 18'}
     peerDependencies:
       jiti: '>=1.21.0'
-      postcss: ^8.5.10
+      postcss: ^8.5.18
       tsx: ^4.8.1
       yaml: ^2.9.0
     peerDependenciesMeta:
@@ -5206,7 +5205,7 @@ packages:
     resolution: {integrity: sha512-HQbt28KulC5AJzG+cZtj9kvKB93CFCdLvog1WFLf1D+xmMvPGlBstkpTEZfK5+AN9hfJocyBFCNiqyS48bpgzQ==}
     engines: {node: '>=12.0'}
     peerDependencies:
-      postcss: ^8.5.10
+      postcss: ^8.5.18
 
   postcss-selector-parser@6.1.4:
     resolution: {integrity: sha512-bIoJLOmjCO1S9XdY/DcnR5hJxvrDir1PbGChrzXG3vw0/FOliy/fA3dmdhQ441kah4gKv+TwckGzex6wNS5cnQ==}
@@ -5215,8 +5214,8 @@ packages:
   postcss-value-parser@4.2.0:
     resolution: {integrity: sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ==}
 
-  postcss@8.5.15:
-    resolution: {integrity: sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==}
+  postcss@8.5.26:
+    resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
 
   postinstall-postinstall@2.1.0:
@@ -5402,13 +5401,6 @@ packages:
     resolution: {integrity: sha512-YzPKSAnSzGEJ12IK6CctNLU79T1W15WDrElRQ+1/FsOazGX9ucFPTQwgYe8Dy8jiSEDJKM4wkVa3g4lD2Z+Pnw==}
     engines: {node: '>=16'}
 
-  react-native-mmkv@4.1.2:
-    resolution: {integrity: sha512-6LHb2DQBXuo96Aues13EugmlWw/HAYuh3KoJoQNrC4JsBwn3J3KiRYAg2mCm5Je0VYq2YsmbgZG7XJwX/WFYZA==}
-    peerDependencies:
-      react: 19.1.0
-      react-native: '*'
-      react-native-nitro-modules: '*'
-
   react-native-mmkv@4.3.1:
     resolution: {integrity: sha512-APyGGaaHtayVgT18dBM8QGGZKr9pGfSTiBwbbPNzhGGfJQSU7awLGRGq879OqYl31HmVks9hOBLCs+qfgacRZg==}
     peerDependencies:
@@ -5435,32 +5427,11 @@ packages:
       react-native: '>=0.63.4'
       react-native-svg: '>=14.0.0'
 
-  react-native-quick-base64@2.2.2:
-    resolution: {integrity: sha512-WLHSifHLoamr2kF00Gov0W9ud6CfPshe1rmqWTquVIi9c62qxOaJCFVDrXFZhEBU8B8PvGLVuOlVKH78yhY0Fg==}
-    peerDependencies:
-      react: 19.1.0
-      react-native: '*'
-
   react-native-quick-base64@3.0.0:
     resolution: {integrity: sha512-gnJhA4a/QIGrptZQJv0hLLne8yyJPkdXtn33LHEzq3nhzsv+jRhrxr07wYwYX+CKCRXmuNkZ3Wo7LapSrFVmQg==}
     peerDependencies:
       react: 19.1.0
       react-native: '*'
-
-  react-native-quick-crypto@1.0.18:
-    resolution: {integrity: sha512-VjBLW2PasOUSxAqy2IDNvLqBez9NwTDBecwCpuz0F5WkzPDGZ4CuZEFGyL1qfkjwok11F0x3IyMrmCyFBAtOCQ==}
-    peerDependencies:
-      expo: '>=48.0.0'
-      expo-build-properties: '*'
-      react: 19.1.0
-      react-native: '*'
-      react-native-nitro-modules: '>=0.29.1'
-      react-native-quick-base64: '>=2.1.0'
-    peerDependenciesMeta:
-      expo:
-        optional: true
-      expo-build-properties:
-        optional: true
 
   react-native-quick-crypto@1.1.5:
     resolution: {integrity: sha512-LzAxXCMLyzPSMRUSPkcEDV6skf/CqLp8CEKiXkO10rMMe49YRelL95SheDfpDuo2YGh7Keop9fy7Xo7EUSY1WA==}
@@ -5578,10 +5549,6 @@ packages:
   readable-stream@3.6.2:
     resolution: {integrity: sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA==}
     engines: {node: '>= 6'}
-
-  readable-stream@4.5.2:
-    resolution: {integrity: sha512-yjavECdqeZ3GLXNgRXgeQEdz9fvDDkNKyHnbHRFtOr7/LcfgBcmct7t/ET+HaCTqfh06OzoAxrkN/IfjJBVe+g==}
-    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
   readable-stream@4.7.0:
     resolution: {integrity: sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==}
@@ -5793,8 +5760,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.8.4:
-    resolution: {integrity: sha512-VsC6n6vz1ihYYyZZwX7YZSF5l5x36ca17OC+a69h94YqB7X6XLwf+5MOgynYir2SLFUbl8gIYvBo8K8RoNQ6bQ==}
+  shell-quote@1.10.0:
+    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
     engines: {node: '>= 0.4'}
 
   signal-exit@3.0.7:
@@ -5843,8 +5810,8 @@ packages:
     resolution: {integrity: sha512-uP0bpjWrjQmUt5DTHq9RuoCBdFJF10cdX9X+a368j/Ft0wmaVgxlrjvK3kjvgCODOMMOz9lcaRzxmso0bTWZ/g==}
     engines: {node: '>=10.0.0'}
 
-  socket.io-parser@4.2.6:
-    resolution: {integrity: sha512-asJqbVBDsBCJx0pTqw3WfesSY0iRX+2xzWEWzrpcH7L6fLzrhyF8WPI8UaeM4YCuDfpwA/cgsdugMsmtz8EJeg==}
+  socket.io-parser@4.2.7:
+    resolution: {integrity: sha512-IH/iSeO9T6gz1KkFleGDWkG9N3dl4jXVYUtMhIqH10Md0ttMer8nUNWiP1DKuNrybD2xBrixLJdCC9J6ECoYkg==}
     engines: {node: '>=10.0.0'}
 
   source-map-js@1.2.1:
@@ -6020,8 +5987,8 @@ packages:
   tar-stream@3.1.7:
     resolution: {integrity: sha512-qJj60CXt7IU1Ffyc3NJMjh6EkuCFej46zUqJ4J7pqYlThyd9bO0XBTmcOIhSzZJVWfsLks0+nle/j538YAW9RQ==}
 
-  tar@7.5.15:
-    resolution: {integrity: sha512-dzGK0boVlC4W5QFuQN1EFSl3bIDYsk7Tj40U6eIBnK2k/8ml7TZ5agbI5j5+qnoVcAA+rNtBml8SEiLxZpNqRQ==}
+  tar@7.5.22:
+    resolution: {integrity: sha512-MFO/QzvtAOmJbkhOaCTvbGcFN9L9b+JunIsDwaKljSOdcLMea3NJ1k9Usz/rjdfSXTq4dfzfeS7W4p4YOAAHeA==}
     engines: {node: '>=18'}
 
   temp-dir@2.0.0:
@@ -6155,8 +6122,8 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
-  undici@6.26.0:
-    resolution: {integrity: sha512-4yqz8a3n5HmGTlsbADNtr/dJlhkh/55Rq798G6ibiULcXbDtaLpTl1pvdqcbFfeoj3iSi52lePFM7h9H21cw/A==}
+  undici@6.28.0:
+    resolution: {integrity: sha512-LIY910g9TI13YS95lrMFrs8Rm/u/irgHeTWoKCoteeJ04CUJ92eEfj0rVn+7VKMPBpUPiUoBKfhNyLI23EE/KA==}
     engines: {node: '>=18.17'}
 
   unicode-canonical-property-names-ecmascript@2.0.1:
@@ -6400,18 +6367,6 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@8.20.1:
-    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
-
   ws@8.21.0:
     resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
     engines: {node: '>=10.0.0'}
@@ -6514,6 +6469,31 @@ snapshots:
     dependencies:
       ajv: 8.20.0
 
+  '@algorandfoundation/accounts-keystore-extension@1.0.0-canary.10(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)':
+    dependencies:
+      '@algorandfoundation/accounts-store': 1.0.0-canary.2(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
+      '@algorandfoundation/keystore-core': 1.0.0-canary.3(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/wallet-provider@1.0.0-canary.5)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
+      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
+      '@scure/base': 2.0.0
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+    optionalDependencies:
+      '@algorandfoundation/log-store': 1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
+    transitivePeerDependencies:
+      - '@algorandfoundation/dp256'
+      - '@algorandfoundation/xhd-wallet-api'
+      - falcon-1024
+
+  '@algorandfoundation/accounts-store@1.0.0-canary.2(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)':
+    dependencies:
+      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
+      '@noble/hashes': 2.0.1
+      '@scure/base': 2.0.0
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+    optionalDependencies:
+      '@algorandfoundation/log-store': 1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
+
   '@algorandfoundation/algokit-utils@10.0.0-beta.4':
     dependencies:
       '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
@@ -6535,31 +6515,50 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip39': 1.6.0
 
-  '@algorandfoundation/keystore@1.0.0-canary.16(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)':
+  '@algorandfoundation/identities-extension@1.0.0-canary.5(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)':
     dependencies:
-      '@algorandfoundation/dp256': 1.1.0
+      '@algorandfoundation/identities-keystore-extension': 1.0.0-canary.5(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
+      '@algorandfoundation/identities-store': 1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
+      '@algorandfoundation/keystore-core': 1.0.0-canary.3(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/wallet-provider@1.0.0-canary.5)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
       '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
-      '@noble/hashes': 2.0.1
-      '@scure/base': 2.0.0
-      '@scure/bip39': 1.6.0
       '@tanstack/store': 0.9.3
       before-after-hook: 4.0.0
-    optionalDependencies:
-      '@algorandfoundation/log-store': '@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)'
+    transitivePeerDependencies:
+      - '@algorandfoundation/dp256'
+      - '@algorandfoundation/xhd-wallet-api'
+      - falcon-1024
 
-  '@algorandfoundation/keystore@1.0.0-canary.17(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)':
+  '@algorandfoundation/identities-keystore-extension@1.0.0-canary.5(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)':
     dependencies:
-      '@algorandfoundation/dp256': 1.1.0
+      '@algorandfoundation/identities-store': 1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
+      '@algorandfoundation/keystore-core': 1.0.0-canary.3(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/wallet-provider@1.0.0-canary.5)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
       '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
-      '@noble/hashes': 2.0.1
       '@scure/base': 2.0.0
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+    transitivePeerDependencies:
+      - '@algorandfoundation/dp256'
+      - '@algorandfoundation/xhd-wallet-api'
+      - falcon-1024
+
+  '@algorandfoundation/identities-store@1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)':
+    dependencies:
+      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
+      '@scure/base': 2.0.0
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/keystore-core@1.0.0-canary.3(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/wallet-provider@1.0.0-canary.5)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)':
+    dependencies:
+      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
+      '@noble/hashes': 2.0.1
       '@scure/bip39': 1.6.0
       '@tanstack/store': 0.9.3
       before-after-hook: 4.0.0
     optionalDependencies:
-      '@algorandfoundation/log-store': '@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)'
+      '@algorandfoundation/dp256': 1.1.0
+      '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
+      falcon-1024: 0.2.0
 
   '@algorandfoundation/liquid-client@1.0.0-canary.9(qr-code-styling@1.9.2)(socket.io-client@4.8.3)':
     dependencies:
@@ -6570,10 +6569,21 @@ snapshots:
       qr-code-styling: 1.9.2
       socket.io-client: 4.8.3
 
-  '@algorandfoundation/react-native-keystore@1.0.0-canary.12(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+  '@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)':
+    dependencies:
+      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
+      '@tanstack/store': 0.9.3
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/provider-migrations@1.0.0-canary.1(before-after-hook@4.0.0)':
+    dependencies:
+      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
+      before-after-hook: 4.0.0
+
+  '@algorandfoundation/react-native-keystore@1.0.0-canary.19(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@algorandfoundation/provider-migrations@1.0.0-canary.1(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(falcon-1024@0.2.0)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
     dependencies:
       '@algorandfoundation/dp256': 1.1.0
-      '@algorandfoundation/keystore': 1.0.0-canary.16(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)
+      '@algorandfoundation/keystore-core': 1.0.0-canary.3(@algorandfoundation/dp256@1.1.0)(@algorandfoundation/wallet-provider@1.0.0-canary.5)(@algorandfoundation/xhd-wallet-api@2.0.0-canary.1)(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(falcon-1024@0.2.0)
       '@algorandfoundation/wallet-provider': 1.0.0-canary.5
       '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
       '@scure/base': 2.0.0
@@ -6581,52 +6591,34 @@ snapshots:
       '@tanstack/store': 0.9.3
       before-after-hook: 4.0.0
       react-native-keychain: 10.0.0
-      react-native-mmkv: 4.1.2(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-quick-crypto: 1.0.18(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react-native-mmkv: 4.3.1(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react-native-quick-crypto: 1.1.5(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
     optionalDependencies:
-      '@algorandfoundation/log-store': '@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)'
+      '@algorandfoundation/log-store': 1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
+      '@algorandfoundation/provider-migrations': 1.0.0-canary.1(before-after-hook@4.0.0)
     transitivePeerDependencies:
       - expo
       - expo-build-properties
+      - falcon-1024
       - react
       - react-native
       - react-native-nitro-modules
       - react-native-quick-base64
 
-  '@algorandfoundation/react-native-keystore@1.0.0-canary.13(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+  '@algorandfoundation/react-native-passkey-autofill@1.0.0-canary.24(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@algorandfoundation/provider-migrations@1.0.0-canary.1(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(falcon-1024@0.2.0)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
     dependencies:
-      '@algorandfoundation/dp256': 1.1.0
-      '@algorandfoundation/keystore': 1.0.0-canary.17(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
-      '@scure/base': 2.0.0
-      '@scure/bip39': 1.6.0
-      '@tanstack/store': 0.9.3
-      before-after-hook: 4.0.0
-      react-native-keychain: 10.0.0
-      react-native-mmkv: 4.1.2(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-quick-crypto: 1.0.18(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-    optionalDependencies:
-      '@algorandfoundation/log-store': '@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)'
-    transitivePeerDependencies:
-      - expo
-      - expo-build-properties
-      - react
-      - react-native
-      - react-native-nitro-modules
-      - react-native-quick-base64
-
-  '@algorandfoundation/react-native-passkey-autofill@1.0.0-canary.21(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
-    dependencies:
-      '@algorandfoundation/react-native-keystore': 1.0.0-canary.12(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@algorandfoundation/react-native-keystore': 1.0.0-canary.19(@algorandfoundation/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(@algorandfoundation/provider-migrations@1.0.0-canary.1(before-after-hook@4.0.0))(@tanstack/store@0.9.3)(before-after-hook@4.0.0)(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(falcon-1024@0.2.0)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       expo: 54.0.35(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(graphql@16.8.1)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.8.3)
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
     transitivePeerDependencies:
       - '@algorandfoundation/log-store'
+      - '@algorandfoundation/provider-migrations'
+      - '@joe-p/react-native-falcon'
       - '@tanstack/store'
       - before-after-hook
       - expo-build-properties
+      - falcon-1024
       - react-native-nitro-modules
       - react-native-quick-base64
 
@@ -7383,7 +7375,7 @@ snapshots:
   '@changesets/parse@0.4.3':
     dependencies:
       '@changesets/types': 6.1.0
-      js-yaml: 4.1.1
+      js-yaml: 4.3.1
 
   '@changesets/pre@2.0.2':
     dependencies:
@@ -7421,14 +7413,6 @@ snapshots:
   '@config-plugins/react-native-webrtc@13.0.0(expo@54.0.35)':
     dependencies:
       expo: 54.0.35(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(graphql@16.8.1)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.8.3)
-
-  '@craftzdog/react-native-buffer@6.1.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
-    dependencies:
-      ieee754: 1.2.1
-      react-native-quick-base64: 2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-    transitivePeerDependencies:
-      - react
-      - react-native
 
   '@craftzdog/react-native-buffer@6.1.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
     dependencies:
@@ -7513,9 +7497,9 @@ snapshots:
       source-map-support: 0.5.21
       stacktrace-parser: 0.1.11
       structured-headers: 0.4.1
-      tar: 7.5.15
+      tar: 7.5.22
       terminal-link: 2.1.1
-      undici: 6.26.0
+      undici: 6.28.0
       wrap-ansi: 7.0.0
       ws: 8.21.0
     optionalDependencies:
@@ -7689,7 +7673,7 @@ snapshots:
       '@expo/logger': 20.0.0
       '@expo/results': 1.0.0
       '@expo/turtle-spawn': 20.0.0
-      joi: 17.13.3
+      joi: 17.13.4
       semver: 7.8.1
       zod: 4.4.3
 
@@ -7701,7 +7685,7 @@ snapshots:
       env-string: 1.0.1
       fs-extra: 11.2.0
       golden-fleece: 1.0.9
-      joi: 17.11.0
+      joi: 17.13.4
       log-symbols: 4.1.0
       semver: 7.5.2
       terminal-link: 2.1.1
@@ -7822,7 +7806,7 @@ snapshots:
       jsc-safe-url: 0.2.4
       lightningcss: 1.30.1
       picomatch: 4.0.4
-      postcss: 8.5.15
+      postcss: 8.5.26
       resolve-from: 5.0.0
     optionalDependencies:
       expo: 54.0.35(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(graphql@16.8.1)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.8.3)
@@ -8025,7 +8009,7 @@ snapshots:
       '@expo/spawn-async': 1.8.0
       arg: 5.0.2
       fs-extra: 11.2.0
-      joi: 17.13.3
+      joi: 17.13.4
       jsep: 1.4.0
       lodash.clonedeep: 4.5.0
       lodash.get: 4.4.2
@@ -8053,7 +8037,7 @@ snapshots:
     dependencies:
       '@babel/code-frame': 7.29.7
       chalk: 4.1.2
-      js-yaml: 4.1.1
+      js-yaml: 4.3.1
 
   '@hapi/hoek@9.3.0': {}
 
@@ -8090,7 +8074,7 @@ snapshots:
       camelcase: 5.3.1
       find-up: 4.1.0
       get-package-type: 0.1.0
-      js-yaml: 3.14.2
+      js-yaml: 3.15.1
       resolve-from: 5.0.0
 
   '@istanbuljs/schema@0.1.6': {}
@@ -8343,7 +8327,7 @@ snapshots:
       npmlog: 5.0.1
       rimraf: 3.0.2
       semver: 7.8.1
-      tar: 7.5.15
+      tar: 7.5.22
     transitivePeerDependencies:
       - encoding
       - supports-color
@@ -8395,7 +8379,7 @@ snapshots:
       hyperlinker: 1.0.0
       indent-string: 4.0.0
       is-wsl: 2.2.0
-      js-yaml: 3.14.2
+      js-yaml: 3.15.1
       natural-orderby: 2.0.3
       object-treeify: 1.1.33
       password-prompt: 1.1.3
@@ -8893,7 +8877,7 @@ snapshots:
       '@react-navigation/routers': 7.5.5
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
-      nanoid: 3.3.12
+      nanoid: 3.3.18
       query-string: 7.1.3
       react: 19.1.0
       react-is: 19.2.6
@@ -8929,14 +8913,14 @@ snapshots:
       '@react-navigation/core': 7.17.5(react@19.1.0)
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
-      nanoid: 3.3.12
+      nanoid: 3.3.18
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       use-latest-callback: 0.2.6(react@19.1.0)
 
   '@react-navigation/routers@7.5.5':
     dependencies:
-      nanoid: 3.3.12
+      nanoid: 3.3.18
 
   '@scure/base@1.2.6': {}
 
@@ -9011,7 +8995,7 @@ snapshots:
     dependencies:
       progress: 2.0.3
       proxy-from-env: 1.1.0
-      undici: 6.26.0
+      undici: 6.28.0
       which: 2.0.2
     optionalDependencies:
       '@sentry/cli-darwin': 3.6.0
@@ -9265,75 +9249,6 @@ snapshots:
       '@urql/core': 5.2.0(graphql@16.8.1)
       wonka: 6.3.6
 
-  '@wjbeau/accounts-keystore-extension@1.0.0-canary.5(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)':
-    dependencies:
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@scure/base': 2.2.0
-      '@tanstack/store': 0.9.3
-      '@wjbeau/accounts-store': 1.0.0-canary.2(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)
-      '@wjbeau/keystore': 1.0.0-canary.16(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)
-      before-after-hook: 4.0.0
-    optionalDependencies:
-      '@wjbeau/log-store': 1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
-
-  '@wjbeau/accounts-store@1.0.0-canary.2(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)':
-    dependencies:
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@noble/hashes': 2.2.0
-      '@scure/base': 2.2.0
-      '@tanstack/store': 0.9.3
-      before-after-hook: 4.0.0
-    optionalDependencies:
-      '@wjbeau/log-store': 1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
-
-  '@wjbeau/identities-extension@1.0.0-canary.1(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)':
-    dependencies:
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@tanstack/store': 0.9.3
-      '@wjbeau/identities-keystore-extension': 1.0.0-canary.1(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)
-      '@wjbeau/identities-store': 1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
-      '@wjbeau/keystore': 1.0.0-canary.16(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)
-      before-after-hook: 4.0.0
-    transitivePeerDependencies:
-      - '@wjbeau/log-store'
-
-  '@wjbeau/identities-keystore-extension@1.0.0-canary.1(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)':
-    dependencies:
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@scure/base': 2.2.0
-      '@tanstack/store': 0.9.3
-      '@wjbeau/identities-store': 1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
-      '@wjbeau/keystore': 1.0.0-canary.16(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)
-      before-after-hook: 4.0.0
-    transitivePeerDependencies:
-      - '@wjbeau/log-store'
-
-  '@wjbeau/identities-store@1.0.0-canary.1(@tanstack/store@0.9.3)(before-after-hook@4.0.0)':
-    dependencies:
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@scure/base': 2.2.0
-      '@tanstack/store': 0.9.3
-      before-after-hook: 4.0.0
-
-  '@wjbeau/keystore@1.0.0-canary.16(@tanstack/store@0.9.3)(@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0))(before-after-hook@4.0.0)':
-    dependencies:
-      '@algorandfoundation/dp256': 1.1.0
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@algorandfoundation/xhd-wallet-api': 2.0.0-canary.1
-      '@noble/hashes': 2.2.0
-      '@scure/base': 2.2.0
-      '@scure/bip39': 1.6.0
-      '@tanstack/store': 0.9.3
-      before-after-hook: 4.0.0
-    optionalDependencies:
-      '@wjbeau/log-store': 1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)
-
-  '@wjbeau/log-store@1.0.0-canary.3(@tanstack/store@0.9.3)(before-after-hook@4.0.0)':
-    dependencies:
-      '@algorandfoundation/wallet-provider': 1.0.0-canary.5
-      '@tanstack/store': 0.9.3
-      before-after-hook: 4.0.0
-
   '@xmldom/xmldom@0.8.13': {}
 
   '@xmldom/xmldom@0.9.10': {}
@@ -9385,7 +9300,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.2
+      fast-uri: 3.1.5
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -9662,7 +9577,7 @@ snapshots:
     dependencies:
       big-integer: 1.6.52
 
-  brace-expansion@2.1.1:
+  brace-expansion@2.1.4:
     dependencies:
       balanced-match: 1.0.2
 
@@ -10178,7 +10093,7 @@ snapshots:
       fast-deep-equal: 3.1.3
       fast-glob: 3.3.2
       figures: 3.2.0
-      form-data: 4.0.5
+      form-data: 4.0.6
       fs-extra: 11.2.0
       getenv: 1.0.0
       gradle-to-js: 2.0.1
@@ -10189,13 +10104,13 @@ snapshots:
       indent-string: 4.0.0
       invariant: 2.2.4
       jks-js: 1.1.0
-      joi: 17.11.0
+      joi: 17.13.4
       keychain: 1.5.0
       log-symbols: 4.1.0
       mime: 3.0.0
       minimatch: 9.0.9
       minizlib: 3.0.1
-      nanoid: 3.3.8
+      nanoid: 3.3.18
       node-fetch: 2.6.7
       node-forge: 1.4.0
       node-stream-zip: 1.15.0
@@ -10211,7 +10126,7 @@ snapshots:
       semver: 7.5.4
       set-interval-async: 3.0.3
       slash: 3.0.0
-      tar: 7.5.15
+      tar: 7.5.22
       tar-stream: 3.1.7
       terminal-link: 2.1.1
       ts-deepmerge: 6.2.0
@@ -10257,7 +10172,7 @@ snapshots:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@8.1.1)
       engine.io-parser: 5.2.3
-      ws: 8.20.1
+      ws: 8.21.0
       xmlhttprequest-ssl: 2.1.2
     transitivePeerDependencies:
       - bufferutil
@@ -10559,7 +10474,7 @@ snapshots:
       expo-server: 1.0.7
       fast-deep-equal: 3.1.3
       invariant: 2.2.4
-      nanoid: 3.3.12
+      nanoid: 3.3.18
       query-string: 7.1.3
       react: 19.1.0
       react-fast-compare: 3.2.2
@@ -10697,6 +10612,9 @@ snapshots:
 
   extendable-error@0.1.7: {}
 
+  falcon-1024@0.2.0:
+    optional: true
+
   fast-deep-equal@3.1.3: {}
 
   fast-fifo@1.3.2: {}
@@ -10711,7 +10629,7 @@ snapshots:
 
   fast-json-stable-stringify@2.1.0: {}
 
-  fast-uri@3.1.2: {}
+  fast-uri@3.1.5: {}
 
   fastq@1.20.1:
     dependencies:
@@ -10775,7 +10693,7 @@ snapshots:
       cross-spawn: 7.0.6
       signal-exit: 4.1.0
 
-  form-data@4.0.5:
+  form-data@4.0.6:
     dependencies:
       asynckit: 0.4.0
       combined-stream: 1.0.8
@@ -11648,15 +11566,7 @@ snapshots:
       node-int64: 0.4.0
       node-rsa: 1.1.1
 
-  joi@17.11.0:
-    dependencies:
-      '@hapi/hoek': 9.3.0
-      '@hapi/topo': 5.1.0
-      '@sideway/address': 4.1.5
-      '@sideway/formula': 3.0.1
-      '@sideway/pinpoint': 2.0.0
-
-  joi@17.13.3:
+  joi@17.13.4:
     dependencies:
       '@hapi/hoek': 9.3.0
       '@hapi/topo': 5.1.0
@@ -11668,12 +11578,12 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  js-yaml@3.14.2:
+  js-yaml@3.15.1:
     dependencies:
       argparse: 1.0.10
       esprima: 4.0.1
 
-  js-yaml@4.1.1:
+  js-yaml@4.3.1:
     dependencies:
       argparse: 2.0.1
 
@@ -11690,7 +11600,7 @@ snapshots:
       decimal.js: 10.6.0
       domexception: 4.0.0
       escodegen: 2.1.0
-      form-data: 4.0.5
+      form-data: 4.0.6
       html-encoding-sniffer: 3.0.0
       http-proxy-agent: 5.0.0
       https-proxy-agent: 5.0.1
@@ -12322,7 +12232,7 @@ snapshots:
 
   minimatch@9.0.9:
     dependencies:
-      brace-expansion: 2.1.1
+      brace-expansion: 2.1.4
 
   minimist@1.2.8: {}
 
@@ -12377,9 +12287,7 @@ snapshots:
   nan@2.27.0:
     optional: true
 
-  nanoid@3.3.12: {}
-
-  nanoid@3.3.8: {}
+  nanoid@3.3.18: {}
 
   nativewind@4.2.5(react-native-reanimated@4.1.7(react-native-worklets@0.5.1(@babel/core@7.29.7)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-safe-area-context@5.6.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-svg@15.12.1(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(tailwindcss@3.4.19(yaml@2.9.0)):
     dependencies:
@@ -12715,29 +12623,29 @@ snapshots:
 
   possible-typed-array-names@1.1.0: {}
 
-  postcss-import@15.1.0(postcss@8.5.15):
+  postcss-import@15.1.0(postcss@8.5.26):
     dependencies:
-      postcss: 8.5.15
+      postcss: 8.5.26
       postcss-value-parser: 4.2.0
       read-cache: 1.0.0
       resolve: 1.22.12
 
-  postcss-js@4.1.0(postcss@8.5.15):
+  postcss-js@4.1.0(postcss@8.5.26):
     dependencies:
       camelcase-css: 2.0.1
-      postcss: 8.5.15
+      postcss: 8.5.26
 
-  postcss-load-config@6.0.1(jiti@1.21.7)(postcss@8.5.15)(yaml@2.9.0):
+  postcss-load-config@6.0.1(jiti@1.21.7)(postcss@8.5.26)(yaml@2.9.0):
     dependencies:
       lilconfig: 3.1.3
     optionalDependencies:
       jiti: 1.21.7
-      postcss: 8.5.15
+      postcss: 8.5.26
       yaml: 2.9.0
 
-  postcss-nested@6.2.0(postcss@8.5.15):
+  postcss-nested@6.2.0(postcss@8.5.26):
     dependencies:
-      postcss: 8.5.15
+      postcss: 8.5.26
       postcss-selector-parser: 6.1.4
 
   postcss-selector-parser@6.1.4:
@@ -12747,9 +12655,9 @@ snapshots:
 
   postcss-value-parser@4.2.0: {}
 
-  postcss@8.5.15:
+  postcss@8.5.26:
     dependencies:
-      nanoid: 3.3.12
+      nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
@@ -12872,7 +12780,7 @@ snapshots:
 
   react-devtools-core@6.1.5:
     dependencies:
-      shell-quote: 1.8.4
+      shell-quote: 1.10.0
       ws: 7.5.11
     transitivePeerDependencies:
       - bufferutil
@@ -12947,12 +12855,6 @@ snapshots:
 
   react-native-keychain@10.0.0: {}
 
-  react-native-mmkv@4.1.2(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      react: 19.1.0
-      react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
-      react-native-nitro-modules: 0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-
   react-native-mmkv@4.3.1(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
       react: 19.1.0
@@ -12978,31 +12880,10 @@ snapshots:
       react-native-svg: 15.12.1(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       text-encoding: 0.7.0
 
-  react-native-quick-base64@2.2.2(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      react: 19.1.0
-      react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
-
   react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
-
-  react-native-quick-crypto@1.0.18(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      '@craftzdog/react-native-buffer': 6.1.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      events: 3.3.0
-      react: 19.1.0
-      react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
-      react-native-nitro-modules: 0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-quick-base64: 3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      readable-stream: 4.5.2
-      safe-buffer: 5.2.1
-      string_decoder: 1.3.0
-      util: 0.12.5
-    optionalDependencies:
-      expo: 54.0.35(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(graphql@16.8.1)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.8.3)
-      expo-build-properties: 1.0.10(expo@54.0.35)
 
   react-native-quick-crypto@1.1.5(expo-build-properties@1.0.10(expo@54.0.35))(expo@54.0.35)(react-native-nitro-modules@0.35.9(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-quick-base64@3.0.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
@@ -13168,7 +13049,7 @@ snapshots:
   read-yaml-file@1.1.0:
     dependencies:
       graceful-fs: 4.2.11
-      js-yaml: 3.14.2
+      js-yaml: 3.15.1
       pify: 4.0.1
       strip-bom: 3.0.0
 
@@ -13178,14 +13059,6 @@ snapshots:
       string_decoder: 1.3.0
       util-deprecate: 1.0.2
     optional: true
-
-  readable-stream@4.5.2:
-    dependencies:
-      abort-controller: 3.0.0
-      buffer: 6.0.3
-      events: 3.3.0
-      process: 0.11.10
-      string_decoder: 1.3.0
 
   readable-stream@4.7.0:
     dependencies:
@@ -13392,7 +13265,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shell-quote@1.8.4: {}
+  shell-quote@1.10.0: {}
 
   signal-exit@3.0.7: {}
 
@@ -13439,13 +13312,13 @@ snapshots:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@8.1.1)
       engine.io-client: 6.6.5
-      socket.io-parser: 4.2.6
+      socket.io-parser: 4.2.7
     transitivePeerDependencies:
       - bufferutil
       - supports-color
       - utf-8-validate
 
-  socket.io-parser@4.2.6:
+  socket.io-parser@4.2.7:
     dependencies:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@8.1.1)
@@ -13634,11 +13507,11 @@ snapshots:
       normalize-path: 3.0.0
       object-hash: 3.0.0
       picocolors: 1.1.1
-      postcss: 8.5.15
-      postcss-import: 15.1.0(postcss@8.5.15)
-      postcss-js: 4.1.0(postcss@8.5.15)
-      postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.15)(yaml@2.9.0)
-      postcss-nested: 6.2.0(postcss@8.5.15)
+      postcss: 8.5.26
+      postcss-import: 15.1.0(postcss@8.5.26)
+      postcss-js: 4.1.0(postcss@8.5.26)
+      postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.26)(yaml@2.9.0)
+      postcss-nested: 6.2.0(postcss@8.5.26)
       postcss-selector-parser: 6.1.4
       resolve: 1.22.12
       sucrase: 3.35.1
@@ -13655,7 +13528,7 @@ snapshots:
       - bare-abort-controller
       - react-native-b4a
 
-  tar@7.5.15:
+  tar@7.5.22:
     dependencies:
       '@isaacs/fs-minipass': 4.0.1
       chownr: 3.0.0
@@ -13781,7 +13654,7 @@ snapshots:
 
   undici-types@6.21.0: {}
 
-  undici@6.26.0: {}
+  undici@6.28.0: {}
 
   unicode-canonical-property-names-ecmascript@2.0.1: {}
 
@@ -13992,8 +13865,6 @@ snapshots:
       async-limiter: 1.0.1
 
   ws@7.5.11: {}
-
-  ws@8.20.1: {}
 
   ws@8.21.0: {}
 

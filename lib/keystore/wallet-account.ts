@@ -1,5 +1,5 @@
 import type { Account } from '@algorandfoundation/accounts-store';
-import type { Key } from '@algorandfoundation/keystore';
+import type { Key } from '@algorandfoundation/react-native-keystore';
 import type { KeystoreAccount } from '@algorandfoundation/accounts-keystore-extension';
 
 type WalletAccount = Account | KeystoreAccount;
