@@ -79,7 +79,7 @@ workflows:
   ios:
     meta:
       bitrise.io:
-        stack: osx-xcode-26.2.x-edge
+        stack: osx-xcode-26.2.x
         machine_type_id: g2.mac.large
     before_run:
       - _prepare
@@ -94,7 +94,7 @@ workflows:
   ios_nightly:
     meta:
       bitrise.io:
-        stack: osx-xcode-26.2.x-edge
+        stack: osx-xcode-26.2.x
         machine_type_id: g2.mac.large
     envs:
       - SENTRY_ENABLED: 'true'
@@ -105,7 +105,7 @@ workflows:
   ios_release:
     meta:
       bitrise.io:
-        stack: osx-xcode-26.2.x-edge
+        stack: osx-xcode-26.2.x
         machine_type_id: g2.mac.large
     envs:
       - SENTRY_ENABLED: 'false'
