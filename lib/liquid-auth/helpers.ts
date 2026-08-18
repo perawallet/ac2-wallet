@@ -106,6 +106,20 @@ export function sessionRequestIdFromData(sessionData: any): string | null {
 
 /**
  * True when an existing `/auth/session` already authenticates this wallet key
+ * at the origin it was fetched from, regardless of which requestId the session
+ * is currently bound to. The Liquid Auth session cookie is origin-scoped, so
+ * one authenticated session is shared by every connection at that origin: the
+ * native signaling client re-binds the session to the connection it negotiates
+ * for by emitting `link` (which the server persists as `session.requestId`),
+ * so switching connections needs no fresh passkey assertion.
+ */
+export function sessionAlreadyAuthenticatedForWallet(sessionData: any, key: Key): boolean {
+  const address = sessionAddressFromData(sessionData);
+  return !!address && addressMatchesKey(address, key);
+}
+
+/**
+ * True when an existing `/auth/session` already authenticates this wallet key
  * for this exact requestId. When so, a reconnect can renegotiate over the
  * already-authenticated socket without a fresh passkey assertion — the server
  * re-announces presence for the bound requestId on the socket's reconnect,
@@ -117,10 +131,8 @@ export function sessionAlreadyAuthenticatedForRequest(
   requestId: string,
 ): boolean {
   if (typeof requestId !== 'string' || requestId.length === 0) return false;
-  const address = sessionAddressFromData(sessionData);
   return (
-    !!address &&
-    addressMatchesKey(address, key) &&
+    sessionAlreadyAuthenticatedForWallet(sessionData, key) &&
     sessionRequestIdFromData(sessionData) === requestId
   );
 }

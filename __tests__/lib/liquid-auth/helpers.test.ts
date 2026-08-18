@@ -36,6 +36,7 @@ jest.mock('@/utils/algorand', () => ({
 
 import {
   sessionAlreadyAuthenticatedForRequest,
+  sessionAlreadyAuthenticatedForWallet,
   sessionRequestIdFromData,
 } from '@/lib/liquid-auth/helpers';
 import type { Key } from '@algorandfoundation/react-native-keystore';
@@ -55,6 +56,33 @@ describe('sessionRequestIdFromData', () => {
   it('returns null when no requestId is present', () => {
     expect(sessionRequestIdFromData({ session: {} })).toBeNull();
     expect(sessionRequestIdFromData(null)).toBeNull();
+  });
+});
+
+describe('sessionAlreadyAuthenticatedForWallet', () => {
+  it('is true when the session wallet matches the active key, whatever the bound requestId', () => {
+    const sessionData = { session: { wallet: MATCHING_ADDRESS, requestId: 'other-request' } };
+    expect(sessionAlreadyAuthenticatedForWallet(sessionData, walletKey)).toBe(true);
+  });
+
+  it('is true when the session is not bound to any requestId yet', () => {
+    const sessionData = { session: { wallet: MATCHING_ADDRESS } };
+    expect(sessionAlreadyAuthenticatedForWallet(sessionData, walletKey)).toBe(true);
+  });
+
+  it('is false when the session wallet does not match the active key', () => {
+    const sessionData = { session: { wallet: OTHER_ADDRESS, requestId: REQUEST_ID } };
+    expect(sessionAlreadyAuthenticatedForWallet(sessionData, walletKey)).toBe(false);
+  });
+
+  it('is false when the session has no wallet', () => {
+    const sessionData = { session: { requestId: REQUEST_ID } };
+    expect(sessionAlreadyAuthenticatedForWallet(sessionData, walletKey)).toBe(false);
+  });
+
+  it('is false for an empty session payload', () => {
+    expect(sessionAlreadyAuthenticatedForWallet(null, walletKey)).toBe(false);
+    expect(sessionAlreadyAuthenticatedForWallet({}, walletKey)).toBe(false);
   });
 });
 

@@ -258,6 +258,21 @@ class SignalClient(
                 // If we are waiting on an offer, create a link to the address
                 if(type == "offer"){
                     link(requestId)
+                } else {
+                    // Offerer path: bind this requestId to the (already
+                    // authenticated) server-side session BEFORE any signaling.
+                    // The server routes offer/answer descriptions to the room
+                    // named by the session's persisted requestId, so a session
+                    // that authenticated for ANOTHER connection at the same
+                    // origin must be re-bound here or the offer is routed to
+                    // the wrong room. This re-bind is what lets one origin
+                    // session be shared by all of its connections — switching
+                    // connections needs no fresh passkey assertion. Emitted
+                    // fire-and-forget: the server only acks a `link` once the
+                    // peer's `auth` event fires (potentially never while the
+                    // peer is offline), and the offer resend loop below
+                    // already tolerates a slow re-bind.
+                    emitLink(requestId)
                 }
                 // Listen to Remote ICE Candidates
                 socket!!.on("${type}-candidate") {
@@ -441,6 +456,22 @@ class SignalClient(
                 continuation.resume(LinkMessage.fromJson(response.toString()))
             })
         }
+    }
+
+    /**
+     * Fire-and-forget `link`: binds [requestId] to this socket's authenticated
+     * server-side session (the server persists it as `session.requestId`,
+     * joins the socket to the request room and refreshes presence) WITHOUT
+     * waiting for the acknowledgement — the server only acks once an `auth`
+     * event fires for the requestId, which may never happen while the remote
+     * peer is offline. Used on the offerer path, where the negotiation must
+     * not block on the peer.
+     */
+    private fun emitLink(requestId: String) {
+        val linkBody = JSONObject()
+        linkBody.put("requestId", requestId)
+        Log.d(TAG, "link.emit($linkBody)")
+        socket!!.emit("link", linkBody)
     }
 
     /**
